@@ -1,0 +1,5 @@
+{
+  "name": "NeoLink: PICU/NICU Medical Records",
+  "description": "An application for maintaining records of PICU (Pediatric Intensive Care Unit) and NICU (Neonatal Intensive Care Unit) in a medical college. It helps in tracking patient data, outcomes, and mortality with role-based access for Admins, Doctors, and Nurses.",
+  "requestFramePermissions": []
+}

@@ -117,11 +117,11 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                     <label htmlFor="name" className="block text-sm font-medium text-slate-300 mb-1">Full Name</label>
-                    <input type="text" name="name" id="name" value={patient.name} onChange={handleChange} required className="form-input" />
+                    <input type="text" name="name" id="name" value={patient.name} onChange={handleChange} required className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent" />
                 </div>
                 <div>
                     <label htmlFor="unit" className="block text-sm font-medium text-slate-300 mb-1">Unit</label>
-                    <select name="unit" id="unit" value={patient.unit} onChange={handleChange} className="form-input" disabled={!canEditSensitiveFields}>
+                    <select name="unit" id="unit" value={patient.unit} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields}>
                         {Object.values(Unit).map(u => <option key={u} value={u}>{u}</option>)}
                     </select>
                 </div>
@@ -131,7 +131,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label htmlFor="admissionType" className="block text-sm font-medium text-slate-300 mb-1">Admission Type</label>
-                  <select name="admissionType" id="admissionType" value={patient.admissionType} onChange={handleChange} className="form-input" required>
+                  <select name="admissionType" id="admissionType" value={patient.admissionType} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" required>
                     {Object.values(AdmissionType).map(at => <option key={at} value={at}>{at}</option>)}
                   </select>
                 </div>
@@ -139,11 +139,11 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
                   <>
                     <div>
                       <label htmlFor="referringHospital" className="block text-sm font-medium text-slate-300 mb-1">Referring Hospital</label>
-                      <input type="text" name="referringHospital" id="referringHospital" value={patient.referringHospital || ''} onChange={handleChange} className="form-input" />
+                      <input type="text" name="referringHospital" id="referringHospital" value={patient.referringHospital || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" />
                     </div>
                      <div>
                       <label htmlFor="referringDistrict" className="block text-sm font-medium text-slate-300 mb-1">Referring District</label>
-                      <input type="text" name="referringDistrict" id="referringDistrict" value={patient.referringDistrict || ''} onChange={handleChange} className="form-input" />
+                      <input type="text" name="referringDistrict" id="referringDistrict" value={patient.referringDistrict || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" />
                     </div>
                   </>
                 )}
@@ -153,17 +153,17 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                     <label htmlFor="age" className="block text-sm font-medium text-slate-300 mb-1">Age</label>
-                    <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" className="form-input" />
+                    <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" />
                 </div>
                 <div>
                     <label htmlFor="ageUnit" className="block text-sm font-medium text-slate-300 mb-1">Age Unit</label>
-                    <select name="ageUnit" id="ageUnit" value={patient.ageUnit} onChange={handleChange} className="form-input">
+                    <select name="ageUnit" id="ageUnit" value={patient.ageUnit} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed">
                         {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
                     </select>
                 </div>
                  <div>
                     <label htmlFor="gender" className="block text-sm font-medium text-slate-300 mb-1">Gender</label>
-                    <select name="gender" id="gender" value={patient.gender} onChange={handleChange} className="form-input">
+                    <select name="gender" id="gender" value={patient.gender} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed">
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
                         <option value="Other">Other</option>
@@ -182,7 +182,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
                   value={patient.diagnosis} 
                   onChange={handleChange} 
                   required={!isNurse} 
-                  className="form-input" 
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" 
                   disabled={isNurse}
                   placeholder={isNurse ? "Doctor will complete diagnosis" : "Enter primary diagnosis"}
                 />
@@ -194,11 +194,11 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
                   <div className="space-y-4">
                     {patient.progressNotes.map((note, index) => (
                       <div key={index} className="flex items-start gap-2">
-                         <textarea
+                          <textarea
                               value={note.note}
                               onChange={(e) => handleNoteChange(index, e.target.value)}
                               rows={2}
-                              className="form-input flex-grow"
+                              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent flex-grow"
                               placeholder={`Note on ${new Date(note.date).toLocaleDateString()}`}
                           />
                           <button type="button" onClick={() => removeNote(index)} className="p-2 mt-1 text-slate-400 hover:text-red-400 transition-colors disabled:opacity-50" disabled={patient.progressNotes.length <= 1}>
@@ -222,7 +222,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <div>
                     <label htmlFor="admissionDate" className="block text-sm font-medium text-slate-300 mb-1">Admission Date</label>
-                    <input type="date" name="admissionDate" id="admissionDate" value={patient.admissionDate.split('T')[0]} onChange={handleChange} required className="form-input" disabled={!canEditSensitiveFields}/>
+                    <input type="date" name="admissionDate" id="admissionDate" value={patient.admissionDate.split('T')[0]} onChange={handleChange} required className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields}/>
                 </div>
                 <div>
                   <label htmlFor="releaseDate" className="block text-sm font-medium text-slate-300 mb-1">
@@ -234,13 +234,13 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
                     id="releaseDate" 
                     value={patient.releaseDate ? patient.releaseDate.split('T')[0] : ''} 
                     onChange={handleChange} 
-                    className="form-input" 
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" 
                     required={patient.outcome === 'Step Down'}
                   />
                 </div>
                  <div>
                     <label htmlFor="outcome" className="block text-sm font-medium text-slate-300 mb-1">Current Status</label>
-                    <select name="outcome" id="outcome" value={patient.outcome} onChange={handleChange} className="form-input">
+                    <select name="outcome" id="outcome" value={patient.outcome} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed">
                         <option value="In Progress">In Progress</option>
                         {!patient.isStepDown && (
                             <option value="Step Down">Step Down</option>
@@ -268,7 +268,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
                       value={patient.referredTo || ''} 
                       onChange={handleChange} 
                       required
-                      className="form-input" 
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" 
                       placeholder="e.g., GMCH, AIIMS, etc."
                     />
                   </div>
@@ -283,7 +283,7 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
                       onChange={handleChange} 
                       required
                       rows={3}
-                      className="form-input" 
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" 
                       placeholder="Specify the reason for referring this patient (e.g., Need for specialized care, Equipment not available, Higher level NICU/PICU required, etc.)"
                     />
                   </div>

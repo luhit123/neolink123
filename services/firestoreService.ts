@@ -3,6 +3,7 @@ import {
   doc,
   getDocs,
   getDoc,
+  setDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -277,38 +278,48 @@ export const getUserProfile = async (userId: string) => {
   }
 };
 
-// Create or update user profile
-export const saveUserProfile = async (
-  userId: string,
-  email: string,
-  displayName: string,
-  role: UserRole,
-  collegeName: string,
-  collegeId: string
-) => {
+// Save user profile
+export async function saveUserProfile(userId: string, profile: {
+  email: string;
+  displayName: string;
+  role: UserRole;
+  collegeName?: string;
+  collegeId?: string;
+}) {
   try {
     const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      email,
-      displayName,
-      role,
-      collegeName,
-      collegeId,
-      lastLogin: serverTimestamp(),
-    }).catch(async () => {
-      // If document doesn't exist, create it
-      await addDoc(collection(db, 'users'), {
-        email,
-        displayName,
-        role,
-        collegeName,
-        collegeId,
-        createdAt: serverTimestamp(),
-        lastLogin: serverTimestamp(),
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists()) {
+      await updateDoc(userRef, {
+        ...profile,
+        lastLogin: serverTimestamp()
       });
-    });
+    } else {
+      // Create new user profile if doesn't exist
+      await setDoc(userRef, {
+        ...profile,
+        createdAt: serverTimestamp(),
+        lastLogin: serverTimestamp()
+      });
+    }
   } catch (error) {
     console.error('Error saving user profile:', error);
     throw error;
   }
-};
+}
+
+// Update user role
+export async function updateUserRole(userId: string, role: UserRole) {
+  try {
+    const userRef = doc(db, 'users', userId);
+    // Use setDoc with merge to create or update
+    await setDoc(userRef, {
+      role: role,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    throw error;
+  }
+}

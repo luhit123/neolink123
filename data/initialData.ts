@@ -10,7 +10,7 @@ export const initialPatients: Patient[] = [
   {
     id: 'death-001',
     name: 'B/O Anjuwara Begum',
-    age: 2, // Days (04/09 birth to 06/09 death)
+    age: 2,
     ageUnit: AgeUnit.Days,
     gender: 'Male',
     admissionDate: new Date('2025-09-04T20:52:00+05:30').toISOString(),
@@ -55,11 +55,11 @@ export const initialPatients: Patient[] = [
     admissionType: AdmissionType.Inborn,
   },
 
-  // DETAILED MORTALITY CASE 2 - Outborn
+  // MORTALITY CASE 2 - Outborn NICU
   {
     id: 'death-002',
     name: 'B/O Ashma Begum',
-    age: 2, // Days (05/09 birth to 08/09 death, but admitted on 06/09)
+    age: 2,
     ageUnit: AgeUnit.Days,
     gender: 'Female',
     admissionDate: new Date('2025-09-06T21:51:00+05:30').toISOString(),
@@ -110,7 +110,7 @@ export const initialPatients: Patient[] = [
     referringDistrict: 'Nalbari'
   },
 
-  // DETAILED MORTALITY CASE 3 - PICU
+  // MORTALITY CASE 3 - PICU
   {
     id: 'death-003',
     name: 'Rijuwa Jannat',

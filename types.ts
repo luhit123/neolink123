@@ -4,6 +4,8 @@ export enum Unit {
 }
 
 export enum UserRole {
+  SuperAdmin = "Super Administrator",
+  InstitutionAdmin = "Institution Administrator",
   Admin = "Administrator",
   Doctor = "Doctor",
   Nurse = "Nurse",
@@ -24,6 +26,15 @@ export enum AdmissionType {
 export interface ProgressNote {
     date: string; // ISO string
     note: string;
+    addedBy?: string; // User name who added the note
+    addedByEmail?: string; // User email for documentation
+}
+
+export interface EditHistory {
+    timestamp: string; // ISO string
+    editedBy: string; // User name or role
+    editedByEmail: string; // User email for documentation
+    changes: string; // Description of changes
 }
 
 export interface Patient {
@@ -55,10 +66,36 @@ export interface Patient {
   isDraft?: boolean; // True if nurse saved basic info, waiting for doctor
   createdBy?: UserRole; // Who created the record
   lastUpdatedBy?: UserRole; // Who last updated
+  // Edit tracking
+  editHistory?: EditHistory[]; // Track all edits
+  lastEditedAt?: string; // ISO string of last edit
 }
 
 export interface MonthlyAdmission {
     month: string;
     admissions: number;
     discharges: number;
+}
+
+export interface Institution {
+  id: string;
+  name: string;
+  location: {
+    district: string;
+    state: string;
+  };
+  enabled: boolean;
+  adminEmail: string; // Institution Administrator email
+  createdAt: string;
+  createdBy: string; // SuperAdmin who created it
+}
+
+export interface ApprovedUser {
+  email: string;
+  role: UserRole;
+  institutionId: string;
+  institutionName: string;
+  approvedBy: string; // Email of who approved
+  approvedAt: string;
+  enabled: boolean;
 }

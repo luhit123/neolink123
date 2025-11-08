@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 
 interface CollegeSelectionProps {
-  onSelectCollege: (collegeName: string) => void;
+  onSelectCollege: (collegeName: string, collegeId: string) => void;
 }
 
 interface MedicalCollege {
+  id: string;
   name: string;
   location: string;
   enabled: boolean;
@@ -12,51 +13,61 @@ interface MedicalCollege {
 
 const assamMedicalColleges: MedicalCollege[] = [
   {
+    id: 'nalbari-medical-college',
     name: 'Nalbari Medical College and Hospital',
     location: 'Nalbari',
     enabled: true
   },
   {
+    id: 'gauhati-medical-college',
     name: 'Gauhati Medical College and Hospital',
     location: 'Guwahati',
     enabled: false
   },
   {
+    id: 'assam-medical-college',
     name: 'Assam Medical College and Hospital',
     location: 'Dibrugarh',
     enabled: false
   },
   {
+    id: 'silchar-medical-college',
     name: 'Silchar Medical College and Hospital',
     location: 'Silchar',
     enabled: false
   },
   {
+    id: 'jorhat-medical-college',
     name: 'Jorhat Medical College and Hospital',
     location: 'Jorhat',
     enabled: false
   },
   {
+    id: 'tezpur-medical-college',
     name: 'Tezpur Medical College and Hospital',
     location: 'Tezpur',
     enabled: false
   },
   {
+    id: 'diphu-medical-college',
     name: 'Diphu Medical College and Hospital',
     location: 'Diphu',
     enabled: false
   },
   {
+    id: 'barpeta-medical-college',
     name: 'Barpeta Medical College and Hospital',
     location: 'Barpeta',
     enabled: false
   },
   {
+    id: 'lakhimpur-medical-college',
     name: 'Lakhimpur Medical College and Hospital',
     location: 'North Lakhimpur',
     enabled: false
   },
   {
+    id: 'fakhruddin-medical-college',
     name: 'Fakhruddin Ali Ahmed Medical College',
     location: 'Barpeta',
     enabled: false
@@ -64,16 +75,16 @@ const assamMedicalColleges: MedicalCollege[] = [
 ];
 
 const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) => {
-  const [selectedCollege, setSelectedCollege] = useState<string>('Nalbari Medical College and Hospital');
+  const [selectedCollege, setSelectedCollege] = useState<MedicalCollege>(assamMedicalColleges[0]);
 
-  const handleSelectCollege = (collegeName: string, enabled: boolean) => {
-    if (enabled) {
-      setSelectedCollege(collegeName);
+  const handleSelectCollege = (college: MedicalCollege) => {
+    if (college.enabled) {
+      setSelectedCollege(college);
     }
   };
 
   const handleContinue = () => {
-    onSelectCollege(selectedCollege);
+    onSelectCollege(selectedCollege.name, selectedCollege.id);
   };
 
   return (
@@ -100,10 +111,10 @@ const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) 
           {assamMedicalColleges.map((college) => (
             <div
               key={college.name}
-              onClick={() => handleSelectCollege(college.name, college.enabled)}
+              onClick={() => handleSelectCollege(college)}
               className={`p-4 sm:p-5 rounded-xl border-2 transition-all duration-200 ${
                 college.enabled
-                  ? selectedCollege === college.name
+                  ? selectedCollege.name === college.name
                     ? 'bg-cyan-500/20 border-cyan-500 shadow-lg shadow-cyan-500/20 cursor-pointer'
                     : 'bg-slate-700/50 border-slate-600 hover:border-slate-500 cursor-pointer'
                   : 'bg-slate-700/20 border-slate-700 opacity-50 cursor-not-allowed'
@@ -112,7 +123,7 @@ const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) 
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <h3 className={`font-bold text-sm sm:text-base mb-1 ${
-                    college.enabled && selectedCollege === college.name
+                    college.enabled && selectedCollege.name === college.name
                       ? 'text-cyan-300'
                       : college.enabled
                       ? 'text-slate-200'
@@ -131,7 +142,7 @@ const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) 
                     Coming Soon
                   </span>
                 )}
-                {college.enabled && selectedCollege === college.name && (
+                {college.enabled && selectedCollege.name === college.name && (
                   <span className="ml-2 text-cyan-400 text-xl">✓</span>
                 )}
               </div>
@@ -144,7 +155,7 @@ const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) 
             onClick={handleContinue}
             className="w-full py-3 sm:py-4 px-4 border border-transparent text-sm sm:text-base font-semibold rounded-xl text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 focus:ring-offset-slate-800 transition-all shadow-lg hover:shadow-cyan-500/50"
           >
-            ✓ Continue to {selectedCollege === 'Nalbari Medical College and Hospital' ? 'Nalbari Medical College' : 'Login'}
+            ✓ Continue to {selectedCollege.name === 'Nalbari Medical College and Hospital' ? 'Nalbari Medical College' : 'Login'}
           </button>
         </div>
 

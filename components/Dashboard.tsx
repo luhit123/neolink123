@@ -5,6 +5,9 @@ import PatientList from './PatientList';
 import UnitSelection from './UnitSelection';
 import PatientForm from './PatientForm';
 import PatientDetailModal from './PatientDetailModal';
+import PatientFilters, { OutcomeFilter } from './PatientFilters';
+import CollapsiblePatientCard from './CollapsiblePatientCard';
+import TimeBasedAnalytics from './TimeBasedAnalytics';
 import { BedIcon, ArrowRightOnRectangleIcon, ChartBarIcon, PlusIcon, HomeIcon, ArrowUpOnSquareIcon, PresentationChartBarIcon, ArrowUpIcon } from './common/Icons';
 import { initialPatients } from '../data/initialData';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -24,7 +27,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
   const [patients, setPatients] = useLocalStorage<Patient[]>('patients', initialPatients);
   const [selectedUnit, setSelectedUnit] = useState<Unit>(Unit.NICU);
   const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('All');
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'All Time' });
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'This Month' });
+  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('All');
   const [showSummary, setShowSummary] = useState(false);
   const [showDeathsAnalysis, setShowDeathsAnalysis] = useState(false);
   
@@ -100,6 +104,12 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
     });
   }, [patients, selectedUnit, nicuView, dateFilter]);
 
+  // Apply outcome filter
+  const filteredPatients = useMemo(() => {
+    if (outcomeFilter === 'All') return unitPatients;
+    return unitPatients.filter(p => p.outcome === outcomeFilter);
+  }, [unitPatients, outcomeFilter]);
+
   const stats = useMemo(() => {
     const total = unitPatients.length;
     const deceased = unitPatients.filter(p => p.outcome === 'Deceased').length;
@@ -108,17 +118,59 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
     const inProgress = unitPatients.filter(p => p.outcome === 'In Progress').length;
     const stepDown = unitPatients.filter(p => p.outcome === 'Step Down').length;
     
-    const mortalityRate = total > 0 ? ((deceased / total) * 100).toFixed(1) + '%' : '0%';
-    const dischargeRate = total > 0 ? ((discharged / total) * 100).toFixed(1) + '%' : '0%';
-    const referralRate = total > 0 ? ((referred / total) * 100).toFixed(1) + '%' : '0%';
+    const mortalityRate = total > 0 ? ((deceased / total) * 100).toFixed(1) : '0';
+    const mortalityPercentage = mortalityRate + '%';
+    const dischargeRate = total > 0 ? ((discharged / total) * 100).toFixed(1) : '0';
+    const dischargePercentage = dischargeRate + '%';
+    const referralRate = total > 0 ? ((referred / total) * 100).toFixed(1) : '0';
+    const referralPercentage = referralRate + '%';
+    const inProgressRate = total > 0 ? ((inProgress / total) * 100).toFixed(1) : '0';
+    const inProgressPercentage = inProgressRate + '%';
+    const stepDownRate = total > 0 ? ((stepDown / total) * 100).toFixed(1) : '0';
+    const stepDownPercentage = stepDownRate + '%';
 
     if (selectedUnit === Unit.NICU) {
         const inbornDeaths = unitPatients.filter(p => p.outcome === 'Deceased' && p.admissionType === 'Inborn').length;
         const outbornDeaths = unitPatients.filter(p => p.outcome === 'Deceased' && p.admissionType === 'Outborn').length;
-        return { total, deceased, discharged, referred, inProgress, stepDown, mortalityRate, dischargeRate, referralRate, inbornDeaths, outbornDeaths };
+        const inbornTotal = unitPatients.filter(p => p.admissionType === 'Inborn').length;
+        const outbornTotal = unitPatients.filter(p => p.admissionType === 'Outborn').length;
+        const inbornMortalityRate = inbornTotal > 0 ? ((inbornDeaths / inbornTotal) * 100).toFixed(1) + '%' : '0%';
+        const outbornMortalityRate = outbornTotal > 0 ? ((outbornDeaths / outbornTotal) * 100).toFixed(1) + '%' : '0%';
+        
+        return { 
+          total, deceased, discharged, referred, inProgress, stepDown, 
+          mortalityRate: mortalityPercentage, dischargeRate: dischargePercentage, referralRate: referralPercentage,
+          inProgressPercentage, stepDownPercentage,
+          inbornDeaths, outbornDeaths, inbornMortalityRate, outbornMortalityRate 
+        };
     }
 
-    return { total, deceased, discharged, referred, inProgress, stepDown, mortalityRate, dischargeRate, referralRate };
+    if (selectedUnit === Unit.PICU) {
+        // Calculate under-5 mortality for PICU
+        const under5Patients = unitPatients.filter(p => {
+          if (p.ageUnit === 'years' && p.age < 5) return true;
+          if (p.ageUnit === 'months') return true;
+          if (p.ageUnit === 'weeks') return true;
+          if (p.ageUnit === 'days') return true;
+          return false;
+        });
+        const under5Deaths = under5Patients.filter(p => p.outcome === 'Deceased').length;
+        const under5Total = under5Patients.length;
+        const under5MortalityRate = under5Total > 0 ? ((under5Deaths / under5Total) * 100).toFixed(1) + '%' : '0%';
+        
+        return { 
+          total, deceased, discharged, referred, inProgress, stepDown, 
+          mortalityRate: mortalityPercentage, dischargeRate: dischargePercentage, referralRate: referralPercentage,
+          inProgressPercentage, stepDownPercentage,
+          under5Deaths, under5Total, under5MortalityRate 
+        };
+    }
+
+    return { 
+      total, deceased, discharged, referred, inProgress, stepDown, 
+      mortalityRate: mortalityPercentage, dischargeRate: dischargePercentage, referralRate: referralPercentage,
+      inProgressPercentage, stepDownPercentage
+    };
   }, [unitPatients, selectedUnit]);
 
   const nicuMortalityBreakdown = useMemo(() => {
@@ -264,7 +316,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
         <StatCard title={`Discharged ${getPeriodTitle(dateFilter.period)}`} value={stats.discharged} icon={<ArrowRightOnRectangleIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-green-500/80" />
         <StatCard title={`Referred ${getPeriodTitle(dateFilter.period)}`} value={stats.referred} icon={<ArrowUpOnSquareIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-orange-500/80" />
         <StatCard title={`Deceased ${getPeriodTitle(dateFilter.period)}`} value={stats.deceased} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-red-500/80" />
-        <StatCard title={`Discharge Rate ${getPeriodTitle(dateFilter.period)}`} value={stats.dischargeRate} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-emerald-500/80" />
+        <StatCard title={`Mortality Rate ${getPeriodTitle(dateFilter.period)}`} value={stats.mortalityRate} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-red-600/80" />
       </div>
       
       {/* Additional Rate Metrics */}
@@ -444,16 +496,146 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
         </div>
       )}
 
+      {/* PICU Specific Under-5 Mortality */}
+      {selectedUnit === Unit.PICU && stats.under5Total !== undefined && (
+        <div className="bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-700">
+          <h3 className="text-lg md:text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <span className="text-2xl">👶</span>
+            PICU Under-5 Mortality Analysis
+          </h3>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+            {/* Under-5 Statistics */}
+            <div className="bg-slate-700/30 p-4 rounded-lg">
+              <h4 className="text-sm md:text-base font-semibold text-slate-300 mb-3">Under-5 Years Patient Statistics</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <span className="text-sm text-blue-300">Total Under-5 Patients</span>
+                  <span className="text-2xl font-bold text-blue-400">{stats.under5Total}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <span className="text-sm text-red-300">Under-5 Deaths</span>
+                  <span className="text-2xl font-bold text-red-400">{stats.under5Deaths}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                  <span className="text-sm text-purple-300">Under-5 Mortality Rate</span>
+                  <span className="text-3xl font-bold text-purple-400">{stats.under5MortalityRate}</span>
+                </div>
+              </div>
+            </div>
 
-      <PatientList 
-        patients={unitPatients} 
-        userRole={userRole}
-        onEdit={handleEditPatient}
-        onDelete={handleDeletePatient}
-        onViewDetails={handleViewDetails}
-        onStepDownDischarge={handleStepDownDischarge}
-        onReadmitFromStepDown={handleReadmitFromStepDown}
+            {/* Comparison Chart */}
+            <div className="bg-slate-700/30 p-4 rounded-lg">
+              <h4 className="text-sm md:text-base font-semibold text-slate-300 mb-3">Under-5 vs Overall Mortality</h4>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={[
+                  { 
+                    name: 'Under-5', 
+                    patients: stats.under5Total,
+                    deaths: stats.under5Deaths
+                  },
+                  { 
+                    name: 'Overall', 
+                    patients: stats.total,
+                    deaths: stats.deceased
+                  }
+                ]}>
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2}/>
+                  <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 11 }}/>
+                  <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }}/>
+                  <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', fontSize: '12px' }} />
+                  <Legend wrapperStyle={{ fontSize: '11px' }}/>
+                  <Bar dataKey="patients" name="Total Patients" fill="#3b82f6" radius={[8, 8, 0, 0]}/>
+                  <Bar dataKey="deaths" name="Deaths" fill="#ef4444" radius={[8, 8, 0, 0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+              <div className="mt-3 text-xs text-slate-400 text-center">
+                Under-5 represents {((stats.under5Total / stats.total) * 100).toFixed(1)}% of total PICU patients
+              </div>
+            </div>
+          </div>
+
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+            <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-lg">
+              <div className="text-xs text-blue-300">Under-5 Patients</div>
+              <div className="text-xl md:text-2xl font-bold text-blue-400">{stats.under5Total}</div>
+              <div className="text-xs text-blue-300/70 mt-1">{((stats.under5Total / stats.total) * 100).toFixed(1)}% of total</div>
+            </div>
+            <div className="bg-red-500/10 border border-red-500/30 p-3 rounded-lg">
+              <div className="text-xs text-red-300">Under-5 Deaths</div>
+              <div className="text-xl md:text-2xl font-bold text-red-400">{stats.under5Deaths}</div>
+              <div className="text-xs text-red-300/70 mt-1">{stats.under5MortalityRate} mortality</div>
+            </div>
+            <div className="bg-green-500/10 border border-green-500/30 p-3 rounded-lg">
+              <div className="text-xs text-green-300">Under-5 Survived</div>
+              <div className="text-xl md:text-2xl font-bold text-green-400">{stats.under5Total - stats.under5Deaths}</div>
+              <div className="text-xs text-green-300/70 mt-1">{(((stats.under5Total - stats.under5Deaths) / stats.under5Total) * 100).toFixed(1)}% survival</div>
+            </div>
+            <div className="bg-purple-500/10 border border-purple-500/30 p-3 rounded-lg">
+              <div className="text-xs text-purple-300">Age Groups</div>
+              <div className="text-sm md:text-base font-bold text-purple-400">Days, Weeks, Months, Years &lt;5</div>
+              <div className="text-xs text-purple-300/70 mt-1">All included</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Time-based Analytics */}
+      <TimeBasedAnalytics patients={patients} />
+
+      {/* Status Filter - Right before Patient Records */}
+      <PatientFilters
+        selectedOutcome={outcomeFilter}
+        onOutcomeChange={setOutcomeFilter}
+        counts={{
+          all: unitPatients.length,
+          inProgress: stats.inProgress,
+          discharged: stats.discharged,
+          referred: stats.referred,
+          deceased: stats.deceased,
+          stepDown: stats.stepDown
+        }}
       />
+
+      {/* Patient Cards Section */}
+      <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl p-6 border border-slate-700/50">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-bold text-white">Patient Records</h2>
+            <p className="text-sm text-slate-400 mt-1">
+              Showing {filteredPatients.length} of {unitPatients.length} patients
+              {outcomeFilter !== 'All' && ` • Filtered by: ${outcomeFilter}`}
+            </p>
+          </div>
+        </div>
+
+        {filteredPatients.length === 0 ? (
+          <div className="text-center py-12">
+            <svg className="w-16 h-16 text-slate-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+            </svg>
+            <h3 className="text-lg font-semibold text-slate-400 mb-2">No patients found</h3>
+            <p className="text-sm text-slate-500">
+              {outcomeFilter !== 'All' 
+                ? `No patients with status "${outcomeFilter}" in the selected period`
+                : 'No patients match the current filters'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredPatients.map(patient => (
+              <CollapsiblePatientCard
+                key={patient.id}
+                patient={patient}
+                onEdit={handleEditPatient}
+                onView={handleViewDetails}
+                canEdit={userRole === UserRole.Admin || userRole === UserRole.Doctor}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {isFormOpen && (
         <PatientForm

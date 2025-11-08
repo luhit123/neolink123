@@ -42,7 +42,19 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setPatient(prev => ({ ...prev, [name]: name === 'age' ? parseInt(value) : value }));
+    setPatient(prev => {
+      const updated = { ...prev, [name]: name === 'age' ? parseInt(value) : value };
+      
+      // Handle Step Down logic for both NICU and PICU
+      if (name === 'outcome' && value === 'Step Down') {
+        updated.stepDownDate = new Date().toISOString();
+        updated.stepDownFrom = prev.unit; // Can be NICU or PICU
+        updated.isStepDown = true;
+        updated.outcome = 'Step Down';
+      }
+      
+      return updated;
+    });
   };
 
   const handleNoteChange = (index: number, value: string) => {
@@ -213,19 +225,71 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
                     <input type="date" name="admissionDate" id="admissionDate" value={patient.admissionDate.split('T')[0]} onChange={handleChange} required className="form-input" disabled={!canEditSensitiveFields}/>
                 </div>
                 <div>
-                  <label htmlFor="releaseDate" className="block text-sm font-medium text-slate-300 mb-1">Date of Release</label>
-                  <input type="date" name="releaseDate" id="releaseDate" value={patient.releaseDate ? patient.releaseDate.split('T')[0] : ''} onChange={handleChange} className="form-input" />
+                  <label htmlFor="releaseDate" className="block text-sm font-medium text-slate-300 mb-1">
+                    {patient.outcome === 'Step Down' ? 'Step Down Date' : 'Date of Release'}
+                  </label>
+                  <input 
+                    type="date" 
+                    name="releaseDate" 
+                    id="releaseDate" 
+                    value={patient.releaseDate ? patient.releaseDate.split('T')[0] : ''} 
+                    onChange={handleChange} 
+                    className="form-input" 
+                    required={patient.outcome === 'Step Down'}
+                  />
                 </div>
                  <div>
                     <label htmlFor="outcome" className="block text-sm font-medium text-slate-300 mb-1">Current Status</label>
                     <select name="outcome" id="outcome" value={patient.outcome} onChange={handleChange} className="form-input">
                         <option value="In Progress">In Progress</option>
+                        {!patient.isStepDown && (
+                            <option value="Step Down">Step Down</option>
+                        )}
                         <option value="Discharged">Discharged</option>
                         <option value="Referred">Referred</option>
                         <option value="Deceased">Deceased</option>
                     </select>
                 </div>
             </div>
+
+            {/* Referral Information - Only show when outcome is Referred */}
+            {patient.outcome === 'Referred' && (
+              <div className="bg-orange-500/10 border border-orange-500/30 p-4 rounded-lg space-y-4">
+                <h3 className="text-lg font-semibold text-orange-300 mb-2">Referral Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="referredTo" className="block text-sm font-medium text-slate-300 mb-1">
+                      Referred To (Facility Name) <span className="text-red-400">*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      name="referredTo" 
+                      id="referredTo" 
+                      value={patient.referredTo || ''} 
+                      onChange={handleChange} 
+                      required
+                      className="form-input" 
+                      placeholder="e.g., GMCH, AIIMS, etc."
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label htmlFor="referralReason" className="block text-sm font-medium text-slate-300 mb-1">
+                      Reason for Referral <span className="text-red-400">*</span>
+                    </label>
+                    <textarea 
+                      name="referralReason" 
+                      id="referralReason" 
+                      value={patient.referralReason || ''} 
+                      onChange={handleChange} 
+                      required
+                      rows={3}
+                      className="form-input" 
+                      placeholder="Specify the reason for referring this patient (e.g., Need for specialized care, Equipment not available, Higher level NICU/PICU required, etc.)"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="p-4 sm:p-6 bg-slate-700/50 flex flex-col sm:flex-row justify-end gap-3 sm:gap-4 sticky bottom-0">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-slate-200 bg-slate-600 hover:bg-slate-500 active:bg-slate-500 transition-colors font-semibold text-sm sm:text-base order-2 sm:order-1">Cancel</button>

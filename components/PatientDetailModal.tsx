@@ -76,6 +76,71 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({ patient, onClos
                     {patient.admissionType === 'Outborn' && <DetailItem label="Referring District" value={patient.referringDistrict}/>}
                 </div>
             </div>
+
+            {/* Step Down Information Section */}
+            {(patient.isStepDown || patient.stepDownDate || patient.readmissionFromStepDown || patient.finalDischargeDate) && (
+                <div className="bg-purple-500/10 border border-purple-500/30 p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold text-purple-300 mb-3 flex items-center gap-2">
+                        🟣 Step Down Information
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        {patient.stepDownDate && (
+                            <DetailItem 
+                                label="Step Down Date" 
+                                value={new Date(patient.stepDownDate).toLocaleString()} 
+                            />
+                        )}
+                        {patient.stepDownFrom && (
+                            <DetailItem 
+                                label="Stepped Down From" 
+                                value={patient.stepDownFrom === 'Neonatal Intensive Care Unit' ? 'NICU' : 'PICU'} 
+                            />
+                        )}
+                        {patient.isStepDown && (
+                            <DetailItem 
+                                label="Current Status" 
+                                value={<span className="text-purple-400 font-semibold">Currently in Step Down</span>} 
+                            />
+                        )}
+                        {patient.readmissionFromStepDown && (
+                            <DetailItem 
+                                label="Readmission Status" 
+                                value={<span className="text-orange-400 font-semibold">Readmitted from Step Down</span>} 
+                            />
+                        )}
+                        {patient.finalDischargeDate && (
+                            <DetailItem 
+                                label="Final Discharge Date" 
+                                value={new Date(patient.finalDischargeDate).toLocaleString()} 
+                            />
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Referral Information Section */}
+            {patient.outcome === 'Referred' && (patient.referralReason || patient.referredTo) && (
+                <div className="bg-orange-500/10 border border-orange-500/30 p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold text-orange-300 mb-3 flex items-center gap-2">
+                        🔄 Referral Information
+                    </h3>
+                    <div className="space-y-3">
+                        {patient.referredTo && (
+                            <DetailItem 
+                                label="Referred To" 
+                                value={<span className="text-orange-400 font-semibold">{patient.referredTo}</span>} 
+                            />
+                        )}
+                        {patient.referralReason && (
+                            <div>
+                                <p className="text-sm font-medium text-slate-400 mb-1">Reason for Referral</p>
+                                <p className="text-md text-slate-200 bg-slate-700/40 p-3 rounded-md whitespace-pre-wrap">{patient.referralReason}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
              <div>
                 <h3 className="text-lg font-semibold text-slate-200 mb-2">Primary Diagnosis</h3>
                 <p className="text-slate-300">{patient.diagnosis}</p>

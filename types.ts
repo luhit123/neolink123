@@ -36,12 +36,21 @@ export interface Patient {
   releaseDate?: string; // ISO string
   diagnosis: string;
   progressNotes: ProgressNote[];
-  outcome: 'In Progress' | 'Discharged' | 'Referred' | 'Deceased';
+  outcome: 'In Progress' | 'Discharged' | 'Referred' | 'Deceased' | 'Step Down';
   unit: Unit;
   // NICU specific
   admissionType?: AdmissionType;
   referringHospital?: string;
   referringDistrict?: string;
+  // PICU Step Down functionality
+  stepDownDate?: string; // ISO string when stepped down
+  stepDownFrom?: Unit; // Which unit they were stepped down from
+  isStepDown?: boolean; // Currently in step down status
+  readmissionFromStepDown?: boolean; // Was readmitted from step down
+  finalDischargeDate?: string; // For step down patients who are finally discharged
+  // Referral information
+  referralReason?: string; // Reason for referring patient to another facility
+  referredTo?: string; // Name of facility patient was referred to
   // Status tracking
   isDraft?: boolean; // True if nurse saved basic info, waiting for doctor
   createdBy?: UserRole; // Who created the record

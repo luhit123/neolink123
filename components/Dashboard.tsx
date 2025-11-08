@@ -5,7 +5,7 @@ import PatientList from './PatientList';
 import UnitSelection from './UnitSelection';
 import PatientForm from './PatientForm';
 import PatientDetailModal from './PatientDetailModal';
-import { BedIcon, ArrowRightOnRectangleIcon, ChartBarIcon, PlusIcon, HomeIcon, ArrowUpOnSquareIcon, PresentationChartBarIcon } from './common/Icons';
+import { BedIcon, ArrowRightOnRectangleIcon, ChartBarIcon, PlusIcon, HomeIcon, ArrowUpOnSquareIcon, PresentationChartBarIcon, ArrowUpIcon } from './common/Icons';
 import { initialPatients } from '../data/initialData';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { ResponsiveContainer, Tooltip, Legend, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
@@ -106,6 +106,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
     const discharged = unitPatients.filter(p => p.outcome === 'Discharged').length;
     const referred = unitPatients.filter(p => p.outcome === 'Referred').length;
     const inProgress = unitPatients.filter(p => p.outcome === 'In Progress').length;
+    const stepDown = unitPatients.filter(p => p.outcome === 'Step Down').length;
     
     const mortalityRate = total > 0 ? ((deceased / total) * 100).toFixed(1) + '%' : '0%';
     const dischargeRate = total > 0 ? ((discharged / total) * 100).toFixed(1) + '%' : '0%';
@@ -114,10 +115,10 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
     if (selectedUnit === Unit.NICU) {
         const inbornDeaths = unitPatients.filter(p => p.outcome === 'Deceased' && p.admissionType === 'Inborn').length;
         const outbornDeaths = unitPatients.filter(p => p.outcome === 'Deceased' && p.admissionType === 'Outborn').length;
-        return { total, deceased, discharged, referred, inProgress, mortalityRate, dischargeRate, referralRate, inbornDeaths, outbornDeaths };
+        return { total, deceased, discharged, referred, inProgress, stepDown, mortalityRate, dischargeRate, referralRate, inbornDeaths, outbornDeaths };
     }
 
-    return { total, deceased, discharged, referred, inProgress, mortalityRate, dischargeRate, referralRate };
+    return { total, deceased, discharged, referred, inProgress, stepDown, mortalityRate, dischargeRate, referralRate };
   }, [unitPatients, selectedUnit]);
 
   const nicuMortalityBreakdown = useMemo(() => {
@@ -178,6 +179,35 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
     setIsDetailsOpen(true);
   };
 
+  const handleStepDownDischarge = (patient: Patient) => {
+    if (window.confirm(`Are you sure you want to discharge ${patient.name} from step down? This will be their final discharge from the hospital.`)) {
+      const updatedPatient: Patient = {
+        ...patient,
+        outcome: 'Discharged',
+        finalDischargeDate: new Date().toISOString(),
+        lastUpdatedBy: userRole
+      };
+      setPatients(prev => prev.map(p => p.id === patient.id ? updatedPatient : p));
+    }
+  };
+
+  const handleReadmitFromStepDown = (patient: Patient) => {
+    const originalUnit = patient.stepDownFrom || patient.unit;
+    const unitName = originalUnit === Unit.NICU ? 'NICU' : 'PICU';
+    
+    if (window.confirm(`Are you sure you want to readmit ${patient.name} back to ${unitName}?`)) {
+      const updatedPatient: Patient = {
+        ...patient,
+        outcome: 'In Progress',
+        unit: originalUnit,
+        isStepDown: false,
+        readmissionFromStepDown: true,
+        lastUpdatedBy: userRole
+      };
+      setPatients(prev => prev.map(p => p.id === patient.id ? updatedPatient : p));
+    }
+  };
+
   const handleSelectUnit = (unit: Unit) => {
     setSelectedUnit(unit);
     setNicuView('All'); // Reset nicu view when switching main unit
@@ -227,9 +257,10 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
 
       <DateFilter onFilterChange={setDateFilter} />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 md:gap-4">
         <StatCard title={`Total Patients ${getPeriodTitle(dateFilter.period)}`} value={stats.total} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-blue-500/80" />
         <StatCard title={`In Progress ${getPeriodTitle(dateFilter.period)}`} value={stats.inProgress} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-blue-400/80" />
+        <StatCard title={`Step Down ${getPeriodTitle(dateFilter.period)}`} value={stats.stepDown} icon={<ArrowUpIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-purple-500/80" />
         <StatCard title={`Discharged ${getPeriodTitle(dateFilter.period)}`} value={stats.discharged} icon={<ArrowRightOnRectangleIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-green-500/80" />
         <StatCard title={`Referred ${getPeriodTitle(dateFilter.period)}`} value={stats.referred} icon={<ArrowUpOnSquareIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-orange-500/80" />
         <StatCard title={`Deceased ${getPeriodTitle(dateFilter.period)}`} value={stats.deceased} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white"/>} color="bg-red-500/80" />
@@ -296,6 +327,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
                 <Pie 
                   data={[
                     { name: 'In Progress', value: stats.inProgress, fill: '#3b82f6' },
+                    { name: 'Step Down', value: stats.stepDown, fill: '#a855f7' },
                     { name: 'Discharged', value: stats.discharged, fill: '#10b981' },
                     { name: 'Referred', value: stats.referred, fill: '#f59e0b' },
                     { name: 'Deceased', value: stats.deceased, fill: '#ef4444' }
@@ -308,7 +340,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
                   label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                   labelLine={false}
                 >
-                  {[{ fill: '#3b82f6' }, { fill: '#10b981' }, { fill: '#f59e0b' }, { fill: '#ef4444' }].map((entry, index) => (
+                  {[{ fill: '#3b82f6' }, { fill: '#a855f7' }, { fill: '#10b981' }, { fill: '#f59e0b' }, { fill: '#ef4444' }].map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
@@ -419,6 +451,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole }) => {
         onEdit={handleEditPatient}
         onDelete={handleDeletePatient}
         onViewDetails={handleViewDetails}
+        onStepDownDischarge={handleStepDownDischarge}
+        onReadmitFromStepDown={handleReadmitFromStepDown}
       />
 
       {isFormOpen && (

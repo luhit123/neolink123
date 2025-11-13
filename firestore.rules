@@ -1,81 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isSuperAdmin() {
-      return isAuthenticated() &&
-             exists(/databases/$(database)/documents/superAdmins/$(request.auth.token.email));
-    }
-
-    function isInstitutionAdmin(institutionId) {
-      return isAuthenticated() &&
-             get(/databases/$(database)/documents/institutions/$(institutionId)).data.adminEmail == request.auth.token.email;
-    }
-
-    function isApprovedUser(institutionId) {
-      return isAuthenticated() &&
-             exists(/databases/$(database)/documents/institutions/$(institutionId)/approvedUsers/$(request.auth.token.email)) &&
-             get(/databases/$(database)/documents/institutions/$(institutionId)/approvedUsers/$(request.auth.token.email)).data.enabled == true;
-    }
-
-    function isAdminOrDoctor(institutionId) {
-      let user = get(/databases/$(database)/documents/institutions/$(institutionId)/approvedUsers/$(request.auth.token.email)).data;
-      return user.role == "Administrator" || user.role == "Doctor" || user.role == "Super Administrator" || user.role == "Institution Administrator";
-    }
-
-    // DEVELOPMENT MODE: Allow read/write for testing
-    // TODO: Remove this before production
+    // DEVELOPMENT MODE - COMPLETELY OPEN
+    // WARNING: This allows anyone to read/write all data
+    // TODO: Replace with proper security rules before production
     match /{document=**} {
       allow read, write: if true;
-    }
-
-    // SuperAdmins collection
-    match /superAdmins/{email} {
-      allow read: if true; // Allow unauthenticated read for super admin check
-      allow write: if isSuperAdmin() || !isAuthenticated(); // Allow write when not authenticated (for setup)
-    }
-
-    // Institutions collection
-    match /institutions/{institutionId} {
-      allow read: if true;
-      allow create, update, delete: if true; // Development mode
-
-      // Approved users subcollection
-      match /approvedUsers/{email} {
-        allow read: if true;
-        allow write: if true; // Development mode
-      }
-
-      // Colleges subcollection
-      match /colleges/{collegeId} {
-        allow read: if true;
-        allow write: if true; // Development mode
-
-        // Patients subcollection
-        match /patients/{patientId} {
-          allow read, write: if true; // Development mode
-
-          // Progress notes subcollection
-          match /progressNotes/{noteId} {
-            allow read, write: if true; // Development mode
-          }
-        }
-      }
-
-      // Statistics subcollection
-      match /statistics/{statId} {
-        allow read, write: if true; // Development mode
-      }
-    }
-
-    // Users collection - for user profiles
-    match /users/{userId} {
-      allow read, write: if true; // Development mode
     }
   }
 }

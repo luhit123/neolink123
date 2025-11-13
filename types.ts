@@ -4,9 +4,8 @@ export enum Unit {
 }
 
 export enum UserRole {
-  SuperAdmin = "Super Administrator",
-  InstitutionAdmin = "Institution Administrator",
-  Admin = "Administrator",
+  SuperAdmin = "SuperAdmin",
+  Admin = "Admin",
   Doctor = "Doctor",
   Nurse = "Nurse",
 }
@@ -80,14 +79,9 @@ export interface MonthlyAdmission {
 export interface Institution {
   id: string;
   name: string;
-  location: {
-    district: string;
-    state: string;
-  };
-  enabled: boolean;
-  adminEmail: string; // Institution Administrator email
+  adminEmail: string; // Admin email for this institution
   createdAt: string;
-  createdBy: string; // SuperAdmin who created it
+  createdBy: string; // SuperAdmin email who created it
 }
 
 export interface ApprovedUser {

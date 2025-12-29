@@ -8,12 +8,24 @@ interface PatientFormProps {
   onClose: () => void;
   userRole: UserRole;
   defaultUnit?: Unit;
+  institutionId: string;
+  institutionName: string;
+  userEmail: string;
 }
 
-const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClose, userRole, defaultUnit }) => {
+const PatientForm: React.FC<PatientFormProps> = ({
+  patientToEdit,
+  onSave,
+  onClose,
+  userRole,
+  defaultUnit,
+  institutionId,
+  institutionName,
+  userEmail
+}) => {
   const isNurse = userRole === UserRole.Nurse;
   const isDoctor = userRole === UserRole.Doctor || userRole === UserRole.Admin;
-  
+
   const [patient, setPatient] = useState<Patient>(
     patientToEdit || {
       id: '',
@@ -27,8 +39,11 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
       outcome: 'In Progress',
       unit: defaultUnit || Unit.NICU,
       admissionType: AdmissionType.Inborn,
+      institutionId,
+      institutionName,
       isDraft: isNurse,
-      createdBy: userRole
+      createdBy: userRole,
+      createdByEmail: userEmail
     }
   );
   
@@ -84,7 +99,11 @@ const PatientForm: React.FC<PatientFormProps> = ({ patientToEdit, onSave, onClos
       ...patient,
       id: patient.id || Date.now().toString(),
       isDraft: saveAsDraft,
-      lastUpdatedBy: userRole
+      lastUpdatedBy: userRole,
+      lastUpdatedByEmail: userEmail,
+      lastEditedAt: new Date().toISOString(),
+      institutionId,
+      institutionName
     };
     onSave(updatedPatient);
   };

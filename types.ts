@@ -48,6 +48,9 @@ export interface Patient {
   progressNotes: ProgressNote[];
   outcome: 'In Progress' | 'Discharged' | 'Referred' | 'Deceased' | 'Step Down';
   unit: Unit;
+  // Institution tracking
+  institutionId: string; // Which institution this patient belongs to
+  institutionName: string; // Institution name for display
   // NICU specific
   admissionType?: AdmissionType;
   referringHospital?: string;
@@ -64,7 +67,9 @@ export interface Patient {
   // Status tracking
   isDraft?: boolean; // True if nurse saved basic info, waiting for doctor
   createdBy?: UserRole; // Who created the record
+  createdByEmail?: string; // Email of who created
   lastUpdatedBy?: UserRole; // Who last updated
+  lastUpdatedByEmail?: string; // Email of who last updated
   // Edit tracking
   editHistory?: EditHistory[]; // Track all edits
   lastEditedAt?: string; // ISO string of last edit
@@ -84,12 +89,26 @@ export interface Institution {
   createdBy: string; // SuperAdmin email who created it
 }
 
-export interface ApprovedUser {
+export interface InstitutionUser {
+  uid: string; // Firebase user ID
   email: string;
-  role: UserRole;
+  displayName: string;
+  role: UserRole; // Admin, Doctor, or Nurse (not SuperAdmin)
   institutionId: string;
   institutionName: string;
-  approvedBy: string; // Email of who approved
-  approvedAt: string;
-  enabled: boolean;
+  addedBy: string; // Email of who added this user
+  addedAt: string;
+  enabled: boolean; // Can be disabled by Admin
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  institutionId?: string; // Only for non-SuperAdmin users
+  institutionName?: string; // Only for non-SuperAdmin users
+  createdAt: string;
+  lastLoginAt?: string;
+  allRoles?: UserRole[]; // All roles the user has (for multi-role users)
 }

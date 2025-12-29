@@ -12,6 +12,26 @@ dist
 dist-ssr
 *.local
 
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Firebase cache and config
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# Admin/migration scripts (contain sensitive data)
+add-admin-manually.js
+add-institution.js
+create-collections.js
+init-db.js
+migrate-patients.js
+migrate-patients-browser.ts
+quick-add-user.js
+databaseInit.ts
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

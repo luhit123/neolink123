@@ -14,3 +14,9 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// Make database initialization available globally for manual use
+import('./databaseInit').then(({ initializeDatabase }) => {
+  (window as any).initializeNeoLinkDatabase = initializeDatabase;
+  console.log('🔧 Database initialization available: run initializeNeoLinkDatabase() in console');
+});

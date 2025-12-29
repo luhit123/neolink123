@@ -8,14 +8,18 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
-        darkMode: 'class',
         theme: {
           extend: {
             colors: {
-              'brand-blue': '#00A9FF',
-              'brand-cyan': '#A0E9FF',
-              'brand-light': '#CDF5FD',
-              'brand-dark': '#021526',
+              'medical-teal': '#0D9488',
+              'medical-teal-light': '#14B8A6',
+              'medical-blue': '#0284C7',
+              'medical-blue-light': '#0EA5E9',
+              'medical-green': '#059669',
+              'medical-red': '#DC2626',
+              'medical-orange': '#EA580C',
+              'hospital-bg': '#F8FAFC',
+              'hospital-card': '#FFFFFF',
             },
           },
         },
@@ -23,7 +27,7 @@
     </script>
     <style>
       .form-input {
-        @apply w-full bg-slate-700 border border-slate-600 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors;
+        @apply w-full bg-white border border-slate-300 text-slate-900 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-medical-teal transition-colors;
       }
     </style>
   <script type="importmap">
@@ -39,7 +43,7 @@
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="bg-slate-900 text-slate-200">
+  <body class="bg-hospital-bg text-slate-900">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

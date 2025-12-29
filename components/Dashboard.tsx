@@ -429,7 +429,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
         <div className="flex flex-col sm:flex-row items-stretch gap-4 w-full md:w-auto">
           <UnitSelection selectedUnit={selectedUnit} onSelectUnit={handleSelectUnit} />
           {hasRole(UserRole.Admin) && setShowAdminPanel && (
-            <button onClick={() => setShowAdminPanel(true)} className="flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-semibold">
+            <button onClick={() => setShowAdminPanel(true)} className="flex items-center justify-center gap-2 bg-medical-blue text-white px-4 py-2 rounded-lg hover:bg-medical-blue-light transition-colors font-semibold">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
@@ -437,27 +437,27 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
             </button>
           )}
           {hasRole(UserRole.Admin) && (
-            <button onClick={() => setShowSummary(true)} className="flex items-center justify-center gap-2 bg-slate-600 text-white px-4 py-2 rounded-lg hover:bg-slate-500 transition-colors font-semibold">
+            <button onClick={() => setShowSummary(true)} className="flex items-center justify-center gap-2 bg-medical-teal text-white px-4 py-2 rounded-lg hover:bg-medical-teal-light transition-colors font-semibold">
               <PresentationChartBarIcon className="w-5 h-5" />
               <span>Summary</span>
             </button>
           )}
           {(hasRole(UserRole.Admin) || hasRole(UserRole.Doctor)) && (
-            <button onClick={() => setShowDeathsAnalysis(true)} className="flex items-center justify-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
+            <button onClick={() => setShowDeathsAnalysis(true)} className="flex items-center justify-center gap-2 bg-medical-red text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
               <ChartBarIcon className="w-5 h-5" />
               <span className="hidden sm:inline">Deaths Analysis</span>
               <span className="sm:hidden">Deaths</span>
             </button>
           )}
           {(hasRole(UserRole.Admin) || hasRole(UserRole.Doctor)) && (
-            <button onClick={() => setShowRiskMonitoring(true)} className="flex items-center justify-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
+            <button onClick={() => setShowRiskMonitoring(true)} className="flex items-center justify-center gap-2 bg-medical-orange text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
               <span className="text-lg">🎯</span>
               <span className="hidden sm:inline">AI Risk Monitor</span>
               <span className="sm:hidden">Risk</span>
             </button>
           )}
           {(hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)) && (
-            <button onClick={() => setShowSmartHandoff(true)} className="flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
+            <button onClick={() => setShowSmartHandoff(true)} className="flex items-center justify-center gap-2 bg-medical-teal text-white px-4 py-2 rounded-lg hover:bg-medical-teal-light transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
               <span className="text-lg">📝</span>
               <span className="hidden sm:inline">Smart Handoff</span>
               <span className="sm:hidden">Handoff</span>
@@ -471,7 +471,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
             </button>
           )}
           {(hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)) && (
-            <button onClick={handleAddPatient} className="flex items-center justify-center gap-2 bg-cyan-600 text-white px-4 py-2 rounded-lg hover:bg-cyan-700 transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
+            <button onClick={handleAddPatient} className="flex items-center justify-center gap-2 bg-medical-teal text-white px-4 py-2 rounded-lg hover:bg-medical-teal-light transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
               <PlusIcon className="w-5 h-5" />
               <span className="hidden sm:inline">{hasRole(UserRole.Nurse) && !hasRole(UserRole.Doctor) ? 'Add Patient (Draft)' : 'Add Patient'}</span>
               <span className="sm:hidden">Add</span>
@@ -496,13 +496,13 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
       <DateFilter onFilterChange={setDateFilter} />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 md:gap-4">
-        <StatCard title={`Total Patients ${getPeriodTitle(dateFilter.period)}`} value={stats.total} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-blue-500/80" />
-        <StatCard title={`In Progress ${getPeriodTitle(dateFilter.period)}`} value={stats.inProgress} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-blue-400/80" />
-        <StatCard title={`Step Down ${getPeriodTitle(dateFilter.period)}`} value={stats.stepDown} icon={<ArrowUpIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-purple-500/80" />
-        <StatCard title={`Discharged ${getPeriodTitle(dateFilter.period)}`} value={stats.discharged} icon={<ArrowRightOnRectangleIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-green-500/80" />
-        <StatCard title={`Referred ${getPeriodTitle(dateFilter.period)}`} value={stats.referred} icon={<ArrowUpOnSquareIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-orange-500/80" />
-        <StatCard title={`Deceased ${getPeriodTitle(dateFilter.period)}`} value={stats.deceased} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-red-500/80" />
-        <StatCard title={`Mortality Rate ${getPeriodTitle(dateFilter.period)}`} value={stats.mortalityRate} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-red-600/80" />
+        <StatCard title={`Total Patients ${getPeriodTitle(dateFilter.period)}`} value={stats.total} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-blue/90" />
+        <StatCard title={`In Progress ${getPeriodTitle(dateFilter.period)}`} value={stats.inProgress} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-blue-light/90" />
+        <StatCard title={`Step Down ${getPeriodTitle(dateFilter.period)}`} value={stats.stepDown} icon={<ArrowUpIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-purple-500/90" />
+        <StatCard title={`Discharged ${getPeriodTitle(dateFilter.period)}`} value={stats.discharged} icon={<ArrowRightOnRectangleIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-green/90" />
+        <StatCard title={`Referred ${getPeriodTitle(dateFilter.period)}`} value={stats.referred} icon={<ArrowUpOnSquareIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-orange/90" />
+        <StatCard title={`Deceased ${getPeriodTitle(dateFilter.period)}`} value={stats.deceased} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-red/90" />
+        <StatCard title={`Mortality Rate ${getPeriodTitle(dateFilter.period)}`} value={stats.mortalityRate} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-red" />
       </div>
 
       {/* Additional Rate Metrics */}

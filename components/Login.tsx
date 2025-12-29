@@ -21,29 +21,29 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-cyan-100 to-slate-100 dark:from-slate-900 dark:via-cyan-900 dark:to-slate-900 flex items-center justify-center p-4 transition-colors duration-200">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 w-full max-w-md border border-cyan-500/20 transition-colors duration-200">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-teal-50 to-blue-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md border border-medical-teal/20">
         {/* Logo/Icon */}
         <div className="flex justify-center mb-6">
-          <div className="bg-cyan-500/10 p-4 rounded-full">
-            <svg className="w-16 h-16 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-medical-teal/10 p-4 rounded-full">
+            <svg className="w-16 h-16 text-medical-teal" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
             </svg>
           </div>
         </div>
 
         {/* Title */}
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center mb-2">
+        <h1 className="text-3xl font-bold text-slate-900 text-center mb-2">
           NeoLink PICU/NICU
         </h1>
-        <p className="text-cyan-600 dark:text-cyan-400 text-center mb-8">
+        <p className="text-medical-teal text-center mb-8">
           Medical Records System
         </p>
 
         {/* Error Message */}
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg">
-            <p className="text-red-400 text-sm text-center">{error}</p>
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-medical-red text-sm text-center">{error}</p>
           </div>
         )}
 
@@ -51,11 +51,11 @@ const Login: React.FC = () => {
         <button
           onClick={handleGoogleLogin}
           disabled={loading}
-          className="w-full bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+          className="w-full bg-white hover:bg-gray-50 text-gray-800 font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg border border-slate-200"
         >
           {loading ? (
             <>
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-800"></div>
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-medical-teal"></div>
               <span>Signing in...</span>
             </>
           ) : (
@@ -72,7 +72,7 @@ const Login: React.FC = () => {
         </button>
 
         {/* Info Text */}
-        <div className="mt-6 text-center text-slate-600 dark:text-slate-400 text-sm">
+        <div className="mt-6 text-center text-slate-600 text-sm">
           <p>Sign in to access patient records</p>
         </div>
       </div>

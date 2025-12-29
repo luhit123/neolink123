@@ -57,17 +57,17 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
 
   const getTabColor = (color: string, active: boolean) => {
     const colors: Record<string, { active: string; hover: string }> = {
-      cyan: { active: 'bg-cyan-600 text-white', hover: 'hover:bg-cyan-700' },
+      cyan: { active: 'bg-medical-teal text-white', hover: 'hover:bg-medical-teal-light' },
       purple: { active: 'bg-purple-600 text-white', hover: 'hover:bg-purple-700' },
-      red: { active: 'bg-red-600 text-white', hover: 'hover:bg-red-700' },
-      green: { active: 'bg-green-600 text-white', hover: 'hover:bg-green-700' },
-      blue: { active: 'bg-blue-600 text-white', hover: 'hover:bg-blue-700' },
-      orange: { active: 'bg-orange-600 text-white', hover: 'hover:bg-orange-700' },
-      indigo: { active: 'bg-indigo-600 text-white', hover: 'hover:bg-indigo-700' },
-      pink: { active: 'bg-pink-600 text-white', hover: 'hover:bg-pink-700' },
+      red: { active: 'bg-medical-red text-white', hover: 'hover:bg-red-700' },
+      green: { active: 'bg-medical-green text-white', hover: 'hover:bg-emerald-700' },
+      blue: { active: 'bg-medical-blue text-white', hover: 'hover:bg-medical-blue-light' },
+      orange: { active: 'bg-medical-orange text-white', hover: 'hover:bg-orange-700' },
+      indigo: { active: 'bg-medical-blue text-white', hover: 'hover:bg-medical-blue-light' },
+      pink: { active: 'bg-medical-teal-light text-white', hover: 'hover:bg-medical-teal' },
       yellow: { active: 'bg-yellow-600 text-white', hover: 'hover:bg-yellow-700' },
     };
-    return active ? colors[color].active : `text-slate-400 ${colors[color].hover} hover:text-white`;
+    return active ? colors[color].active : `text-slate-600 ${colors[color].hover} hover:text-white`;
   };
 
   const handleGenerate = async (type: TabType) => {
@@ -173,13 +173,13 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
         {/* Header */}
         <div className="bg-gradient-to-r from-cyan-900/50 to-blue-900/50 p-3 sm:p-4 border-b border-cyan-500/20 flex justify-between items-center flex-shrink-0">
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="p-1.5 sm:p-2 bg-cyan-500/20 rounded-lg">
-              <SparklesIcon className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-400" />
+            <div className="p-1.5 sm:p-2 bg-medical-teal/20 rounded-lg">
+              <SparklesIcon className="w-5 h-5 sm:w-6 sm:h-6 text-medical-teal" />
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-bold text-white">AI Clinical Assistant</h2>
-              <p className="text-xs text-cyan-300 hidden sm:block">Powered by Gemini 2.5 Flash</p>
-              <p className="text-xs text-cyan-300 sm:hidden">Patient: {patient.name}</p>
+              <p className="text-xs text-teal-200 hidden sm:block">Powered by Gemini 2.5 Flash</p>
+              <p className="text-xs text-teal-200 sm:hidden">Patient: {patient.name}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -231,7 +231,7 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
               <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50">
                 <div className="flex flex-col items-center">
                   <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-cyan-500 mb-3"></div>
-                  <p className="text-cyan-400 animate-pulse text-xs sm:text-sm">Analyzing patient data...</p>
+                  <p className="text-medical-teal animate-pulse text-xs sm:text-sm">Analyzing patient data...</p>
                 </div>
               </div>
             ) : (
@@ -239,7 +239,7 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
                 {/* Knowledge Base - Special UI for asking questions */}
                 {activeTab === 'knowledge' && (
                   <div className="mb-4 p-3 sm:p-4 bg-slate-800/50 rounded-lg border border-slate-700">
-                    <h3 className="text-cyan-400 font-semibold mb-3 text-sm sm:text-base">Ask a Clinical Question</h3>
+                    <h3 className="text-medical-teal font-semibold mb-3 text-sm sm:text-base">Ask a Clinical Question</h3>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         type="text"
@@ -252,7 +252,7 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
                       <button
                         onClick={handleAskQuestion}
                         disabled={!clinicalQuestion.trim()}
-                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors text-sm min-h-[44px] whitespace-nowrap"
+                        className="px-4 py-2 bg-medical-teal hover:bg-medical-teal-light disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors text-sm min-h-[44px] whitespace-nowrap"
                       >
                         Ask AI
                       </button>
@@ -288,7 +288,7 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
                       </div>
                     </div>
                     <div className="bg-slate-800 p-3 sm:p-4 rounded-lg border border-slate-700">
-                      <h4 className="text-cyan-400 font-semibold mb-2 text-sm sm:text-base">AI Justification</h4>
+                      <h4 className="text-medical-teal font-semibold mb-2 text-sm sm:text-base">AI Justification</h4>
                       <p className="text-slate-300 leading-relaxed text-sm sm:text-base">{riskData.justification}</p>
                     </div>
                     <p className="text-xs text-slate-500 italic text-center">

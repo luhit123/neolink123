@@ -2,7 +2,6 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from './firebaseConfig';
-import { ThemeProvider } from './context/ThemeContext';
 import Login from './components/Login';
 import Header from './components/Header';
 import { UserRole, UserProfile } from './types';
@@ -198,8 +197,8 @@ function App() {
   // Loading state
   if (loading) {
     return (
-      <div className="bg-slate-900 min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+      <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-teal"></div>
       </div>
     );
   }
@@ -212,8 +211,8 @@ function App() {
   // Access denied
   if (accessDenied) {
     return (
-      <div className="bg-slate-900 min-h-screen flex items-center justify-center p-4">
-        <div className="bg-slate-800 rounded-2xl shadow-2xl p-8 max-w-md border border-red-500/20">
+      <div className="bg-hospital-bg min-h-screen flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md border border-red-200">
           <div className="flex justify-center mb-6">
             <div className="bg-red-500/10 p-4 rounded-full">
               <svg className="w-16 h-16 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,7 +232,7 @@ function App() {
           <div className="space-y-3">
             <button
               onClick={handleLogout}
-              className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-4 rounded-lg transition-colors border border-slate-200"
             >
               Sign Out
             </button>
@@ -250,8 +249,8 @@ function App() {
   // User profile not loaded
   if (!userProfile) {
     return (
-      <div className="bg-slate-900 min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+      <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-teal"></div>
       </div>
     );
   }
@@ -260,10 +259,10 @@ function App() {
   if (showSuperAdminPanel && userProfile.role === UserRole.SuperAdmin) {
     return (
       <Suspense fallback={
-        <div className="bg-slate-900 min-h-screen flex items-center justify-center">
+        <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-4"></div>
-            <p className="text-slate-300 text-lg">Loading SuperAdmin Dashboard...</p>
+            <p className="text-slate-600 text-lg">Loading SuperAdmin Dashboard...</p>
           </div>
         </div>
       }>
@@ -280,10 +279,10 @@ function App() {
   if (showAdminPanel && userProfile.role === UserRole.Admin && userProfile.institutionId) {
     return (
       <Suspense fallback={
-        <div className="bg-slate-900 min-h-screen flex items-center justify-center">
+        <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-slate-300 text-lg">Loading Admin Dashboard...</p>
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-blue mx-auto mb-4"></div>
+            <p className="text-slate-600 text-lg">Loading Admin Dashboard...</p>
           </div>
         </div>
       }>
@@ -301,10 +300,10 @@ function App() {
   if (superAdminViewingInstitution && userProfile.role === UserRole.SuperAdmin) {
     return (
       <Suspense fallback={
-        <div className="bg-slate-900 min-h-screen flex items-center justify-center">
+        <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-slate-300 text-lg">Loading Institution Dashboard...</p>
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-blue mx-auto mb-4"></div>
+            <p className="text-slate-600 text-lg">Loading Institution Dashboard...</p>
           </div>
         </div>
       }>
@@ -320,8 +319,7 @@ function App() {
 
   // Main Application
   return (
-    <ThemeProvider>
-      <div className="min-h-screen transition-colors duration-200 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-300">
+      <div className="min-h-screen bg-hospital-bg text-slate-900">
         <Header
           userRole={userProfile.role}
           onLogout={handleLogout}
@@ -333,8 +331,8 @@ function App() {
             <Suspense fallback={
               <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-center">
-                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-cyan-500 mx-auto mb-4"></div>
-                  <p className="text-slate-600 dark:text-slate-300 text-lg">Loading Dashboard...</p>
+                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
+                  <p className="text-slate-600 text-lg">Loading Dashboard...</p>
                 </div>
               </div>
             }>
@@ -351,7 +349,6 @@ function App() {
           </div>
         </main>
       </div>
-    </ThemeProvider>
   );
 }
 

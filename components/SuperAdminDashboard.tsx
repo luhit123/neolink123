@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, query, where, setDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Institution, UserRole } from '../types';
-import { initializeDatabase } from '../databaseInit';
+// import { initializeDatabase } from '../databaseInit';
 
 interface SuperAdminDashboardProps {
   userEmail: string;
@@ -202,27 +202,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
   };
 
   const handleInitializeDatabase = async () => {
-    if (!confirm('This will create initial collections and sample data in your database. Continue?')) {
-      return;
-    }
-
-    setInitLoading(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      await initializeDatabase();
-      setSuccess('Database initialized successfully! Collections created: users, institutions, approved_users, patients');
-      console.log('✅ Database initialization complete');
-
-      // Reload institutions to show the newly created ones
-      loadInstitutions();
-    } catch (err: any) {
-      console.error('❌ Database initialization failed:', err);
-      setError('Database initialization failed: ' + err.message);
-    } finally {
-      setInitLoading(false);
-    }
+    alert('Database initialization is only available in local development environment.');
   };
 
   const loadPatients = async () => {

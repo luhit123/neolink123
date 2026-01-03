@@ -12,8 +12,8 @@ interface DeathsAnalysisProps {
 type TimeRange = '7days' | '30days' | '3months' | '6months' | '12months' | 'all';
 
 const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => {
-  const [selectedUnit, setSelectedUnit] = useState<'All' | 'NICU' | 'PICU'>('All');
-  const [nicuFilter, setNicuFilter] = useState<'All' | 'Inborn' | 'Outborn'>('All');
+  const [selectedUnit, setSelectedUnit] = useState<'All' | 'NICU' | 'PICU' | 'SNCU'>('All');
+  const [admissionFilter, setAdmissionFilter] = useState<'All' | 'Inborn' | 'Outborn'>('All');
   const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'All Time' });
   const [timeRange, setTimeRange] = useState<TimeRange>('3months');
 
@@ -37,10 +37,19 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
     if (selectedUnit === 'NICU') {
       filtered = filtered.filter(p => p.unit === Unit.NICU);
 
-      // Apply NICU sub-filter
-      if (nicuFilter === 'Inborn') {
+      // Apply Admission Type sub-filter
+      if (admissionFilter === 'Inborn') {
         filtered = filtered.filter(p => p.admissionType === AdmissionType.Inborn);
-      } else if (nicuFilter === 'Outborn') {
+      } else if (admissionFilter === 'Outborn') {
+        filtered = filtered.filter(p => p.admissionType === AdmissionType.Outborn);
+      }
+    } else if (selectedUnit === 'SNCU') {
+      filtered = filtered.filter(p => p.unit === Unit.SNCU);
+
+      // Apply Admission Type sub-filter
+      if (admissionFilter === 'Inborn') {
+        filtered = filtered.filter(p => p.admissionType === AdmissionType.Inborn);
+      } else if (admissionFilter === 'Outborn') {
         filtered = filtered.filter(p => p.admissionType === AdmissionType.Outborn);
       }
     } else if (selectedUnit === 'PICU') {
@@ -105,16 +114,20 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
     }
 
     return filtered;
-  }, [deceasedPatients, selectedUnit, nicuFilter, dateFilter]);
+  }, [deceasedPatients, selectedUnit, admissionFilter, dateFilter]);
 
   const stats = useMemo(() => {
     const totalDeaths = deceasedPatients.length;
     const nicuDeaths = deceasedPatients.filter(p => p.unit === Unit.NICU).length;
     const picuDeaths = deceasedPatients.filter(p => p.unit === Unit.PICU).length;
+    const sncuDeaths = deceasedPatients.filter(p => p.unit === Unit.SNCU).length;
+
     const nicuInbornDeaths = deceasedPatients.filter(p => p.unit === Unit.NICU && p.admissionType === AdmissionType.Inborn).length;
     const nicuOutbornDeaths = deceasedPatients.filter(p => p.unit === Unit.NICU && p.admissionType === AdmissionType.Outborn).length;
+    const sncuInbornDeaths = deceasedPatients.filter(p => p.unit === Unit.SNCU && p.admissionType === AdmissionType.Inborn).length;
+    const sncuOutbornDeaths = deceasedPatients.filter(p => p.unit === Unit.SNCU && p.admissionType === AdmissionType.Outborn).length;
 
-    return { totalDeaths, nicuDeaths, picuDeaths, nicuInbornDeaths, nicuOutbornDeaths };
+    return { totalDeaths, nicuDeaths, picuDeaths, sncuDeaths, nicuInbornDeaths, nicuOutbornDeaths, sncuInbornDeaths, sncuOutbornDeaths };
   }, [deceasedPatients]);
 
   // Trend data for time range
@@ -148,15 +161,16 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
         break;
       case 'all':
         // For all time, use monthly data
-        const years = new Map<string, { NICU: number; PICU: number }>();
+        const years = new Map<string, { NICU: number; PICU: number; SNCU: number }>();
         deceasedPatients.forEach(p => {
           const deathDate = p.releaseDate ? new Date(p.releaseDate) : new Date(p.admissionDate);
           const monthKey = `${deathDate.getFullYear()}-${String(deathDate.getMonth() + 1).padStart(2, '0')}`;
           if (!years.has(monthKey)) {
-            years.set(monthKey, { NICU: 0, PICU: 0 });
+            years.set(monthKey, { NICU: 0, PICU: 0, SNCU: 0 });
           }
           const data = years.get(monthKey)!;
           if (p.unit === Unit.NICU) data.NICU++;
+          else if (p.unit === Unit.SNCU) data.SNCU++;
           else data.PICU++;
         });
 
@@ -165,6 +179,7 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
             date: monthKey,
             NICU: data.NICU,
             PICU: data.PICU,
+            SNCU: data.SNCU,
           }))
           .sort((a, b) => a.date.localeCompare(b.date))
           .slice(-12); // Last 12 months
@@ -188,6 +203,7 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
         date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         NICU: deathsInRange.filter(p => p.unit === Unit.NICU).length,
         PICU: deathsInRange.filter(p => p.unit === Unit.PICU).length,
+        SNCU: deathsInRange.filter(p => p.unit === Unit.SNCU).length,
       });
     }
 
@@ -211,6 +227,7 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
   // Unit breakdown pie chart
   const unitBreakdown = useMemo(() => [
     { name: 'NICU', value: stats.nicuDeaths, color: '#0ea5e9' },
+    { name: 'SNCU', value: stats.sncuDeaths, color: '#16a34a' },
     { name: 'PICU', value: stats.picuDeaths, color: '#8b5cf6' },
   ], [stats]);
 
@@ -265,6 +282,18 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
           <div className="text-xs sm:text-sm text-purple-600 font-medium mb-1">PICU Deaths</div>
           <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-purple-600">{stats.picuDeaths}</div>
         </div>
+        <div className="bg-white rounded-xl shadow-lg border-2 border-green-200 p-4 sm:p-6 hover:shadow-xl transition-all duration-200">
+          <div className="text-xs sm:text-sm text-green-600 font-medium mb-1">SNCU Deaths</div>
+          <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-green-600">{stats.sncuDeaths}</div>
+        </div>
+        <div className="bg-white rounded-xl shadow-lg border-2 border-emerald-200 p-4 sm:p-6 hover:shadow-xl transition-all duration-200">
+          <div className="text-xs sm:text-sm text-emerald-600 font-medium mb-1">SNCU Inborn</div>
+          <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-emerald-600">{stats.sncuInbornDeaths}</div>
+        </div>
+        <div className="bg-white rounded-xl shadow-lg border-2 border-lime-200 p-4 sm:p-6 hover:shadow-xl transition-all duration-200">
+          <div className="text-xs sm:text-sm text-lime-600 font-medium mb-1">SNCU Outborn</div>
+          <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-lime-600">{stats.sncuOutbornDeaths}</div>
+        </div>
       </div>
 
       {/* Time Range Filter for Charts */}
@@ -312,6 +341,7 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
                 <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #0ea5e9', borderRadius: '8px' }} />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
                 <Line type="monotone" dataKey="NICU" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 5, fill: '#0ea5e9' }} activeDot={{ r: 7 }} />
+                <Line type="monotone" dataKey="SNCU" stroke="#16a34a" strokeWidth={3} dot={{ r: 5, fill: '#16a34a' }} activeDot={{ r: 7 }} />
                 <Line type="monotone" dataKey="PICU" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 5, fill: '#8b5cf6' }} activeDot={{ r: 7 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -349,15 +379,14 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
           <div className="flex-1">
             <label className="block text-xs sm:text-sm font-medium text-sky-700 mb-2">Unit</label>
             <div className="flex bg-sky-50 p-1 rounded-lg border-2 border-sky-200">
-              {['All', 'NICU', 'PICU'].map(unit => (
+              {['All', 'NICU', 'SNCU', 'PICU'].map(unit => (
                 <button
                   key={unit}
-                  onClick={() => setSelectedUnit(unit as 'All' | 'NICU' | 'PICU')}
-                  className={`flex-1 px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
-                    selectedUnit === unit
-                      ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-md'
-                      : 'text-sky-700 hover:bg-sky-100'
-                  }`}
+                  onClick={() => setSelectedUnit(unit as 'All' | 'NICU' | 'PICU' | 'SNCU')}
+                  className={`flex-1 px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${selectedUnit === unit
+                    ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-md'
+                    : 'text-sky-700 hover:bg-sky-100'
+                    }`}
                 >
                   {unit}
                 </button>
@@ -365,7 +394,30 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
             </div>
           </div>
 
-          {/* NICU Sub-filter */}
+
+
+          {/* SNCU Sub-filter */}
+          {selectedUnit === 'SNCU' && (
+            <div className="flex-1">
+              <label className="block text-xs sm:text-sm font-medium text-sky-700 mb-2">SNCU Type</label>
+              <div className="flex bg-sky-50 p-1 rounded-lg border-2 border-sky-200">
+                {['All', 'Inborn', 'Outborn'].map(type => (
+                  <button
+                    key={type}
+                    onClick={() => setAdmissionFilter(type as 'All' | 'Inborn' | 'Outborn')}
+                    className={`flex-1 px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${admissionFilter === type
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-md'
+                      : 'text-sky-700 hover:bg-sky-100'
+                      }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Reuse UI but point to admissionFilter for NICU too */}
           {selectedUnit === 'NICU' && (
             <div className="flex-1">
               <label className="block text-xs sm:text-sm font-medium text-sky-700 mb-2">NICU Type</label>
@@ -373,12 +425,11 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
                 {['All', 'Inborn', 'Outborn'].map(type => (
                   <button
                     key={type}
-                    onClick={() => setNicuFilter(type as 'All' | 'Inborn' | 'Outborn')}
-                    className={`flex-1 px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${
-                      nicuFilter === type
-                        ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-md'
-                        : 'text-sky-700 hover:bg-sky-100'
-                    }`}
+                    onClick={() => setAdmissionFilter(type as 'All' | 'Inborn' | 'Outborn')}
+                    className={`flex-1 px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all ${admissionFilter === type
+                      ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-md'
+                      : 'text-sky-700 hover:bg-sky-100'
+                      }`}
                   >
                     {type}
                   </button>
@@ -420,19 +471,19 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
                         <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium border border-blue-300">
                           {getAgeDisplay(patient)}
                         </span>
-                        <span className={`px-2 py-1 rounded text-xs font-medium border ${
-                          patient.unit === Unit.NICU
-                            ? 'bg-sky-100 text-sky-700 border-sky-300'
+                        <span className={`px-2 py-1 rounded text-xs font-medium border ${patient.unit === Unit.NICU
+                          ? 'bg-sky-100 text-sky-700 border-sky-300'
+                          : patient.unit === Unit.SNCU
+                            ? 'bg-green-100 text-green-700 border-green-300'
                             : 'bg-purple-100 text-purple-700 border-purple-300'
-                        }`}>
-                          {patient.unit === Unit.NICU ? 'NICU' : 'PICU'}
+                          }`}>
+                          {patient.unit}
                         </span>
                         {patient.admissionType && (
-                          <span className={`px-2 py-1 rounded text-xs font-medium border ${
-                            patient.admissionType === AdmissionType.Inborn
-                              ? 'bg-blue-100 text-blue-700 border-blue-300'
-                              : 'bg-orange-100 text-orange-700 border-orange-300'
-                          }`}>
+                          <span className={`px-2 py-1 rounded text-xs font-medium border ${patient.admissionType === AdmissionType.Inborn
+                            ? 'bg-blue-100 text-blue-700 border-blue-300'
+                            : 'bg-orange-100 text-orange-700 border-orange-300'
+                            }`}>
                             {patient.admissionType}
                           </span>
                         )}

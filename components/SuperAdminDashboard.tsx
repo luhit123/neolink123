@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, query, where, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Institution, UserRole } from '../types';
-// import { initializeDatabase } from '../databaseInit';
+import { Institution, UserRole, Unit } from '../types';
+import { ASSAM_DISTRICTS, INSTITUTION_TYPES } from '../constants';
 
 interface SuperAdminDashboardProps {
   userEmail: string;
@@ -26,6 +26,14 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
   const [newInstitutionName, setNewInstitutionName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminRoles, setNewAdminRoles] = useState<UserRole[]>([UserRole.Admin]);
+  const [selectedFacilities, setSelectedFacilities] = useState<Unit[]>([Unit.NICU, Unit.PICU]);
+  const [selectedDistrict, setSelectedDistrict] = useState(ASSAM_DISTRICTS[0]);
+  const [institutionType, setInstitutionType] = useState(INSTITUTION_TYPES[0]);
+  const [customInstitutionType, setCustomInstitutionType] = useState('');
+  const [editingInstitution, setEditingInstitution] = useState<Institution | null>(null);
+  const [managingUsersFor, setManagingUsersFor] = useState<Institution | null>(null);
+  const [institutionUsers, setInstitutionUsers] = useState<any[]>([]);
+  const [isUsersLoading, setIsUsersLoading] = useState(false);
 
   // Real-time listener for institutions
   useEffect(() => {
@@ -100,51 +108,104 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
     }
 
     try {
-      // Step 1: Create the institution
-      const institutionsRef = collection(db, 'institutions');
-      const newInstitution = {
-        name: newInstitutionName.trim(),
-        adminEmail: newAdminEmail.trim().toLowerCase(),
-        createdAt: new Date().toISOString(),
-        createdBy: userEmail
-      };
-
-      const institutionDoc = await addDoc(institutionsRef, newInstitution);
-      console.log('✅ Institution added:', newInstitution);
-
-      // Step 2: Automatically add the admin to approved_users collection with selected roles
-      const approvedUsersRef = collection(db, 'approved_users');
-      const addPromises = newAdminRoles.map(async (role) => {
-        const adminUser = {
-          uid: '', // Will be set when admin first logs in
-          email: newAdminEmail.trim().toLowerCase(),
-          displayName: 'Admin', // Default name, can be updated later
-          role: role,
-          institutionId: institutionDoc.id,
-          institutionName: newInstitutionName.trim(),
-          addedBy: userEmail,
-          addedAt: new Date().toISOString(),
-          enabled: true
+      if (editingInstitution) {
+        // Edit Mode
+        const institutionRef = doc(db, 'institutions', editingInstitution.id);
+        const updatedInstitution = {
+          name: newInstitutionName.trim(),
+          facilities: selectedFacilities,
+          district: selectedDistrict,
+          institutionType: institutionType === 'Other' ? customInstitutionType.trim() : institutionType,
+          // Admin email and roles not updated here for simplicity, focusing on institution details
         };
 
-        return addDoc(approvedUsersRef, adminUser);
-      });
+        await updateDoc(institutionRef, updatedInstitution);
+        setSuccess(`✅ Institution "${updatedInstitution.name}" updated successfully!`);
 
-      await Promise.all(addPromises);
-      console.log('✅ Admin added to approved_users with roles:', newAdminRoles);
+        // Reset and close
+        setEditingInstitution(null);
+        setNewInstitutionName('');
+        setNewAdminEmail('');
+        setNewAdminRoles([UserRole.Admin]);
+        setSelectedFacilities([Unit.NICU, Unit.PICU]);
+        setSelectedDistrict(ASSAM_DISTRICTS[0]);
+        setInstitutionType(INSTITUTION_TYPES[0]);
+        setCustomInstitutionType('');
+        setShowAddForm(false);
+      } else {
+        // Create Mode
+        const institutionsRef = collection(db, 'institutions');
+        const newInstitution = {
+          name: newInstitutionName.trim(),
+          adminEmail: newAdminEmail.trim().toLowerCase(),
+          facilities: selectedFacilities,
+          district: selectedDistrict,
+          institutionType: institutionType === 'Other' ? customInstitutionType.trim() : institutionType,
+          createdAt: new Date().toISOString(),
+          createdBy: userEmail
+        };
 
-      setSuccess(`✅ Institution "${newInstitutionName}" added successfully!\n\nAdmin "${newAdminEmail}" can now log in with roles: ${newAdminRoles.join(', ')}.\n\n⚠️ If this admin was previously assigned to another institution, they must LOG OUT completely and LOG BACK IN to see the new institution.`);
-      setNewInstitutionName('');
-      setNewAdminEmail('');
-      setNewAdminRoles([UserRole.Admin]); // Reset to default
-      setShowAddForm(false);
+        const institutionDoc = await addDoc(institutionsRef, newInstitution);
+        console.log('✅ Institution added:', newInstitution);
 
-      // Reload institutions
-      // Real-time listener will automatically update
+        // Step 2: Automatically add the admin to approved_users collection with selected roles
+        const approvedUsersRef = collection(db, 'approved_users');
+        const addPromises = newAdminRoles.map(async (role) => {
+          const adminUser = {
+            uid: '', // Will be set when admin first logs in
+            email: newAdminEmail.trim().toLowerCase(),
+            displayName: 'Admin', // Default name, can be updated later
+            role: role,
+            institutionId: institutionDoc.id,
+            institutionName: newInstitutionName.trim(),
+            addedBy: userEmail,
+            addedAt: new Date().toISOString(),
+            enabled: true
+          };
+
+          return addDoc(approvedUsersRef, adminUser);
+        });
+
+        await Promise.all(addPromises);
+        console.log('✅ Admin added to approved_users with roles:', newAdminRoles);
+
+        setSuccess(`✅ Institution "${newInstitutionName}" added successfully!\n\nAdmin "${newAdminEmail}" can now log in with roles: ${newAdminRoles.join(', ')}.\n\n⚠️ If this admin was previously assigned to another institution, they must LOG OUT completely and LOG BACK IN to see the new institution.`);
+        setNewInstitutionName('');
+        setNewAdminEmail('');
+        setNewAdminRoles([UserRole.Admin]); // Reset to default
+        setSelectedFacilities([Unit.NICU, Unit.PICU]);
+        setSelectedDistrict(ASSAM_DISTRICTS[0]);
+        setInstitutionType(INSTITUTION_TYPES[0]);
+        setCustomInstitutionType('');
+        setShowAddForm(false);
+
+        // Reload institutions
+        // Real-time listener will automatically update
+      }
     } catch (err: any) {
-      console.error('❌ Error adding institution:', err);
-      setError('Failed to add institution: ' + err.message);
+      console.error('❌ Error saving institution:', err);
+      setError('Failed to save institution: ' + err.message);
     }
+  };
+
+  const handleEditInstitution = (institution: Institution) => {
+    setEditingInstitution(institution);
+    setNewInstitutionName(institution.name);
+    setNewAdminEmail(institution.adminEmail); // Read-only in edit usually, but populating
+    setSelectedFacilities(institution.facilities || [Unit.NICU, Unit.PICU]);
+    setSelectedDistrict(institution.district || ASSAM_DISTRICTS[0]);
+    if (institution.institutionType && INSTITUTION_TYPES.includes(institution.institutionType)) {
+      setInstitutionType(institution.institutionType);
+    } else if (institution.institutionType) {
+      setInstitutionType('Other');
+      setCustomInstitutionType(institution.institutionType);
+    } else {
+      setInstitutionType(INSTITUTION_TYPES[0]);
+    }
+    setShowAddForm(true);
+    setError('');
+    setSuccess('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDeleteInstitution = async (institutionId: string, institutionName: string) => {
@@ -212,13 +273,90 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
       console.log('✅ Deleted institution document');
 
       setSuccess(`Institution "${institutionName}" and all associated data deleted successfully.\n\n⚠️ IMPORTANT: Users who were part of this institution must LOG OUT and LOG BACK IN to see the changes.`);
-      console.log('✅ Institution deleted completely:', institutionId);
-      // Real-time listener will automatically update
     } catch (err: any) {
       console.error('❌ Error deleting institution:', err);
       setError('Failed to delete institution: ' + err.message);
     }
   };
+
+  const handleManageUsers = async (institution: Institution) => {
+    setManagingUsersFor(institution);
+    setIsUsersLoading(true);
+    await fetchInstitutionUsers(institution.id);
+    setIsUsersLoading(false);
+    setError('');
+    setSuccess('');
+  };
+
+  const fetchInstitutionUsers = async (institutionId: string) => {
+    try {
+      const q = query(
+        collection(db, 'approved_users'),
+        where('institutionId', '==', institutionId)
+      );
+      const snapshot = await getDocs(q);
+      const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setInstitutionUsers(users);
+    } catch (err) {
+      console.error("Error fetching users:", err);
+    }
+  };
+
+  const handleAddUserToInstitution = async () => {
+    if (!managingUsersFor || !newAdminEmail) return;
+    try {
+      const approvedUsersRef = collection(db, 'approved_users');
+      const addPromises = newAdminRoles.map(async (role) => {
+        const adminUser = {
+          uid: '',
+          email: newAdminEmail.trim().toLowerCase(),
+          displayName: role === UserRole.Admin ? 'Admin' : 'Staff',
+          role: role,
+          institutionId: managingUsersFor.id,
+          institutionName: managingUsersFor.name,
+          addedBy: userEmail,
+          addedAt: new Date().toISOString(),
+          enabled: true
+        };
+        return addDoc(approvedUsersRef, adminUser);
+      });
+      await Promise.all(addPromises);
+      setNewAdminEmail('');
+      setNewAdminRoles([UserRole.Admin]);
+      setSuccess('User added successfully');
+      fetchInstitutionUsers(managingUsersFor.id);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const handleRemoveUser = async (userId: string, uid?: string) => {
+    if (!confirm("Remove this user? They will lose access immediately.")) return;
+    try {
+      await deleteDoc(doc(db, 'approved_users', userId));
+      if (uid) {
+        await updateDoc(doc(db, 'users', uid), {
+          institutionId: null,
+          institutionName: null,
+          role: null
+        }).catch(err => console.log("Cache clear warn", err));
+      }
+      if (managingUsersFor) fetchInstitutionUsers(managingUsersFor.id);
+      setSuccess("User removed.");
+    } catch (e: any) {
+      console.error(e);
+      setError("Failed to remove: " + e.message);
+    }
+  };
+
+  const closeManageUsers = () => {
+    setManagingUsersFor(null);
+    setInstitutionUsers([]);
+    setNewAdminEmail('');
+    setSuccess('');
+    setError('');
+  };
+
 
   const handleUpdateAdminEmail = async (institutionId: string, institutionName: string) => {
     // Get current admin email from institution
@@ -568,7 +706,9 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
             {/* Add Institution Form */}
             {showAddForm && (
               <div className="bg-white dark:bg-slate-800 rounded-xl p-6 mb-8 border border-sky-500/20 shadow-lg transition-colors duration-200">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Add New Institution</h2>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">
+                  {editingInstitution ? 'Edit Institution' : 'Add New Institution'}
+                </h2>
                 <form onSubmit={handleAddInstitution} className="space-y-4">
                   <div>
                     <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2">
@@ -584,6 +724,85 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                     />
                   </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* District Selection */}
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2">
+                        District (Assam) *
+                      </label>
+                      <select
+                        value={selectedDistrict}
+                        onChange={(e) => setSelectedDistrict(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
+                      >
+                        {ASSAM_DISTRICTS.map(district => (
+                          <option key={district} value={district}>{district}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Institution Type */}
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2">
+                        Institution Type *
+                      </label>
+                      <select
+                        value={institutionType}
+                        onChange={(e) => setInstitutionType(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors mb-2"
+                      >
+                        {INSTITUTION_TYPES.map(type => (
+                          <option key={type} value={type}>{type}</option>
+                        ))}
+                        <option value="Other">Other (Custom)</option>
+                      </select>
+                      {institutionType === 'Other' && (
+                        <input
+                          type="text"
+                          value={customInstitutionType}
+                          onChange={(e) => setCustomInstitutionType(e.target.value)}
+                          placeholder="Enter custom type"
+                          className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
+                          required
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Facilities Selection */}
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2">
+                      Available Facilities *
+                    </label>
+                    <div className="flex flex-wrap gap-4">
+                      {Object.values(Unit).map(unit => (
+                        <div key={unit} className="flex items-center">
+                          <input
+                            type="checkbox"
+                            id={`facility-${unit}`}
+                            checked={selectedFacilities.includes(unit)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedFacilities(prev => [...prev, unit]);
+                              } else {
+                                // Prevent removing last facility
+                                if (selectedFacilities.length > 1) {
+                                  setSelectedFacilities(prev => prev.filter(f => f !== unit));
+                                } else {
+                                  alert('At least one facility must be selected');
+                                }
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
+                          />
+                          <label htmlFor={`facility-${unit}`} className="ml-2 text-slate-700 dark:text-slate-300 font-medium">
+                            {unit === Unit.SNCU ? 'SNCU' : unit === Unit.NICU ? 'NICU' : 'PICU'}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2">
                       Admin Email *
@@ -594,7 +813,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                       onChange={(e) => setNewAdminEmail(e.target.value)}
                       placeholder="admin@example.com"
                       className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
-                      required
+                      required={!editingInstitution}
+                      disabled={!!editingInstitution} // Disable email field in edit mode
                     />
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                       This email will be assigned as the Admin for this institution
@@ -675,8 +895,30 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                       type="submit"
                       className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
                     >
-                      Create Institution
+                      {editingInstitution ? 'Update Institution' : 'Create Institution'}
                     </button>
+
+                    {editingInstitution && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingInstitution(null);
+                          setNewInstitutionName('');
+                          setNewAdminEmail('');
+                          setNewAdminRoles([UserRole.Admin]);
+                          setSelectedFacilities([Unit.NICU, Unit.PICU]);
+                          setSelectedDistrict(ASSAM_DISTRICTS[0]);
+                          setInstitutionType(INSTITUTION_TYPES[0]);
+                          setCustomInstitutionType('');
+                          setShowAddForm(false);
+                          setError('');
+                        }}
+                        className="px-6 py-3 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-semibold transition-colors"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -684,6 +926,10 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                         setNewInstitutionName('');
                         setNewAdminEmail('');
                         setNewAdminRoles([UserRole.Admin]);
+                        setSelectedFacilities([Unit.NICU, Unit.PICU]);
+                        setSelectedDistrict(ASSAM_DISTRICTS[0]);
+                        setInstitutionType(INSTITUTION_TYPES[0]);
+                        setCustomInstitutionType('');
                         setError('');
                       }}
                       className="px-6 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-lg font-semibold transition-colors"
@@ -738,10 +984,37 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                             <p className="text-slate-500 dark:text-slate-400">
                               <span className="text-slate-500">Created By:</span> {institution.createdBy}
                             </p>
+                            {institution.district && (
+                              <p className="text-slate-500 dark:text-slate-400">
+                                <span className="text-slate-500">Location:</span> {institution.district}
+                                {institution.institutionType && ` • ${institution.institutionType}`}
+                              </p>
+                            )}
+                            {institution.facilities && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {institution.facilities.map(facility => (
+                                  <span key={facility} className={`text-xs px-2 py-0.5 rounded border ${facility === Unit.NICU ? 'bg-sky-50 text-sky-600 border-sky-200' :
+                                    facility === Unit.PICU ? 'bg-purple-50 text-purple-600 border-purple-200' :
+                                      'bg-green-50 text-green-600 border-green-200'
+                                    }`}>
+                                    {facility === Unit.SNCU ? 'SNCU' : facility === Unit.NICU ? 'NICU' : 'PICU'}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
 
                         <div className="flex gap-2 ml-4">
+                          <button
+                            onClick={() => handleEditInstitution(institution)}
+                            className="px-4 py-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-colors text-sm font-medium"
+                            title="Edit institution details"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
                           <button
                             onClick={() => onViewInstitutionDashboard?.(institution.id, institution.name)}
                             className="px-4 py-2 text-green-400 hover:text-green-300 hover:bg-green-500/10 rounded-lg transition-colors text-sm font-medium"
@@ -869,6 +1142,110 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
           </>
         )}
       </div>
+      {/* Manage Users Modal */}
+      {managingUsersFor && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                Manage Users: <span className="text-sky-500">{managingUsersFor.name}</span>
+              </h2>
+              <button
+                onClick={closeManageUsers}
+                className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {error && (
+                <div className="mb-4 bg-red-50 dark:bg-red-500/20 text-red-600 dark:text-red-300 p-4 rounded-lg flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {error}
+                </div>
+              )}
+              {success && (
+                <div className="mb-4 bg-green-50 dark:bg-green-500/20 text-green-600 dark:text-green-300 p-4 rounded-lg flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  {success}
+                </div>
+              )}
+
+              {/* Add User Section */}
+              <div className="mb-8 bg-slate-50 dark:bg-slate-700/30 p-4 rounded-xl">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4">Add New User</h3>
+                <div className="flex flex-col md:flex-row gap-3">
+                  <input
+                    type="email"
+                    placeholder="User Email Address"
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    className="flex-1 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
+                  />
+                  <div className="flex gap-2">
+                    {/* Simple Role Select - just defaulting to Admin for now or reusing existing state */}
+                    <button
+                      onClick={handleAddUserToInstitution}
+                      disabled={!newAdminEmail}
+                      className="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Add User
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  Adding a user will give them access to this institution immediately. They must log in with this email.
+                </p>
+              </div>
+
+              {/* User List */}
+              <div>
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-4">Existing Users</h3>
+                {isUsersLoading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500 mx-auto"></div>
+                  </div>
+                ) : institutionUsers.length === 0 ? (
+                  <p className="text-slate-500 text-center italic">No users found for this institution.</p>
+                ) : (
+                  <ul className="space-y-3">
+                    {institutionUsers.map(user => (
+                      <li key={user.id} className="bg-white dark:bg-slate-700 p-3 rounded-lg border border-slate-200 dark:border-slate-600 flex justify-between items-center">
+                        <div>
+                          <p className="font-semibold text-slate-900 dark:text-white">{user.email}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-500">
+                              {user.role}
+                            </span>
+                            {user.displayName && <span className="text-xs text-slate-500">({user.displayName})</span>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveUser(user.id, user.uid)}
+                          className="text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-2 rounded-lg transition-colors"
+                          title="Remove User"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

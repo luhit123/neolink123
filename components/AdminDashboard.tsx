@@ -23,7 +23,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [success, setSuccess] = useState('');
 
   // Bed capacity state
-  const [bedCapacity, setBedCapacity] = useState<BedCapacity>({ PICU: 0, NICU: 0 });
+  const [bedCapacity, setBedCapacity] = useState<BedCapacity>({ PICU: 0, NICU: 0, SNCU: 0, HDU: 0, GENERAL_WARD: 0 });
   const [showBedManagement, setShowBedManagement] = useState(false);
   const [editingBeds, setEditingBeds] = useState(false);
 
@@ -74,7 +74,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           setBedCapacity(data.bedCapacity);
         } else {
           // Set default if not exists
-          setBedCapacity({ PICU: 0, NICU: 0 });
+          setBedCapacity({ PICU: 0, NICU: 0, SNCU: 0, HDU: 0, GENERAL_WARD: 0 });
         }
       }
     } catch (err: any) {
@@ -87,7 +87,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setError('');
       setSuccess('');
 
-      if (bedCapacity.PICU < 0 || bedCapacity.NICU < 0) {
+      if (bedCapacity.PICU < 0 || bedCapacity.NICU < 0 || (bedCapacity.SNCU && bedCapacity.SNCU < 0) || (bedCapacity.HDU && bedCapacity.HDU < 0) || (bedCapacity.GENERAL_WARD && bedCapacity.GENERAL_WARD < 0)) {
         setError('Bed capacity cannot be negative');
         return;
       }
@@ -96,7 +96,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         bedCapacity: bedCapacity
       });
 
-      setSuccess(`✅ Bed capacity updated: PICU: ${bedCapacity.PICU} beds, NICU: ${bedCapacity.NICU} beds`);
+      setSuccess(`✅ Bed capacity updated: PICU: ${bedCapacity.PICU}, NICU: ${bedCapacity.NICU}, SNCU: ${bedCapacity.SNCU || 0}, HDU: ${bedCapacity.HDU || 0}, General: ${bedCapacity.GENERAL_WARD || 0}`);
       setEditingBeds(false);
       console.log('✅ Bed capacity updated:', bedCapacity);
     } catch (err: any) {
@@ -406,6 +406,76 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onChange={(e) => setBedCapacity({ ...bedCapacity, NICU: parseInt(e.target.value) || 0 })}
                     disabled={!editingBeds}
                     className="w-32 px-4 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-lg font-bold text-center focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-slate-600 dark:text-slate-400">beds</span>
+                </div>
+              </div>
+
+
+              {/* SNCU Beds */}
+              <div className="bg-blue-50 dark:bg-green-900/20 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    SNCU (Special New Born Care Unit)
+                  </label>
+                </div>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="number"
+                    min="0"
+                    value={bedCapacity.SNCU || 0}
+                    onChange={(e) => setBedCapacity({ ...bedCapacity, SNCU: parseInt(e.target.value) || 0 })}
+                    disabled={!editingBeds}
+                    className="w-32 px-4 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-lg font-bold text-center focus:outline-none focus:ring-1 focus:ring-green-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-slate-600 dark:text-slate-400">beds</span>
+                </div>
+              </div>
+
+              {/* HDU Beds */}
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    HDU (High Dependency Unit)
+                  </label>
+                </div>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="number"
+                    min="0"
+                    value={bedCapacity.HDU || 0}
+                    onChange={(e) => setBedCapacity({ ...bedCapacity, HDU: parseInt(e.target.value) || 0 })}
+                    disabled={!editingBeds}
+                    className="w-32 px-4 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-lg font-bold text-center focus:outline-none focus:ring-1 focus:ring-yellow-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-slate-600 dark:text-slate-400">beds</span>
+                </div>
+              </div>
+
+              {/* General Ward Beds */}
+              <div className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <svg className="w-6 h-6 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    General Ward
+                  </label>
+                </div>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="number"
+                    min="0"
+                    value={bedCapacity.GENERAL_WARD || 0}
+                    onChange={(e) => setBedCapacity({ ...bedCapacity, GENERAL_WARD: parseInt(e.target.value) || 0 })}
+                    disabled={!editingBeds}
+                    className="w-32 px-4 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-lg font-bold text-center focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <span className="text-slate-600 dark:text-slate-400">beds</span>
                 </div>
@@ -745,7 +815,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           })()}
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

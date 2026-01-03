@@ -13,6 +13,7 @@ interface PatientFormProps {
   institutionId: string;
   institutionName: string;
   userEmail: string;
+  availableUnits?: Unit[];
 }
 
 const PatientForm: React.FC<PatientFormProps> = ({
@@ -23,7 +24,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
   defaultUnit,
   institutionId,
   institutionName,
-  userEmail
+  userEmail,
+  availableUnits
 }) => {
   const isNurse = userRole === UserRole.Nurse;
   const isDoctor = userRole === UserRole.Doctor || userRole === UserRole.Admin;
@@ -181,12 +183,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
               <div>
                 <label htmlFor="unit" className="block text-sm font-medium text-slate-300 mb-1">Unit</label>
                 <select name="unit" id="unit" value={patient.unit} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields}>
-                  {Object.values(Unit).map(u => <option key={u} value={u}>{u}</option>)}
+                  {(availableUnits || Object.values(Unit)).map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
             </div>
 
-            {patient.unit === Unit.NICU && (
+            {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label htmlFor="admissionType" className="block text-sm font-medium text-slate-300 mb-1">Admission Type</label>

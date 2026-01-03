@@ -12,7 +12,6 @@ import CollapsiblePatientCard from './CollapsiblePatientCard';
 import TimeBasedAnalytics from './TimeBasedAnalytics';
 import BedOccupancy from './BedOccupancy';
 import AIClinicalAssistant from './AIClinicalAssistant';
-import RiskMonitoringPanel from './RiskMonitoringPanel';
 import SmartHandoff from './SmartHandoff';
 import AIReportGenerator from './AIReportGenerator';
 import { BedIcon, ArrowRightOnRectangleIcon, ChartBarIcon, PlusIcon, HomeIcon, ArrowUpOnSquareIcon, PresentationChartBarIcon, ArrowUpIcon, SparklesIcon } from './common/Icons';
@@ -53,6 +52,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [bedCapacity, setBedCapacity] = useState<BedCapacity | undefined>(undefined);
+  const [enabledFacilities, setEnabledFacilities] = useState<Unit[]>([Unit.NICU, Unit.PICU, Unit.SNCU]); // Default to all
   const [selectedUnit, setSelectedUnit] = useState<Unit>(Unit.NICU);
   const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('All');
   const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'This Month' });
@@ -69,7 +69,6 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
   const [chartSelectedYear, setChartSelectedYear] = useState(new Date().getFullYear());
   const [showSummary, setShowSummary] = useState(false);
   const [showDeathsAnalysis, setShowDeathsAnalysis] = useState(false);
-  const [showRiskMonitoring, setShowRiskMonitoring] = useState(false);
   const [showSmartHandoff, setShowSmartHandoff] = useState(false);
   const [showAIReportGenerator, setShowAIReportGenerator] = useState(false);
   const [showPatientDetailsPage, setShowPatientDetailsPage] = useState(false);
@@ -137,7 +136,20 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
           console.log('✅ Loaded bed capacity:', data.bedCapacity);
         } else {
           // Use defaults if not set
-          setBedCapacity({ PICU: 10, NICU: 20 });
+          setBedCapacity({ PICU: 10, NICU: 20, SNCU: 0 });
+        }
+
+        if (data.facilities && data.facilities.length > 0) {
+          setEnabledFacilities(data.facilities);
+
+          // Ensure selected unit is valid
+          if (!data.facilities.includes(selectedUnit)) {
+            setSelectedUnit(data.facilities[0]);
+          }
+          console.log('✅ Loaded facilities:', data.facilities);
+        } else {
+          // Default to NICU+PICU if not set (backward compatibility)
+          setEnabledFacilities([Unit.NICU, Unit.PICU]);
         }
       }
     } catch (error: any) {
@@ -159,11 +171,11 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
     return baseFiltered;
   }, [patients, selectedUnit, nicuView, institutionId]);
 
- const unitPatients = useMemo(() => {
+  const unitPatients = useMemo(() => {
     const baseFiltered = baseUnitPatients;
 
     if (dateFilter.period === 'All Time') {
-        return baseFiltered;
+      return baseFiltered;
     }
 
     let startDate: Date;
@@ -172,80 +184,80 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
     const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
 
     if (periodIsMonth) {
-        const [year, month] = dateFilter.period.split('-').map(Number);
-        startDate = new Date(Date.UTC(year, month - 1, 1));
-        endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      const [year, month] = dateFilter.period.split('-').map(Number);
+      startDate = new Date(Date.UTC(year, month - 1, 1));
+      endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
     } else {
-        const now = new Date();
-        switch (dateFilter.period) {
-            case 'Today':
-                startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-                break;
-            case 'This Week':
-                const firstDayOfWeek = new Date(now);
-                firstDayOfWeek.setDate(now.getDate() - now.getDay());
-                startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
-                
-                const lastDayOfWeek = new Date(firstDayOfWeek);
-                lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
-                endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
-                break;
-            case 'This Month':
-                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-                break;
-            case 'Custom':
-                if (!dateFilter.startDate || !dateFilter.endDate) return baseFiltered;
-                startDate = new Date(dateFilter.startDate);
-                startDate.setHours(0, 0, 0, 0);
-                endDate = new Date(dateFilter.endDate);
-                endDate.setHours(23, 59, 59, 999);
-                break;
-            default:
-                return baseFiltered;
-        }
+      const now = new Date();
+      switch (dateFilter.period) {
+        case 'Today':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+          break;
+        case 'This Week':
+          const firstDayOfWeek = new Date(now);
+          firstDayOfWeek.setDate(now.getDate() - now.getDay());
+          startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
+
+          const lastDayOfWeek = new Date(firstDayOfWeek);
+          lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+          endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
+          break;
+        case 'This Month':
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+          break;
+        case 'Custom':
+          if (!dateFilter.startDate || !dateFilter.endDate) return baseFiltered;
+          startDate = new Date(dateFilter.startDate);
+          startDate.setHours(0, 0, 0, 0);
+          endDate = new Date(dateFilter.endDate);
+          endDate.setHours(23, 59, 59, 999);
+          break;
+        default:
+          return baseFiltered;
+      }
     }
 
     return baseFiltered.filter(p => {
-        const admissionDate = new Date(p.admissionDate);
+      const admissionDate = new Date(p.admissionDate);
 
-        if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
-            const dischargeDate = new Date(p.finalDischargeDate || p.releaseDate!);
-            return dischargeDate >= startDate && dischargeDate <= endDate;
+      if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
+        const dischargeDate = new Date(p.finalDischargeDate || p.releaseDate!);
+        return dischargeDate >= startDate && dischargeDate <= endDate;
+      }
+
+      if (p.outcome === 'Step Down' && p.stepDownDate) {
+        const stepDownDate = new Date(p.stepDownDate);
+        return stepDownDate >= startDate && stepDownDate <= endDate;
+      }
+
+      if (p.outcome === 'In Progress') {
+        const isAdmittedBeforeOrDuringPeriod = admissionDate <= endDate;
+        const releaseDate = p.releaseDate || p.finalDischargeDate;
+        const stillInProgressDuringPeriod = !releaseDate || new Date(releaseDate) >= startDate;
+        return isAdmittedBeforeOrDuringPeriod && stillInProgressDuringPeriod;
+      }
+
+      if (p.outcome === 'Referred') {
+        if (p.releaseDate) {
+          const referralDate = new Date(p.releaseDate);
+          return referralDate >= startDate && referralDate <= endDate;
         }
-
-        if (p.outcome === 'Step Down' && p.stepDownDate) {
-            const stepDownDate = new Date(p.stepDownDate);
-            return stepDownDate >= startDate && stepDownDate <= endDate;
-        }
-
-        if (p.outcome === 'In Progress') {
-            const isAdmittedBeforeOrDuringPeriod = admissionDate <= endDate;
-            const releaseDate = p.releaseDate || p.finalDischargeDate;
-            const stillInProgressDuringPeriod = !releaseDate || new Date(releaseDate) >= startDate;
-            return isAdmittedBeforeOrDuringPeriod && stillInProgressDuringPeriod;
-        }
-
-        if (p.outcome === 'Referred') {
-            if (p.releaseDate) {
-                const referralDate = new Date(p.releaseDate);
-                return referralDate >= startDate && referralDate <= endDate;
-            }
-            return admissionDate >= startDate && admissionDate <= endDate;
-        }
-
-        if (p.outcome === 'Deceased') {
-            if (p.releaseDate) {
-                const deathDate = new Date(p.releaseDate);
-                return deathDate >= startDate && deathDate <= endDate;
-            }
-            return admissionDate >= startDate && admissionDate <= endDate;
-        }
-
         return admissionDate >= startDate && admissionDate <= endDate;
+      }
+
+      if (p.outcome === 'Deceased') {
+        if (p.releaseDate) {
+          const deathDate = new Date(p.releaseDate);
+          return deathDate >= startDate && deathDate <= endDate;
+        }
+        return admissionDate >= startDate && admissionDate <= endDate;
+      }
+
+      return admissionDate >= startDate && admissionDate <= endDate;
     });
-}, [baseUnitPatients, dateFilter]);
+  }, [baseUnitPatients, dateFilter]);
 
   // Apply outcome filter
   const filteredPatients = useMemo(() => {
@@ -261,6 +273,52 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
     const inProgress = unitPatients.filter(p => p.outcome === 'In Progress').length;
     const stepDown = unitPatients.filter(p => p.outcome === 'Step Down').length;
 
+    // Calculate new admissions in this period
+    const newAdmissions = unitPatients.filter(p => {
+      // Filter logic already handles date range for unitPatients, so just check if admission date is within range if needed
+      // But unitPatients is already filtered by the main period.
+      return true;
+    }).length; // This is same as total for unitPatients based on current filter logic, effectively.
+    // Wait, unitPatients logic filters by *active* status during period, not just admission.
+    // We want specifically NEW admissions during this period.
+
+    const admissionsCount = unitPatients.filter(p => {
+      if (dateFilter.period === 'All Time') return true;
+      const admissionDate = new Date(p.admissionDate);
+      let startDate: Date;
+      let endDate: Date;
+
+      // Re-calculate dates for specific admission check (since unitPatients includes active-but-admitted-earlier)
+      // Ideally we should move the date calculation/parsing out to a helper
+      // reusing the date filter logic roughly:
+      const now = new Date();
+      if (/\d{4}-\d{2}/.test(dateFilter.period)) {
+        const [year, month] = dateFilter.period.split('-').map(Number);
+        startDate = new Date(Date.UTC(year, month - 1, 1));
+        endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      } else if (dateFilter.period === 'Today') {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      } else if (dateFilter.period === 'This Week') {
+        const firstDayOfWeek = new Date(now);
+        firstDayOfWeek.setDate(now.getDate() - now.getDay());
+        startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
+        const lastDayOfWeek = new Date(firstDayOfWeek);
+        lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+        endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
+      } else if (dateFilter.period === 'This Month') {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      } else if (dateFilter.period === 'Custom' && dateFilter.startDate && dateFilter.endDate) {
+        startDate = new Date(dateFilter.startDate);
+        endDate = new Date(dateFilter.endDate);
+        endDate.setHours(23, 59, 59, 999);
+      } else {
+        return true;
+      }
+      return admissionDate >= startDate && admissionDate <= endDate;
+    }).length;
+
     const mortalityRate = total > 0 ? ((deceased / total) * 100).toFixed(1) : '0';
     const mortalityPercentage = mortalityRate + '%';
     const dischargeRate = total > 0 ? ((discharged / total) * 100).toFixed(1) : '0';
@@ -272,7 +330,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
     const stepDownRate = total > 0 ? ((stepDown / total) * 100).toFixed(1) : '0';
     const stepDownPercentage = stepDownRate + '%';
 
-    if (selectedUnit === Unit.NICU) {
+    if (selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) {
       const inbornDeaths = unitPatients.filter(p => p.outcome === 'Deceased' && p.admissionType === 'Inborn').length;
       const outbornDeaths = unitPatients.filter(p => p.outcome === 'Deceased' && p.admissionType === 'Outborn').length;
       const inbornTotal = unitPatients.filter(p => p.admissionType === 'Inborn').length;
@@ -284,7 +342,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
         total, deceased, discharged, referred, inProgress, stepDown,
         mortalityRate: mortalityPercentage, dischargeRate: dischargePercentage, referralRate: referralPercentage,
         inProgressPercentage, stepDownPercentage,
-        inbornDeaths, outbornDeaths, inbornMortalityRate, outbornMortalityRate
+        inbornDeaths, outbornDeaths, inbornMortalityRate, outbornMortalityRate, admissionsCount
       };
     }
 
@@ -304,20 +362,20 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
       return {
         total, deceased, discharged, referred, inProgress, stepDown,
         mortalityRate: mortalityPercentage, dischargeRate: dischargePercentage, referralRate: referralPercentage,
-        inProgressPercentage, stepDownPercentage,
+        inProgressPercentage, stepDownPercentage, admissionsCount,
         under5Deaths, under5Total, under5MortalityRate
       };
     }
 
     return {
-      total, deceased, discharged, referred, inProgress, stepDown,
+      total, deceased, discharged, referred, inProgress, stepDown, admissionsCount,
       mortalityRate: mortalityPercentage, dischargeRate: dischargePercentage, referralRate: referralPercentage,
       inProgressPercentage, stepDownPercentage
     };
   }, [unitPatients, selectedUnit]);
 
   const nicuMortalityBreakdown = useMemo(() => {
-    if (selectedUnit !== Unit.NICU || !stats.inbornDeaths || !stats.outbornDeaths) return [];
+    if ((selectedUnit !== Unit.NICU && selectedUnit !== Unit.SNCU) || !stats.inbornDeaths || !stats.outbornDeaths) return [];
     return [
       { name: 'Inborn', value: stats.inbornDeaths },
       { name: 'Outborn', value: stats.outbornDeaths }
@@ -341,8 +399,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
       const now = new Date();
       switch (chartTimeRange) {
         case 'today':
-          startDate = new Date();
-          startDate.setHours(0, 0, 0, 0);
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
           break;
         case 'week':
           startDate = new Date();
@@ -351,7 +409,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
           break;
         case 'month':
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          startDate.setHours(0, 0, 0, 0);
+          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
           break;
         case '3months':
           startDate = new Date();
@@ -372,8 +430,49 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
       }
     }
 
+    // Use the same filtering logic as the main filter - check outcome-specific dates
     return baseUnitPatients.filter(p => {
       const admissionDate = new Date(p.admissionDate);
+
+      // For discharged patients, filter by discharge date
+      if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
+        const dischargeDate = new Date(p.finalDischargeDate || p.releaseDate!);
+        return dischargeDate >= startDate && dischargeDate <= endDate;
+      }
+
+      // For step down patients, filter by step down date
+      if (p.outcome === 'Step Down' && p.stepDownDate) {
+        const stepDownDate = new Date(p.stepDownDate);
+        return stepDownDate >= startDate && stepDownDate <= endDate;
+      }
+
+      // For In Progress patients: show if they were admitted before/during the period
+      if (p.outcome === 'In Progress') {
+        const isAdmittedBeforeOrDuringPeriod = admissionDate <= endDate;
+        const releaseDate = p.releaseDate || p.finalDischargeDate;
+        const stillInProgressDuringPeriod = !releaseDate || new Date(releaseDate) >= startDate;
+        return isAdmittedBeforeOrDuringPeriod && stillInProgressDuringPeriod;
+      }
+
+      // For Referred patients: filter by release date if available
+      if (p.outcome === 'Referred') {
+        if (p.releaseDate) {
+          const referralDate = new Date(p.releaseDate);
+          return referralDate >= startDate && referralDate <= endDate;
+        }
+        return admissionDate >= startDate && admissionDate <= endDate;
+      }
+
+      // For Deceased patients: filter by release date if available
+      if (p.outcome === 'Deceased') {
+        if (p.releaseDate) {
+          const deathDate = new Date(p.releaseDate);
+          return deathDate >= startDate && deathDate <= endDate;
+        }
+        return admissionDate >= startDate && admissionDate <= endDate;
+      }
+
+      // Default: filter by admission date
       return admissionDate >= startDate && admissionDate <= endDate;
     });
   }, [baseUnitPatients, chartTimeRange, chartCustomStartDate, chartCustomEndDate]);
@@ -698,8 +797,11 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex flex-col sm:flex-row items-stretch gap-4 w-full md:w-auto">
-          <UnitSelection selectedUnit={selectedUnit} onSelectUnit={handleSelectUnit} />
-          {hasRole(UserRole.Admin) && setShowAdminPanel && (
+          <UnitSelection
+            selectedUnit={selectedUnit}
+            onSelectUnit={setSelectedUnit}
+            availableUnits={enabledFacilities}
+          />    {hasRole(UserRole.Admin) && setShowAdminPanel && (
             <button onClick={() => setShowAdminPanel(true)} className="flex items-center justify-center gap-2 bg-medical-blue text-white px-4 py-2 rounded-lg hover:bg-medical-blue-light transition-colors font-semibold">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -720,13 +822,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
               <span className="sm:hidden">Deaths</span>
             </button>
           )}
-          {(hasRole(UserRole.Admin) || hasRole(UserRole.Doctor)) && (
-            <button onClick={() => setShowRiskMonitoring(true)} className="flex items-center justify-center gap-2 bg-medical-orange text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
-              <span className="text-lg">🎯</span>
-              <span className="hidden sm:inline">AI Risk Monitor</span>
-              <span className="sm:hidden">Risk</span>
-            </button>
-          )}
+
           {(hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)) && (
             <button onClick={() => setShowSmartHandoff(true)} className="flex items-center justify-center gap-2 bg-medical-teal text-white px-4 py-2 rounded-lg hover:bg-medical-teal-light transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
               <span className="text-lg">📝</span>
@@ -767,6 +863,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
       <DateFilter onFilterChange={setDateFilter} />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 md:gap-4">
+        <StatCard title={`Admissions ${getPeriodTitle(dateFilter.period)}`} value={stats.admissionsCount} icon={<PlusIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-indigo-500/90" />
         <StatCard title={`Total Patients ${getPeriodTitle(dateFilter.period)}`} value={stats.total} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-blue/90" />
         <StatCard title={`In Progress ${getPeriodTitle(dateFilter.period)}`} value={stats.inProgress} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-blue-light/90" />
         <StatCard title={`Step Down ${getPeriodTitle(dateFilter.period)}`} value={stats.stepDown} icon={<ArrowUpIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-blue-500/90" />
@@ -1048,12 +1145,12 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
         </div>
       </div>
 
-      {/* NICU Specific Mortality Breakdown */}
-      {selectedUnit === Unit.NICU && (
+      {/* NICU/SNCU Specific Mortality Breakdown */}
+      {(selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && (
         <div className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 transition-colors duration-200">
           <h3 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
             <span className="text-2xl">🏥</span>
-            NICU Mortality: Inborn vs Outborn Analysis <span className="text-sky-500 text-base">({getChartPeriodTitle()})</span>
+            {selectedUnit} Mortality: Inborn vs Outborn Analysis <span className="text-sky-500 text-base">({getChartPeriodTitle()})</span>
           </h3>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
@@ -1225,7 +1322,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
 
       {/* Analytics Tab */}
       <div className="space-y-6">
-        <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} />
+        <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} availableUnits={enabledFacilities} />
         <TimeBasedAnalytics patients={unitPatients} />
       </div>
 
@@ -1270,21 +1367,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
         />
       )}
 
-      {showRiskMonitoring && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-50 p-2 sm:p-4 overflow-y-auto">
-          <div className="w-full max-w-6xl my-4">
-            <div className="flex justify-end mb-2">
-              <button
-                onClick={() => setShowRiskMonitoring(false)}
-                className="text-white bg-slate-800 hover:bg-slate-700 p-2 rounded-lg transition-colors"
-              >
-                ✕ Close
-              </button>
-            </div>
-            <RiskMonitoringPanel patients={unitPatients} unit={selectedUnit} />
-          </div>
-        </div>
-      )}
+
 
       {showSmartHandoff && institutionName && (
         <SmartHandoff

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from './firebaseConfig';
 import Login from './components/Login';
 import Header from './components/Header';
@@ -10,6 +10,7 @@ import { UserRole, UserProfile } from './types';
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const SuperAdminDashboard = lazy(() => import('./components/SuperAdminDashboard'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const DistrictAdminDashboard = lazy(() => import('./components/DistrictAdminDashboard'));
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -20,6 +21,10 @@ function App() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [accessMessage, setAccessMessage] = useState('');
   const [superAdminViewingInstitution, setSuperAdminViewingInstitution] = useState<{
+    institutionId: string;
+    institutionName: string;
+  } | null>(null);
+  const [districtAdminViewingInstitution, setDistrictAdminViewingInstitution] = useState<{
     institutionId: string;
     institutionName: string;
   } | null>(null);
@@ -72,13 +77,53 @@ function App() {
           setAccessDenied(false);
           console.log('✅ SuperAdmin login');
 
-          // Update last login asynchronously (don't wait)
+          // Update last login
           setDoc(doc(db, 'users', firebaseUser.uid), { lastLoginAt: new Date().toISOString() }, { merge: true });
           return;
         }
       }
 
-      // Step 2: Check approved_users for institution access (SuperAdmin not checked here)
+      // Step 2: Check approved_users for District Admin
+      const districtAdminSnapshot = await getDocs(
+        query(
+          collection(db, 'approved_users'),
+          where('email', '==', firebaseUser.email?.toLowerCase()),
+          where('role', '==', UserRole.DistrictAdmin),
+          where('enabled', '==', true)
+        )
+      );
+
+      if (!districtAdminSnapshot.empty) {
+        const adminData = districtAdminSnapshot.docs[0].data();
+        const profile: UserProfile = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          displayName: adminData.displayName || 'District Admin',
+          role: UserRole.DistrictAdmin,
+          institutionId: 'district-admin', // Placeholder
+          institutionName: `${adminData.assignedDistrict} District`,
+          createdAt: adminData.addedAt || new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+          allRoles: [UserRole.DistrictAdmin]
+        };
+        setUserProfile(profile);
+        setAccessDenied(false);
+        console.log('✅ District Admin login');
+
+        // Update user doc and approved user doc with UID
+        setDoc(doc(db, 'users', firebaseUser.uid), {
+          ...profile,
+          assignedDistrict: adminData.assignedDistrict,
+          lastLoginAt: new Date().toISOString()
+        }, { merge: true });
+
+        if (!adminData.uid) {
+          updateDoc(doc(db, 'approved_users', districtAdminSnapshot.docs[0].id), { uid: firebaseUser.uid });
+        }
+        return;
+      }
+
+      // Step 3: Check approved_users for institution access (SuperAdmin not checked here)
 
       // Check if user found
       if (approvedSnapshot.empty) {
@@ -192,6 +237,14 @@ function App() {
     setShowSuperAdminPanel(true); // Show SuperAdmin panel again
   };
 
+  const handleDistrictAdminViewInstitution = (institutionId: string, institutionName: string) => {
+    setDistrictAdminViewingInstitution({ institutionId, institutionName });
+  };
+
+  const handleBackToDistrictDashboard = () => {
+    setDistrictAdminViewingInstitution(null);
+  };
+
   const handleLogout = async () => {
     try {
       await auth.signOut();
@@ -200,7 +253,9 @@ function App() {
       setShowSuperAdminPanel(false);
       setShowAdminPanel(false);
       setAccessDenied(false);
+      setAccessDenied(false);
       setSuperAdminViewingInstitution(null);
+      setDistrictAdminViewingInstitution(null);
     } catch (error) {
       console.error('❌ Logout error:', error);
     }
@@ -308,6 +363,75 @@ function App() {
     );
   }
 
+  // Show District Admin Dashboard
+  if (userProfile.role === UserRole.DistrictAdmin && !districtAdminViewingInstitution) {
+    return (
+      <Suspense fallback={
+        <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+            <p className="text-slate-600 text-lg">Loading District Dashboard...</p>
+          </div>
+        </div>
+      }>
+        <DistrictAdminDashboard
+          userEmail={user.email!}
+          onLogout={handleLogout}
+          onViewInstitution={handleDistrictAdminViewInstitution}
+        />
+      </Suspense>
+    );
+  }
+
+  // Show District Admin viewing specific Institution
+  if (districtAdminViewingInstitution && userProfile.role === UserRole.DistrictAdmin) {
+    return (
+      <div className="min-h-screen bg-sky-100 text-slate-900">
+        <Header
+          userRole={UserRole.DistrictAdmin} // Pass as DistrictAdmin so they see correct header options
+          onLogout={handleLogout}
+          collegeName={districtAdminViewingInstitution.institutionName}
+        />
+        {/* Back Button Bar */}
+        <div className="bg-indigo-900 text-white px-4 py-2 flex items-center justify-between">
+          <span className="text-sm font-medium">Viewing as District Admin: {districtAdminViewingInstitution.institutionName}</span>
+          <button
+            onClick={handleBackToDistrictDashboard}
+            className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded text-sm transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to District Dashboard
+          </button>
+        </div>
+
+        <main>
+          <div className="container mx-auto p-4 sm:p-6">
+            <Suspense fallback={
+              <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
+                  <p className="text-slate-600 text-lg">Loading Dashboard...</p>
+                </div>
+              </div>
+            }>
+              <Dashboard
+                userRole={UserRole.DistrictAdmin} // Treat as read-only or restricted view if needed
+                institutionId={districtAdminViewingInstitution.institutionId}
+                institutionName={districtAdminViewingInstitution.institutionName}
+                userEmail={user.email || ''}
+                allRoles={[UserRole.DistrictAdmin]}
+                setShowSuperAdminPanel={() => { }} // No-op
+                setShowAdminPanel={() => { }} // No-op
+              />
+            </Suspense>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   // Show SuperAdmin viewing institution dashboard
   if (superAdminViewingInstitution && userProfile.role === UserRole.SuperAdmin) {
     return (
@@ -331,36 +455,36 @@ function App() {
 
   // Main Application
   return (
-      <div className="min-h-screen bg-sky-100 text-slate-900">
-        <Header
-          userRole={userProfile.role}
-          onLogout={handleLogout}
-          collegeName={userProfile.institutionName}
-        />
+    <div className="min-h-screen bg-sky-100 text-slate-900">
+      <Header
+        userRole={userProfile.role}
+        onLogout={handleLogout}
+        collegeName={userProfile.institutionName}
+      />
 
-        <main>
-          <div className="container mx-auto p-4 sm:p-6">
-            <Suspense fallback={
-              <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
-                  <p className="text-slate-600 text-lg">Loading Dashboard...</p>
-                </div>
+      <main>
+        <div className="container mx-auto p-4 sm:p-6">
+          <Suspense fallback={
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
+                <p className="text-slate-600 text-lg">Loading Dashboard...</p>
               </div>
-            }>
-              <Dashboard
-                userRole={userProfile.role}
-                institutionId={userProfile.institutionId}
-                institutionName={userProfile.institutionName}
-                userEmail={user.email || ''}
-                allRoles={userProfile.allRoles}
-                setShowSuperAdminPanel={setShowSuperAdminPanel}
-                setShowAdminPanel={setShowAdminPanel}
-              />
-            </Suspense>
-          </div>
-        </main>
-      </div>
+            </div>
+          }>
+            <Dashboard
+              userRole={userProfile.role}
+              institutionId={userProfile.institutionId}
+              institutionName={userProfile.institutionName}
+              userEmail={user.email || ''}
+              allRoles={userProfile.allRoles}
+              setShowSuperAdminPanel={setShowSuperAdminPanel}
+              setShowAdminPanel={setShowAdminPanel}
+            />
+          </Suspense>
+        </div>
+      </main>
+    </div>
   );
 }
 

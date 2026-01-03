@@ -37,7 +37,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   const unitPatients = useMemo(() => {
     let baseFiltered = patients.filter(p => p.unit === selectedUnit);
 
-    if (selectedUnit === Unit.NICU && nicuView !== 'All') {
+    if ((selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && nicuView !== 'All') {
       baseFiltered = baseFiltered.filter(p => p.admissionType === nicuView);
     }
 
@@ -222,14 +222,14 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
           />
         </div>
 
-        {/* NICU View Selection (conditional) */}
-        {selectedUnit === Unit.NICU && (
+        {/* NICU/SNCU View Selection (conditional) */}
+        {(selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && (
           <div className="bg-white rounded-xl shadow-md border border-sky-200 p-6 transition-all duration-200 hover:shadow-lg">
             <div className="flex items-center gap-3 mb-4">
               <svg className="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
-              <h2 className="text-lg font-bold text-sky-900">NICU Admission Type</h2>
+              <h2 className="text-lg font-bold text-sky-900">{selectedUnit} Admission Type</h2>
             </div>
             <NicuViewSelection nicuView={nicuView} setNicuView={setNicuView} />
           </div>
@@ -295,8 +295,8 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
               {outcomeFilter !== 'All'
                 ? `No patients match the selected status filter: ${outcomeFilter}`
                 : dateFilter.period !== 'All Time'
-                ? `No patients found for the selected date range: ${dateFilter.period}`
-                : 'No patient records available in this unit.'}
+                  ? `No patients found for the selected date range: ${dateFilter.period}`
+                  : 'No patient records available in this unit.'}
             </p>
             {(outcomeFilter !== 'All' || dateFilter.period !== 'All Time') && (
               <button

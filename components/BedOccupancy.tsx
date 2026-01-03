@@ -5,11 +5,12 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tool
 interface BedOccupancyProps {
     patients: Patient[];
     bedCapacity?: BedCapacity;
+    availableUnits?: Unit[];
 }
 
 type TimeRange = '7days' | '30days' | '3months' | '6months' | '12months' | 'current';
 
-const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity }) => {
+const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, availableUnits }) => {
     const [timeRange, setTimeRange] = useState<TimeRange>('current');
 
     const timeRanges = [
@@ -24,11 +25,17 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity }) =>
     // Use bed capacity from props or defaults
     const TOTAL_NICU_BEDS = bedCapacity?.NICU || 20;
     const TOTAL_PICU_BEDS = bedCapacity?.PICU || 10;
+    const TOTAL_SNCU_BEDS = bedCapacity?.SNCU || 15;
+    const TOTAL_HDU_BEDS = bedCapacity?.HDU || 10;
+    const TOTAL_GENERAL_WARD_BEDS = bedCapacity?.GENERAL_WARD || 20;
 
     // Current active patients (for bed grid)
     const activePatients = useMemo(() => patients.filter(p => p.outcome === 'In Progress'), [patients]);
     const nicuPatients = activePatients.filter(p => p.unit === Unit.NICU);
     const picuPatients = activePatients.filter(p => p.unit === Unit.PICU);
+    const sncuPatients = activePatients.filter(p => p.unit === Unit.SNCU);
+    const hduPatients = activePatients.filter(p => p.unit === Unit.HDU);
+    const generalWardPatients = activePatients.filter(p => p.unit === Unit.GENERAL_WARD);
 
     // Historical occupancy data
     const historicalData = useMemo(() => {
@@ -85,18 +92,27 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity }) =>
 
             const nicuCount = patientsOnDate.filter(p => p.unit === Unit.NICU).length;
             const picuCount = patientsOnDate.filter(p => p.unit === Unit.PICU).length;
+            const sncuCount = patientsOnDate.filter(p => p.unit === Unit.SNCU).length;
+            const hduCount = patientsOnDate.filter(p => p.unit === Unit.HDU).length;
+            const generalWardCount = patientsOnDate.filter(p => p.unit === Unit.GENERAL_WARD).length;
 
             dataPoints.push({
                 date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                 NICU: nicuCount,
                 PICU: picuCount,
+                SNCU: sncuCount,
+                HDU: hduCount,
+                GENERAL_WARD: generalWardCount,
                 'NICU Capacity': TOTAL_NICU_BEDS,
                 'PICU Capacity': TOTAL_PICU_BEDS,
+                'SNCU Capacity': TOTAL_SNCU_BEDS,
+                'HDU Capacity': TOTAL_HDU_BEDS,
+                'General Ward Capacity': TOTAL_GENERAL_WARD_BEDS
             });
         }
 
         return dataPoints;
-    }, [patients, timeRange, TOTAL_NICU_BEDS, TOTAL_PICU_BEDS]);
+    }, [patients, timeRange, TOTAL_NICU_BEDS, TOTAL_PICU_BEDS, TOTAL_SNCU_BEDS, TOTAL_HDU_BEDS, TOTAL_GENERAL_WARD_BEDS]);
 
     const renderBedGrid = (totalBeds: number, occupiedPatients: Patient[], title: string, colorClass: string) => {
         const occupiedCount = occupiedPatients.length;
@@ -154,8 +170,8 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity }) =>
                         <div
                             key={bed.id}
                             className={`aspect-square rounded-lg flex items-center justify-center text-xs font-bold transition-all relative group cursor-default ${bed.isOccupied
-                                    ? 'bg-sky-100 text-sky-700 border-2 border-sky-400 shadow-md'
-                                    : 'bg-slate-100 text-slate-400 border-2 border-slate-200'
+                                ? 'bg-sky-100 text-sky-700 border-2 border-sky-400 shadow-md'
+                                : 'bg-slate-100 text-slate-400 border-2 border-slate-200'
                                 }`}
                         >
                             {bed.id}
@@ -213,12 +229,24 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity }) =>
                             <AreaChart data={historicalData}>
                                 <defs>
                                     <linearGradient id="colorNICU" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.8}/>
-                                        <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.1}/>
+                                        <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.8} />
+                                        <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.1} />
                                     </linearGradient>
                                     <linearGradient id="colorPICU" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8}/>
-                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1}/>
+                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8} />
+                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1} />
+                                    </linearGradient>
+                                    <linearGradient id="colorSNCU" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#16a34a" stopOpacity={0.8} />
+                                        <stop offset="95%" stopColor="#16a34a" stopOpacity={0.1} />
+                                    </linearGradient>
+                                    <linearGradient id="colorHDU" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#eab308" stopOpacity={0.8} />
+                                        <stop offset="95%" stopColor="#eab308" stopOpacity={0.1} />
+                                    </linearGradient>
+                                    <linearGradient id="colorGeneralWard" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#64748b" stopOpacity={0.8} />
+                                        <stop offset="95%" stopColor="#64748b" stopOpacity={0.1} />
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
@@ -239,38 +267,106 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity }) =>
                                     }}
                                 />
                                 <Legend wrapperStyle={{ fontSize: '12px' }} />
-                                <Area
-                                    type="monotone"
-                                    dataKey="NICU"
-                                    stroke="#0ea5e9"
-                                    strokeWidth={2}
-                                    fillOpacity={1}
-                                    fill="url(#colorNICU)"
-                                />
-                                <Area
-                                    type="monotone"
-                                    dataKey="PICU"
-                                    stroke="#8b5cf6"
-                                    strokeWidth={2}
-                                    fillOpacity={1}
-                                    fill="url(#colorPICU)"
-                                />
-                                <Line
-                                    type="monotone"
-                                    dataKey="NICU Capacity"
-                                    stroke="#0ea5e9"
-                                    strokeWidth={2}
-                                    strokeDasharray="5 5"
-                                    dot={false}
-                                />
-                                <Line
-                                    type="monotone"
-                                    dataKey="PICU Capacity"
-                                    stroke="#8b5cf6"
-                                    strokeWidth={2}
-                                    strokeDasharray="5 5"
-                                    dot={false}
-                                />
+                                {(!availableUnits || availableUnits.includes(Unit.NICU)) && (
+                                    <Area
+                                        type="monotone"
+                                        dataKey="NICU"
+                                        stroke="#0ea5e9"
+                                        strokeWidth={2}
+                                        fillOpacity={1}
+                                        fill="url(#colorNICU)"
+                                    />
+                                )}
+                                {(!availableUnits || availableUnits.includes(Unit.PICU)) && (
+                                    <Area
+                                        type="monotone"
+                                        dataKey="PICU"
+                                        stroke="#8b5cf6"
+                                        strokeWidth={2}
+                                        fillOpacity={1}
+                                        fill="url(#colorPICU)"
+                                    />
+                                )}
+                                {(!availableUnits || availableUnits.includes(Unit.SNCU)) && (
+                                    <Area
+                                        type="monotone"
+                                        dataKey="SNCU"
+                                        stroke="#16a34a"
+                                        strokeWidth={2}
+                                        fillOpacity={1}
+                                        fill="url(#colorSNCU)"
+                                    />
+                                )}
+                                {(!availableUnits || availableUnits.includes(Unit.NICU)) && (
+                                    <Line
+                                        type="monotone"
+                                        dataKey="NICU Capacity"
+                                        stroke="#0ea5e9"
+                                        strokeWidth={2}
+                                        strokeDasharray="5 5"
+                                        dot={false}
+                                    />
+                                )}
+                                {(!availableUnits || availableUnits.includes(Unit.PICU)) && (
+                                    <Line
+                                        type="monotone"
+                                        dataKey="PICU Capacity"
+                                        stroke="#8b5cf6"
+                                        strokeWidth={2}
+                                        strokeDasharray="5 5"
+                                        dot={false}
+                                    />
+                                )}
+                                {(!availableUnits || availableUnits.includes(Unit.SNCU)) && (
+                                    <Line
+                                        type="monotone"
+                                        dataKey="SNCU Capacity"
+                                        stroke="#16a34a"
+                                        strokeWidth={2}
+                                        strokeDasharray="5 5"
+                                        dot={false}
+                                    />
+                                )}
+                                {(!availableUnits || availableUnits.includes(Unit.HDU)) && (
+                                    <Area
+                                        type="monotone"
+                                        dataKey="HDU"
+                                        stroke="#eab308"
+                                        strokeWidth={2}
+                                        fillOpacity={1}
+                                        fill="url(#colorHDU)"
+                                    />
+                                )}
+                                {(!availableUnits || availableUnits.includes(Unit.GENERAL_WARD)) && (
+                                    <Area
+                                        type="monotone"
+                                        dataKey="GENERAL_WARD"
+                                        stroke="#64748b"
+                                        strokeWidth={2}
+                                        fillOpacity={1}
+                                        fill="url(#colorGeneralWard)"
+                                    />
+                                )}
+                                {(!availableUnits || availableUnits.includes(Unit.HDU)) && (
+                                    <Line
+                                        type="monotone"
+                                        dataKey="HDU Capacity"
+                                        stroke="#eab308"
+                                        strokeWidth={2}
+                                        strokeDasharray="5 5"
+                                        dot={false}
+                                    />
+                                )}
+                                {(!availableUnits || availableUnits.includes(Unit.GENERAL_WARD)) && (
+                                    <Line
+                                        type="monotone"
+                                        dataKey="General Ward Capacity"
+                                        stroke="#64748b"
+                                        strokeWidth={2}
+                                        strokeDasharray="5 5"
+                                        dot={false}
+                                    />
+                                )}
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
@@ -279,9 +375,12 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity }) =>
 
             {/* Current Bed Status Grid */}
             {timeRange === 'current' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {renderBedGrid(TOTAL_NICU_BEDS, nicuPatients, 'NICU Occupancy', 'sky')}
-                    {renderBedGrid(TOTAL_PICU_BEDS, picuPatients, 'PICU Occupancy', 'blue')}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {(!availableUnits || availableUnits.includes(Unit.NICU)) && renderBedGrid(TOTAL_NICU_BEDS, nicuPatients, 'NICU Occupancy', 'sky')}
+                    {(!availableUnits || availableUnits.includes(Unit.PICU)) && renderBedGrid(TOTAL_PICU_BEDS, picuPatients, 'PICU Occupancy', 'blue')}
+                    {(!availableUnits || availableUnits.includes(Unit.SNCU)) && renderBedGrid(TOTAL_SNCU_BEDS, sncuPatients, 'SNCU Occupancy', 'green')}
+                    {(!availableUnits || availableUnits.includes(Unit.HDU)) && renderBedGrid(TOTAL_HDU_BEDS, hduPatients, 'HDU Occupancy', 'yellow')}
+                    {(!availableUnits || availableUnits.includes(Unit.GENERAL_WARD)) && renderBedGrid(TOTAL_GENERAL_WARD_BEDS, generalWardPatients, 'General Ward Occupancy', 'slate')}
                 </div>
             )}
         </div>

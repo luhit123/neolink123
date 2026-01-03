@@ -5,8 +5,8 @@ import { ChevronLeftIcon, BedIcon, ChartBarIcon, ArrowRightOnRectangleIcon, Home
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
 
 interface ComprehensiveSummaryProps {
-  patients: Patient[];
-  onBack: () => void;
+    patients: Patient[];
+    onBack: () => void;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF'];
@@ -15,7 +15,7 @@ const ChartWrapper: React.FC<{ title: string; children: React.ReactNode, noData:
     <div className="bg-slate-800/50 p-3 sm:p-4 md:p-6 rounded-lg sm:rounded-xl shadow-lg border border-slate-700/50 min-h-[250px] sm:min-h-[300px] flex flex-col">
         <h3 className="text-sm sm:text-base md:text-lg font-bold text-white mb-3 sm:mb-4">{title}</h3>
         {noData ? (
-             <div className="flex-grow flex items-center justify-center">
+            <div className="flex-grow flex items-center justify-center">
                 <p className="text-slate-400 text-sm">No data available.</p>
             </div>
         ) : (
@@ -33,11 +33,11 @@ const UnitSummary: React.FC<{ data: Patient[], title: string, isOutborn?: boolea
         const discharged = data.filter(p => p.outcome === 'Discharged').length;
         const referred = data.filter(p => p.outcome === 'Referred').length;
         const inProgress = data.filter(p => p.outcome === 'In Progress').length;
-        
+
         const mortalityRate = total > 0 ? ((deceased / total) * 100).toFixed(1) + '%' : '0%';
         const dischargeRate = total > 0 ? ((discharged / total) * 100).toFixed(1) + '%' : '0%';
         const referralRate = total > 0 ? ((referred / total) * 100).toFixed(1) + '%' : '0%';
-        
+
         const patientsWithStay = data.filter(p => p.releaseDate);
         const totalStayDuration = patientsWithStay.reduce((acc, p) => {
             const admission = new Date(p.admissionDate).getTime();
@@ -48,7 +48,7 @@ const UnitSummary: React.FC<{ data: Patient[], title: string, isOutborn?: boolea
 
         return { total, deceased, discharged, referred, inProgress, mortalityRate, dischargeRate, referralRate, avgStay };
     }, [data]);
-    
+
     const monthlyTrends = useMemo(() => {
         const trends: { [key: string]: { admissions: number; discharges: number } } = {};
         const last12Months = Array.from({ length: 12 }, (_, i) => {
@@ -106,7 +106,7 @@ const UnitSummary: React.FC<{ data: Patient[], title: string, isOutborn?: boolea
             .slice(0, 5)
             .map(([name, value]) => ({ name, value }));
     }, [data]);
-    
+
     const topReferringHospitals = useMemo(() => {
         if (!isOutborn) return [];
         const hospitals = data.reduce((acc, p) => {
@@ -130,17 +130,17 @@ const UnitSummary: React.FC<{ data: Patient[], title: string, isOutborn?: boolea
     return (
         <div className="p-3 sm:p-4 space-y-4 sm:space-y-6">
             <h2 className="text-xl sm:text-2xl font-bold text-sky-400">{title}</h2>
-            
+
             {/* Key Metrics */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-                <StatCard title="Total Patients" value={stats.total} icon={<BedIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white"/>} color="bg-blue-500/80" />
-                <StatCard title="In Progress" value={stats.inProgress} icon={<BedIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white"/>} color="bg-blue-400/80" />
-                <StatCard title="Discharged" value={stats.discharged} icon={<ArrowRightOnRectangleIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white"/>} color="bg-green-500/80" />
-                <StatCard title="Referred" value={stats.referred} icon={<ArrowUpOnSquareIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white"/>} color="bg-orange-500/80" />
-                <StatCard title="Deceased" value={stats.deceased} icon={<ChartBarIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white"/>} color="bg-red-500/80" />
-                <StatCard title="Avg. Stay (Days)" value={stats.avgStay} icon={<BedIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white"/>} color="bg-indigo-500/80" />
+                <StatCard title="Total Patients" value={stats.total} icon={<BedIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />} color="bg-blue-500/80" />
+                <StatCard title="In Progress" value={stats.inProgress} icon={<BedIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />} color="bg-blue-400/80" />
+                <StatCard title="Discharged" value={stats.discharged} icon={<ArrowRightOnRectangleIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />} color="bg-green-500/80" />
+                <StatCard title="Referred" value={stats.referred} icon={<ArrowUpOnSquareIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />} color="bg-orange-500/80" />
+                <StatCard title="Deceased" value={stats.deceased} icon={<ChartBarIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />} color="bg-red-500/80" />
+                <StatCard title="Avg. Stay (Days)" value={stats.avgStay} icon={<BedIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />} color="bg-indigo-500/80" />
             </div>
-            
+
             {/* Rates Comparison */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
                 <div className="bg-gradient-to-br from-green-500/20 to-green-600/10 p-4 sm:p-6 rounded-xl border border-green-500/30">
@@ -161,10 +161,10 @@ const UnitSummary: React.FC<{ data: Patient[], title: string, isOutborn?: boolea
             </div>
             {/* Charts Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                 <ChartWrapper title="📊 Admissions vs. Discharges (Last 12 Months)" noData={monthlyTrends.every(m => m.admissions === 0 && m.discharges === 0)}>
+                <ChartWrapper title="📊 Admissions vs. Discharges (Last 12 Months)" noData={monthlyTrends.every(m => m.admissions === 0 && m.discharges === 0)}>
                     <ResponsiveContainer width="100%" height={300}>
-                       <LineChart data={monthlyTrends}>
-                            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2}/>
+                        <LineChart data={monthlyTrends}>
+                            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
                             <XAxis dataKey="name" stroke="#94a3b8" />
                             <YAxis stroke="#94a3b8" />
                             <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
@@ -174,10 +174,10 @@ const UnitSummary: React.FC<{ data: Patient[], title: string, isOutborn?: boolea
                         </LineChart>
                     </ResponsiveContainer>
                 </ChartWrapper>
-                 <ChartWrapper title="📈 Outcome Distribution" noData={!outcomeDistribution.length}>
+                <ChartWrapper title="📈 Outcome Distribution" noData={!outcomeDistribution.length}>
                     <ResponsiveContainer width="100%" height={300}>
                         <PieChart>
-                             <Pie data={outcomeDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+                            <Pie data={outcomeDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
                                 {outcomeDistribution.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                             </Pie>
                             <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
@@ -185,55 +185,55 @@ const UnitSummary: React.FC<{ data: Patient[], title: string, isOutborn?: boolea
                         </PieChart>
                     </ResponsiveContainer>
                 </ChartWrapper>
-                 <ChartWrapper title="🔬 Rates Comparison" noData={!rateComparisonData.length}>
-                     <ResponsiveContainer width="100%" height={300}>
+                <ChartWrapper title="🔬 Rates Comparison" noData={!rateComparisonData.length}>
+                    <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={rateComparisonData}>
-                             <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2}/>
-                             <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 11 }}/>
-                             <YAxis stroke="#94a3b8" label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }}/>
-                             <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
-                             <Bar dataKey="value" name="Rate (%)">
+                            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+                            <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                            <YAxis stroke="#94a3b8" label={{ value: 'Percentage (%)', angle: -90, position: 'insideLeft', style: { fill: '#94a3b8' } }} />
+                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
+                            <Bar dataKey="value" name="Rate (%)">
                                 {rateComparisonData.map((entry, index) => (
                                     <Cell key={`cell-${index}`} fill={entry.color} />
                                 ))}
-                             </Bar>
-                         </BarChart>
-                     </ResponsiveContainer>
-                 </ChartWrapper>
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </ChartWrapper>
                 <ChartWrapper title="🩺 Top 5 Diagnoses" noData={!topDiagnoses.length}>
-                     <ResponsiveContainer width="100%" height={300}>
+                    <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={topDiagnoses} layout="vertical" margin={{ left: 100 }}>
-                             <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2}/>
-                             <XAxis type="number" stroke="#94a3b8" />
-                             <YAxis type="category" dataKey="name" stroke="#94a3b8" width={150} tick={{ fontSize: 12 }}/>
-                             <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
-                             <Bar dataKey="value" name="Count" fill="#0088FE" />
-                         </BarChart>
-                     </ResponsiveContainer>
-                 </ChartWrapper>
+                            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+                            <XAxis type="number" stroke="#94a3b8" />
+                            <YAxis type="category" dataKey="name" stroke="#94a3b8" width={150} tick={{ fontSize: 12 }} />
+                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
+                            <Bar dataKey="value" name="Count" fill="#0088FE" />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </ChartWrapper>
                 <ChartWrapper title="👥 Gender Distribution" noData={!genderDistribution.length}>
                     <ResponsiveContainer width="100%" height={300}>
                         <PieChart>
-                             <Pie data={genderDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>
-                                 {genderDistribution.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                             </Pie>
-                             <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
-                             <Legend />
+                            <Pie data={genderDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>
+                                {genderDistribution.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                            </Pie>
+                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
+                            <Legend />
                         </PieChart>
                     </ResponsiveContainer>
                 </ChartWrapper>
                 {isOutborn && (
-                     <ChartWrapper title="🏥 Top 5 Referring Hospitals" noData={!topReferringHospitals.length}>
-                         <ResponsiveContainer width="100%" height={300}>
+                    <ChartWrapper title="🏥 Top 5 Referring Hospitals" noData={!topReferringHospitals.length}>
+                        <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={topReferringHospitals} layout="vertical" margin={{ left: 100 }}>
-                                 <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2}/>
-                                 <XAxis type="number" stroke="#94a3b8" />
-                                 <YAxis type="category" dataKey="name" stroke="#94a3b8" width={150} tick={{ fontSize: 12 }}/>
-                                 <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
-                                 <Bar dataKey="value" name="Referrals" fill="#FF8042" />
-                             </BarChart>
-                         </ResponsiveContainer>
-                     </ChartWrapper>
+                                <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+                                <XAxis type="number" stroke="#94a3b8" />
+                                <YAxis type="category" dataKey="name" stroke="#94a3b8" width={150} tick={{ fontSize: 12 }} />
+                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
+                                <Bar dataKey="value" name="Referrals" fill="#FF8042" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </ChartWrapper>
                 )}
             </div>
         </div>
@@ -242,55 +242,80 @@ const UnitSummary: React.FC<{ data: Patient[], title: string, isOutborn?: boolea
 
 
 const ComprehensiveSummary: React.FC<ComprehensiveSummaryProps> = ({ patients, onBack }) => {
-  const picuPatients = useMemo(() => patients.filter(p => p.unit === Unit.PICU), [patients]);
-  const nicuPatients = useMemo(() => patients.filter(p => p.unit === Unit.NICU), [patients]);
-  const nicuInborn = useMemo(() => nicuPatients.filter(p => p.admissionType === AdmissionType.Inborn), [nicuPatients]);
-  const nicuOutborn = useMemo(() => nicuPatients.filter(p => p.admissionType === AdmissionType.Outborn), [nicuPatients]);
-  
-  const [activeNicuTab, setActiveNicuTab] = useState<'Overall' | 'Inborn' | 'Outborn'>('Overall');
-  
-  const nicuTabs: ('Overall' | 'Inborn' | 'Outborn')[] = ['Overall', 'Inborn', 'Outborn'];
+    const picuPatients = useMemo(() => patients.filter(p => p.unit === Unit.PICU), [patients]);
+    const nicuPatients = useMemo(() => patients.filter(p => p.unit === Unit.NICU), [patients]);
+    const nicuInborn = useMemo(() => nicuPatients.filter(p => p.admissionType === AdmissionType.Inborn), [nicuPatients]);
+    const nicuOutborn = useMemo(() => nicuPatients.filter(p => p.admissionType === AdmissionType.Outborn), [nicuPatients]);
 
-  return (
-    <div className="container mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
-        <div className="flex items-center gap-3 sm:gap-4">
-            <button onClick={onBack} className="flex items-center gap-2 text-slate-300 hover:text-white active:text-white transition-colors p-2 -ml-2">
-                <ChevronLeftIcon className="w-5 h-5" />
-            </button>
-            <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white">Comprehensive Summary</h1>
-                <p className="text-xs sm:text-sm text-slate-400">Deep dive into unit performance and patient demographics.</p>
-            </div>
-        </div>
-        
-        <details open className="bg-slate-800 rounded-lg sm:rounded-xl border border-slate-700 overflow-hidden">
-            <summary className="p-3 sm:p-4 bg-slate-700/50 cursor-pointer text-base sm:text-xl font-bold text-white hover:bg-slate-700 active:bg-slate-700 transition-colors">
-                PICU Summary
-            </summary>
-            <UnitSummary data={picuPatients} title="Pediatric Intensive Care Unit Overall" />
-        </details>
-        
-        <details open className="bg-slate-800 rounded-lg sm:rounded-xl border border-slate-700 overflow-hidden">
-            <summary className="p-3 sm:p-4 bg-slate-700/50 cursor-pointer text-base sm:text-xl font-bold text-white hover:bg-slate-700 active:bg-slate-700 transition-colors">
-                NICU Summary
-            </summary>
-            <div className="p-3 sm:p-4 border-b border-slate-700">
-                <div className="flex bg-slate-700/50 p-1 rounded-lg border border-slate-600 w-full">
-                    {nicuTabs.map(tab => (
-                        <button key={tab} onClick={() => setActiveNicuTab(tab)} 
-                        className={`px-3 sm:px-6 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all duration-300 flex-1 ${activeNicuTab === tab ? 'bg-blue-500 text-white shadow-md' : 'text-slate-300 hover:bg-slate-600/50 active:bg-slate-600'}`}>
-                            {tab}
-                        </button>
-                    ))}
+    const sncuPatients = useMemo(() => patients.filter(p => p.unit === Unit.SNCU), [patients]);
+    const sncuInborn = useMemo(() => sncuPatients.filter(p => p.admissionType === AdmissionType.Inborn), [sncuPatients]);
+    const sncuOutborn = useMemo(() => sncuPatients.filter(p => p.admissionType === AdmissionType.Outborn), [sncuPatients]);
+
+    const [activeNicuTab, setActiveNicuTab] = useState<'Overall' | 'Inborn' | 'Outborn'>('Overall');
+    const [activeSncuTab, setActiveSncuTab] = useState<'Overall' | 'Inborn' | 'Outborn'>('Overall');
+
+    const nicuTabs: ('Overall' | 'Inborn' | 'Outborn')[] = ['Overall', 'Inborn', 'Outborn'];
+
+    return (
+        <div className="container mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+                <button onClick={onBack} className="flex items-center gap-2 text-slate-300 hover:text-white active:text-white transition-colors p-2 -ml-2">
+                    <ChevronLeftIcon className="w-5 h-5" />
+                </button>
+                <div>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-white">Comprehensive Summary</h1>
+                    <p className="text-xs sm:text-sm text-slate-400">Deep dive into unit performance and patient demographics.</p>
                 </div>
             </div>
-            
-            {activeNicuTab === 'Overall' && <UnitSummary data={nicuPatients} title="Neonatal Intensive Care Unit - Overall" />}
-            {activeNicuTab === 'Inborn' && <UnitSummary data={nicuInborn} title="NICU - Inborn Patients" />}
-            {activeNicuTab === 'Outborn' && <UnitSummary data={nicuOutborn} title="NICU - Outborn Patients" isOutborn={true} />}
-        </details>
-    </div>
-  );
+
+            <details open className="bg-slate-800 rounded-lg sm:rounded-xl border border-slate-700 overflow-hidden">
+                <summary className="p-3 sm:p-4 bg-slate-700/50 cursor-pointer text-base sm:text-xl font-bold text-white hover:bg-slate-700 active:bg-slate-700 transition-colors">
+                    PICU Summary
+                </summary>
+                <UnitSummary data={picuPatients} title="Pediatric Intensive Care Unit Overall" />
+            </details>
+
+            <details open className="bg-slate-800 rounded-lg sm:rounded-xl border border-slate-700 overflow-hidden">
+                <summary className="p-3 sm:p-4 bg-slate-700/50 cursor-pointer text-base sm:text-xl font-bold text-white hover:bg-slate-700 active:bg-slate-700 transition-colors">
+                    NICU Summary
+                </summary>
+                <div className="p-3 sm:p-4 border-b border-slate-700">
+                    <div className="flex bg-slate-700/50 p-1 rounded-lg border border-slate-600 w-full">
+                        {nicuTabs.map(tab => (
+                            <button key={tab} onClick={() => setActiveNicuTab(tab)}
+                                className={`px-3 sm:px-6 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all duration-300 flex-1 ${activeNicuTab === tab ? 'bg-blue-500 text-white shadow-md' : 'text-slate-300 hover:bg-slate-600/50 active:bg-slate-600'}`}>
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {activeNicuTab === 'Overall' && <UnitSummary data={nicuPatients} title="Neonatal Intensive Care Unit - Overall" />}
+                {activeNicuTab === 'Inborn' && <UnitSummary data={nicuInborn} title="NICU - Inborn Patients" />}
+                {activeNicuTab === 'Outborn' && <UnitSummary data={nicuOutborn} title="NICU - Outborn Patients" isOutborn={true} />}
+            </details>
+
+            <details open className="bg-slate-800 rounded-lg sm:rounded-xl border border-slate-700 overflow-hidden">
+                <summary className="p-3 sm:p-4 bg-slate-700/50 cursor-pointer text-base sm:text-xl font-bold text-white hover:bg-slate-700 active:bg-slate-700 transition-colors">
+                    SNCU Summary
+                </summary>
+                <div className="p-3 sm:p-4 border-b border-slate-700">
+                    <div className="flex bg-slate-700/50 p-1 rounded-lg border border-slate-600 w-full">
+                        {nicuTabs.map(tab => (
+                            <button key={tab} onClick={() => setActiveSncuTab(tab)}
+                                className={`px-3 sm:px-6 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all duration-300 flex-1 ${activeSncuTab === tab ? 'bg-blue-500 text-white shadow-md' : 'text-slate-300 hover:bg-slate-600/50 active:bg-slate-600'}`}>
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {activeSncuTab === 'Overall' && <UnitSummary data={sncuPatients} title="Special New Born Care Unit - Overall" />}
+                {activeSncuTab === 'Inborn' && <UnitSummary data={sncuInborn} title="SNCU - Inborn Patients" />}
+                {activeSncuTab === 'Outborn' && <UnitSummary data={sncuOutborn} title="SNCU - Outborn Patients" isOutborn={true} />}
+            </details>
+        </div>
+    );
 };
 
 export default ComprehensiveSummary;

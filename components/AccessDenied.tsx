@@ -47,7 +47,7 @@ const AccessDenied: React.FC = () => {
         {/* Logout Button */}
         <button
           onClick={handleLogout}
-          className="w-full px-6 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white rounded-xl font-semibold transition-all shadow-lg hover:shadow-cyan-500/50"
+          className="w-full px-6 py-3 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700 text-white rounded-xl font-semibold transition-all shadow-lg hover:shadow-sky-500/50"
         >
           Logout
         </button>

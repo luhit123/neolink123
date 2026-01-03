@@ -130,7 +130,7 @@ const RiskMonitoringPanel: React.FC<RiskMonitoringPanelProps> = ({ patients, uni
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => assessAllPatients()}
-            className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors text-xs sm:text-sm min-h-[40px]"
+            className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors text-xs sm:text-sm min-h-[40px]"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -175,7 +175,7 @@ const RiskMonitoringPanel: React.FC<RiskMonitoringPanelProps> = ({ patients, uni
             onClick={() => setFilter(f)}
             className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors text-xs sm:text-sm whitespace-nowrap min-h-[40px] ${
               filter === f
-                ? 'bg-cyan-600 text-white'
+                ? 'bg-sky-600 text-white'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
           >
@@ -219,7 +219,7 @@ const RiskMonitoringPanel: React.FC<RiskMonitoringPanelProps> = ({ patients, uni
                     </p>
                     {pr.loading ? (
                       <div className="flex items-center gap-2 mt-2">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-500"></div>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-sky-500"></div>
                         <span className="text-slate-400 text-xs">Analyzing patient data...</span>
                       </div>
                     ) : (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Patient } from '../types';
 import { XIcon, WandIcon, ClipboardDocumentListIcon } from './common/Icons';
+import ProgressNoteDisplay from './ProgressNoteDisplay';
 import { generatePatientSummary } from '../services/geminiService';
 
 interface PatientDetailModalProps {
@@ -79,8 +80,8 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({ patient, onClos
 
             {/* Step Down Information Section */}
             {(patient.isStepDown || patient.stepDownDate || patient.readmissionFromStepDown || patient.finalDischargeDate) && (
-                <div className="bg-purple-500/10 border border-purple-500/30 p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold text-purple-300 mb-3 flex items-center gap-2">
+                <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold text-blue-300 mb-3 flex items-center gap-2">
                         🟣 Step Down Information
                     </h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -99,7 +100,7 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({ patient, onClos
                         {patient.isStepDown && (
                             <DetailItem 
                                 label="Current Status" 
-                                value={<span className="text-purple-400 font-semibold">Currently in Step Down</span>} 
+                                value={<span className="text-blue-400 font-semibold">Currently in Step Down</span>} 
                             />
                         )}
                         {patient.readmissionFromStepDown && (
@@ -146,20 +147,36 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({ patient, onClos
                 <p className="text-slate-300">{patient.diagnosis}</p>
             </div>
             <div>
-                <h3 className="text-lg font-semibold text-slate-200 mb-2">Clinical Progress Notes</h3>
-                <div className="space-y-3">
-                    {patient.progressNotes.map((note, index) => (
-                        <div key={index} className="text-slate-300 bg-slate-700/40 p-3 rounded-md">
-                           <p className="text-xs text-slate-400 font-semibold mb-1">{new Date(note.date).toLocaleString()}</p>
-                           <p className="whitespace-pre-wrap">{note.note}</p>
+                <h3 className="text-lg font-semibold text-slate-200 mb-4 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Clinical Progress Notes
+                    <span className="ml-auto text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded">
+                        {patient.progressNotes.length} {patient.progressNotes.length === 1 ? 'entry' : 'entries'}
+                    </span>
+                </h3>
+                <div className="space-y-4">
+                    {patient.progressNotes.length > 0 ? (
+                        patient.progressNotes
+                            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                            .map((note, index) => (
+                                <ProgressNoteDisplay key={index} note={note} />
+                            ))
+                    ) : (
+                        <div className="text-slate-400 text-center py-8 bg-slate-800/30 rounded-lg border border-slate-700 border-dashed">
+                            <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p>No progress notes yet</p>
                         </div>
-                    ))}
+                    )}
                 </div>
             </div>
 
             <div className="border-t border-slate-700 pt-6">
                 <h3 className="text-lg font-semibold text-slate-200 mb-2">AI-Generated Handoff Summary</h3>
-                 <button onClick={handleGenerateSummary} disabled={isLoadingSummary} className="flex items-center gap-2 px-4 py-2 mb-4 rounded-lg text-white bg-cyan-600 hover:bg-cyan-700 transition-colors font-semibold disabled:bg-cyan-800 disabled:cursor-not-allowed">
+                 <button onClick={handleGenerateSummary} disabled={isLoadingSummary} className="flex items-center gap-2 px-4 py-2 mb-4 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors font-semibold disabled:bg-sky-800 disabled:cursor-not-allowed">
                     {isLoadingSummary ? (
                         <>
                         <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">

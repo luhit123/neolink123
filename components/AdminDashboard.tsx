@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { InstitutionUser, UserRole } from '../types';
+import { InstitutionUser, UserRole, BedCapacity } from '../types';
 
 interface AdminDashboardProps {
   institutionId: string;
@@ -22,6 +22,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Bed capacity state
+  const [bedCapacity, setBedCapacity] = useState<BedCapacity>({ PICU: 0, NICU: 0 });
+  const [showBedManagement, setShowBedManagement] = useState(false);
+  const [editingBeds, setEditingBeds] = useState(false);
+
   // Form state
   const [newInstitutionName, setNewInstitutionName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
@@ -29,29 +34,74 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newUserName, setNewUserName] = useState('');
   const [newUserRoles, setNewUserRoles] = useState<UserRole[]>([]);
 
+  // Real-time listener for users
   useEffect(() => {
-    loadUsers();
+    setLoading(true);
+
+    const usersRef = collection(db, 'approved_users');
+    const q = query(usersRef, where('institutionId', '==', institutionId));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id,
+        } as InstitutionUser & { id: string }));
+
+        setUsers(data);
+        setLoading(false);
+        console.log('✅ Real-time update: Loaded', data.length, 'institution users');
+      },
+      (err) => {
+        console.error('❌ Error loading users:', err);
+        setError('Failed to load users: ' + err.message);
+        setLoading(false);
+      }
+    );
+
+    loadBedCapacity();
+
+    return () => unsubscribe();
   }, [institutionId]);
 
-  const loadUsers = async () => {
+  const loadBedCapacity = async () => {
     try {
-      setLoading(true);
-      const usersRef = collection(db, 'approved_users');
-      const q = query(usersRef, where('institutionId', '==', institutionId));
-      const snapshot = await getDocs(q);
-
-      const data = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,
-      } as InstitutionUser & { id: string }));
-
-      setUsers(data);
-      console.log('✅ Loaded institution users:', data.length);
+      const institutionDoc = await getDoc(doc(db, 'institutions', institutionId));
+      if (institutionDoc.exists()) {
+        const data = institutionDoc.data();
+        if (data.bedCapacity) {
+          setBedCapacity(data.bedCapacity);
+        } else {
+          // Set default if not exists
+          setBedCapacity({ PICU: 0, NICU: 0 });
+        }
+      }
     } catch (err: any) {
-      console.error('❌ Error loading users:', err);
-      setError('Failed to load users: ' + err.message);
-    } finally {
-      setLoading(false);
+      console.error('❌ Error loading bed capacity:', err);
+    }
+  };
+
+  const handleUpdateBedCapacity = async () => {
+    try {
+      setError('');
+      setSuccess('');
+
+      if (bedCapacity.PICU < 0 || bedCapacity.NICU < 0) {
+        setError('Bed capacity cannot be negative');
+        return;
+      }
+
+      await updateDoc(doc(db, 'institutions', institutionId), {
+        bedCapacity: bedCapacity
+      });
+
+      setSuccess(`✅ Bed capacity updated: PICU: ${bedCapacity.PICU} beds, NICU: ${bedCapacity.NICU} beds`);
+      setEditingBeds(false);
+      console.log('✅ Bed capacity updated:', bedCapacity);
+    } catch (err: any) {
+      console.error('❌ Error updating bed capacity:', err);
+      setError('Failed to update bed capacity: ' + err.message);
     }
   };
 
@@ -113,7 +163,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setNewUserRoles([]);
       setShowAddForm(false);
 
-      loadUsers();
+      // Real-time listener will automatically update
     } catch (err: any) {
       console.error('❌ Error adding user:', err);
       setError('Failed to add user: ' + err.message);
@@ -133,7 +183,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       setSuccess(`User "${userName}" ${action}d successfully`);
       console.log(`✅ User ${action}d:`, userId);
-      loadUsers();
+      // Real-time listener will automatically update
     } catch (err: any) {
       console.error('❌ Error updating user status:', err);
       setError('Failed to update user status: ' + err.message);
@@ -149,7 +199,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       await deleteDoc(doc(db, 'approved_users', userId));
       setSuccess(`User "${userName}" removed successfully`);
       console.log('✅ User deleted:', userId);
-      loadUsers();
+      // Real-time listener will automatically update
     } catch (err: any) {
       console.error('❌ Error deleting user:', err);
       setError('Failed to remove user: ' + err.message);
@@ -175,7 +225,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       setSuccess(`Role updated for "${userName}" to ${newRole}`);
       console.log('✅ User role updated:', userId);
-      loadUsers();
+      // Real-time listener will automatically update
     } catch (err: any) {
       console.error('❌ Error updating user role:', err);
       setError('Failed to update user role: ' + err.message);
@@ -210,7 +260,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setSuccess(`✅ Email updated successfully!\n\nOld email: ${currentEmail}\nNew email: ${newEmail}\n\nThe old email can no longer access the system.`);
       console.log('✅ User email updated:', userId);
 
-      loadUsers();
+      // Real-time listener will automatically update
     } catch (err: any) {
       console.error('❌ Error updating user email:', err);
       setError('Failed to update user email: ' + err.message);
@@ -220,7 +270,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-cyan-600 dark:from-blue-900 dark:to-cyan-900 border-b border-blue-500 dark:border-blue-700 transition-colors duration-200">
+      <div className="bg-gradient-to-r from-blue-600 to-sky-600 dark:from-blue-900 dark:to-sky-900 border-b border-blue-500 dark:border-blue-700 transition-colors duration-200">
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             <div>
@@ -261,24 +311,133 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* Add User Button */}
-        {!showAddForm && (
-          <div className="mb-6">
+        {/* Action Buttons */}
+        {!showAddForm && !showBedManagement && (
+          <div className="mb-6 flex gap-4">
             <button
               onClick={() => setShowAddForm(true)}
-              className="px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               Add New User
             </button>
+            <button
+              onClick={() => setShowBedManagement(true)}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              Manage Beds
+            </button>
+          </div>
+        )}
+
+        {/* Bed Management Form */}
+        {showBedManagement && (
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 mb-8 border border-blue-500/20 shadow-lg transition-colors duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Bed Capacity Management</h2>
+              <button
+                onClick={() => {
+                  setShowBedManagement(false);
+                  setEditingBeds(false);
+                  loadBedCapacity(); // Reset to saved values
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-slate-600 dark:text-slate-400 mb-6">
+              Configure the number of beds available in each unit. This will help track bed occupancy and capacity.
+            </p>
+
+            <div className="space-y-6">
+              {/* PICU Beds */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    PICU (Pediatric Intensive Care Unit)
+                  </label>
+                  {!editingBeds && (
+                    <button
+                      onClick={() => setEditingBeds(true)}
+                      className="text-blue-600 hover:text-blue-700 font-medium text-sm"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="number"
+                    min="0"
+                    value={bedCapacity.PICU}
+                    onChange={(e) => setBedCapacity({ ...bedCapacity, PICU: parseInt(e.target.value) || 0 })}
+                    disabled={!editingBeds}
+                    className="w-32 px-4 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-lg font-bold text-center focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-slate-600 dark:text-slate-400">beds</span>
+                </div>
+              </div>
+
+              {/* NICU Beds */}
+              <div className="bg-blue-50 dark:bg-sky-900/20 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <svg className="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    NICU (Neonatal Intensive Care Unit)
+                  </label>
+                </div>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="number"
+                    min="0"
+                    value={bedCapacity.NICU}
+                    onChange={(e) => setBedCapacity({ ...bedCapacity, NICU: parseInt(e.target.value) || 0 })}
+                    disabled={!editingBeds}
+                    className="w-32 px-4 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-lg font-bold text-center focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-slate-600 dark:text-slate-400">beds</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              {editingBeds && (
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={handleUpdateBedCapacity}
+                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+                  >
+                    Save Bed Capacity
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingBeds(false);
+                      loadBedCapacity(); // Reset to saved values
+                    }}
+                    className="px-6 py-3 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-semibold transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {/* Add User Form */}
         {showAddForm && (
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 mb-8 border border-cyan-500/20 shadow-lg transition-colors duration-200">
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 mb-8 border border-sky-500/20 shadow-lg transition-colors duration-200">
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Add New User</h2>
             <form onSubmit={handleAddUser} className="space-y-4">
               <div>
@@ -290,7 +449,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   value={newUserEmail}
                   onChange={(e) => setNewUserEmail(e.target.value)}
                   placeholder="user@example.com"
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
                   required
                 />
               </div>
@@ -304,7 +463,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   value={newUserName}
                   onChange={(e) => setNewUserName(e.target.value)}
                   placeholder="Dr. John Doe"
-                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
                   required
                 />
               </div>
@@ -326,7 +485,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setNewUserRoles(prev => prev.filter(role => role !== UserRole.Admin));
                         }
                       }}
-                      className="w-4 h-4 text-cyan-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
+                      className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
                     />
                     <label htmlFor="role-admin" className="ml-2 text-slate-700 dark:text-slate-300">
                       <span className="font-medium">Admin</span> - Can manage users and access all data
@@ -344,7 +503,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setNewUserRoles(prev => prev.filter(role => role !== UserRole.Doctor));
                         }
                       }}
-                      className="w-4 h-4 text-cyan-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
+                      className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
                     />
                     <label htmlFor="role-doctor" className="ml-2 text-slate-700 dark:text-slate-300">
                       <span className="font-medium">Doctor</span> - Can view and edit all patient records
@@ -362,7 +521,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setNewUserRoles(prev => prev.filter(role => role !== UserRole.Nurse));
                         }
                       }}
-                      className="w-4 h-4 text-cyan-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
+                      className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
                     />
                     <label htmlFor="role-nurse" className="ml-2 text-slate-700 dark:text-slate-300">
                       <span className="font-medium">Nurse</span> - Can view records and add patient notes
@@ -451,7 +610,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           {loading ? (
             <div className="p-8 text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500 mx-auto"></div>
               <p className="text-slate-500 dark:text-slate-400 mt-4">Loading users...</p>
             </div>
           ) : users.length === 0 ? (
@@ -503,10 +662,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <div className="flex gap-1">
                               {user.roles.map((role: UserRole) => (
                                 <span key={role} className={`px-3 py-1 rounded-full text-xs font-semibold ${role === UserRole.Admin
-                                  ? 'bg-purple-500/20 text-purple-400'
+                                  ? 'bg-blue-500/20 text-blue-400'
                                   : role === UserRole.Doctor
                                     ? 'bg-blue-500/20 text-blue-400'
-                                    : 'bg-cyan-500/20 text-cyan-400'
+                                    : 'bg-blue-500/20 text-sky-400'
                                   }`}>
                                   {role}
                                 </span>
@@ -516,7 +675,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <div className="space-y-1 text-sm">
                             <p className="text-slate-600 dark:text-slate-300">
                               <span className="text-slate-500">Email:</span>{' '}
-                              <span className="text-cyan-600 dark:text-cyan-400">{user.email}</span>
+                              <span className="text-sky-600 dark:text-sky-400">{user.email}</span>
                             </p>
                             <p className="text-slate-500 dark:text-slate-400">
                               <span className="text-slate-500">Roles:</span>{' '}
@@ -535,7 +694,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="flex gap-2 ml-4">
                           <button
                             onClick={() => handleChangeUserRole(user.userIds[0], user.displayName, user.roles[0])}
-                            className="px-4 py-2 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 rounded-lg transition-colors text-sm font-medium"
+                            className="px-4 py-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-colors text-sm font-medium"
                             title="Change role"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

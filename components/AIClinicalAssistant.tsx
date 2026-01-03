@@ -58,7 +58,7 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
   const getTabColor = (color: string, active: boolean) => {
     const colors: Record<string, { active: string; hover: string }> = {
       cyan: { active: 'bg-medical-teal text-white', hover: 'hover:bg-medical-teal-light' },
-      purple: { active: 'bg-purple-600 text-white', hover: 'hover:bg-purple-700' },
+      purple: { active: 'bg-blue-600 text-white', hover: 'hover:bg-blue-700' },
       red: { active: 'bg-medical-red text-white', hover: 'hover:bg-red-700' },
       green: { active: 'bg-medical-green text-white', hover: 'hover:bg-emerald-700' },
       blue: { active: 'bg-medical-blue text-white', hover: 'hover:bg-medical-blue-light' },
@@ -169,9 +169,9 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-50 p-2 sm:p-4">
-      <div className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-6xl border border-cyan-500/30 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[85vh]">
+      <div className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-6xl border border-sky-500/30 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[85vh]">
         {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-900/50 to-blue-900/50 p-3 sm:p-4 border-b border-cyan-500/20 flex justify-between items-center flex-shrink-0">
+        <div className="bg-gradient-to-r from-sky-900/50 to-blue-900/50 p-3 sm:p-4 border-b border-sky-500/20 flex justify-between items-center flex-shrink-0">
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-medical-teal/20 rounded-lg">
               <SparklesIcon className="w-5 h-5 sm:w-6 sm:h-6 text-medical-teal" />
@@ -230,7 +230,7 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
             {loading ? (
               <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50">
                 <div className="flex flex-col items-center">
-                  <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-cyan-500 mb-3"></div>
+                  <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-sky-500 mb-3"></div>
                   <p className="text-medical-teal animate-pulse text-xs sm:text-sm">Analyzing patient data...</p>
                 </div>
               </div>
@@ -247,7 +247,7 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
                         onChange={(e) => setClinicalQuestion(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleAskQuestion()}
                         placeholder="e.g., What are the latest guidelines for managing RDS?"
-                        className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-cyan-500 min-h-[44px]"
+                        className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-sky-500 min-h-[44px]"
                       />
                       <button
                         onClick={handleAskQuestion}

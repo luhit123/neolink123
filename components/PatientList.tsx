@@ -27,7 +27,7 @@ const PatientList: React.FC<PatientListProps> = ({ patients, userRole, onEdit, o
     switch(outcome) {
         case 'Discharged': return 'bg-green-500/20 text-green-300';
         case 'In Progress': return 'bg-blue-500/20 text-blue-300';
-        case 'Step Down': return 'bg-purple-500/20 text-purple-300';
+        case 'Step Down': return 'bg-blue-500/20 text-blue-300';
         case 'Referred': return 'bg-yellow-500/20 text-yellow-300';
         case 'Deceased': return 'bg-red-500/20 text-red-300';
         default: return 'bg-slate-500/20 text-slate-300';
@@ -47,7 +47,7 @@ const PatientList: React.FC<PatientListProps> = ({ patients, userRole, onEdit, o
                 placeholder="Search by name or diagnosis..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full sm:w-64 bg-slate-700 border border-slate-600 text-white rounded-lg px-3 sm:px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                className="w-full sm:w-64 bg-slate-700 border border-slate-600 text-white rounded-lg px-3 sm:px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
         </div>
       </div>
@@ -82,7 +82,7 @@ const PatientList: React.FC<PatientListProps> = ({ patients, userRole, onEdit, o
                 </td>
                 <td className="px-3 sm:px-6 py-3 sm:py-4 text-right">
                   <div className="flex items-center justify-end space-x-1 sm:space-x-2">
-                    <button onClick={() => onViewDetails(patient)} className="p-1.5 sm:p-2 text-slate-400 hover:text-cyan-400 active:text-cyan-300 transition-colors"><EyeIcon className="w-4 h-4 sm:w-5 sm:h-5"/></button>
+                    <button onClick={() => onViewDetails(patient)} className="p-1.5 sm:p-2 text-slate-400 hover:text-sky-400 active:text-sky-300 transition-colors"><EyeIcon className="w-4 h-4 sm:w-5 sm:h-5"/></button>
                     {canEdit && <button onClick={() => onEdit(patient)} className="p-1.5 sm:p-2 text-slate-400 hover:text-yellow-400 active:text-yellow-300 transition-colors"><EditIcon className="w-4 h-4 sm:w-5 sm:h-5"/></button>}
                     {patient.isStepDown && onStepDownDischarge && (
                       <button 

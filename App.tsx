@@ -103,19 +103,31 @@ function App() {
 
       // Continue with regular role priority logic for non-SuperAdmin users
 
-      // If user has multiple roles, prioritize: Admin > Doctor > Nurse
-      const rolePriority = {
-        [UserRole.Admin]: 1,
-        [UserRole.Doctor]: 2,
-        [UserRole.Nurse]: 3
-      };
-
-      // Sort by role priority (Admin first)
+      // Sort by most recently added institution first (addedAt timestamp)
+      // This ensures when a user is reassigned to a new institution, they see the new one
       const sortedInstitutions = enabledInstitutions.sort((a: any, b: any) => {
+        // First, sort by addedAt timestamp (most recent first)
+        const dateA = new Date(a.addedAt || a.approvedAt || 0).getTime();
+        const dateB = new Date(b.addedAt || b.approvedAt || 0).getTime();
+
+        // Most recent first (descending order)
+        if (dateB !== dateA) {
+          return dateB - dateA;
+        }
+
+        // If timestamps are equal, fall back to role priority (Admin > Doctor > Nurse)
+        const rolePriority = {
+          [UserRole.Admin]: 1,
+          [UserRole.Doctor]: 2,
+          [UserRole.Nurse]: 3
+        };
         return (rolePriority[a.role as UserRole] || 999) - (rolePriority[b.role as UserRole] || 999);
       });
 
       const primaryRole = sortedInstitutions[0];
+
+      console.log('📊 User has access to', sortedInstitutions.length, 'institution(s)');
+      console.log('🏥 Selected institution:', primaryRole.institutionName, '(most recently added)');
       const allRoles = sortedInstitutions.map((inst: any) => inst.role);
 
       // Create user profile
@@ -197,7 +209,7 @@ function App() {
   // Loading state
   if (loading) {
     return (
-      <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
+      <div className="bg-sky-100 min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-teal"></div>
       </div>
     );
@@ -211,7 +223,7 @@ function App() {
   // Access denied
   if (accessDenied) {
     return (
-      <div className="bg-hospital-bg min-h-screen flex items-center justify-center p-4">
+      <div className="bg-sky-100 min-h-screen flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md border border-red-200">
           <div className="flex justify-center mb-6">
             <div className="bg-red-500/10 p-4 rounded-full">
@@ -249,7 +261,7 @@ function App() {
   // User profile not loaded
   if (!userProfile) {
     return (
-      <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
+      <div className="bg-sky-100 min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-teal"></div>
       </div>
     );
@@ -259,7 +271,7 @@ function App() {
   if (showSuperAdminPanel && userProfile.role === UserRole.SuperAdmin) {
     return (
       <Suspense fallback={
-        <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
+        <div className="bg-sky-100 min-h-screen flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-4"></div>
             <p className="text-slate-600 text-lg">Loading SuperAdmin Dashboard...</p>
@@ -279,7 +291,7 @@ function App() {
   if (showAdminPanel && userProfile.role === UserRole.Admin && userProfile.institutionId) {
     return (
       <Suspense fallback={
-        <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
+        <div className="bg-sky-100 min-h-screen flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-blue mx-auto mb-4"></div>
             <p className="text-slate-600 text-lg">Loading Admin Dashboard...</p>
@@ -300,7 +312,7 @@ function App() {
   if (superAdminViewingInstitution && userProfile.role === UserRole.SuperAdmin) {
     return (
       <Suspense fallback={
-        <div className="bg-hospital-bg min-h-screen flex items-center justify-center">
+        <div className="bg-sky-100 min-h-screen flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-blue mx-auto mb-4"></div>
             <p className="text-slate-600 text-lg">Loading Institution Dashboard...</p>
@@ -319,7 +331,7 @@ function App() {
 
   // Main Application
   return (
-      <div className="min-h-screen bg-hospital-bg text-slate-900">
+      <div className="min-h-screen bg-sky-100 text-slate-900">
         <Header
           userRole={userProfile.role}
           onLogout={handleLogout}

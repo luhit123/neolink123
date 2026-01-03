@@ -89,11 +89,11 @@ const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) 
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-3 sm:p-4">
-      <div className="w-full max-w-4xl p-6 sm:p-10 space-y-6 sm:space-y-8 bg-slate-800/80 backdrop-blur-sm rounded-3xl shadow-2xl border border-cyan-500/20">
+      <div className="w-full max-w-4xl p-6 sm:p-10 space-y-6 sm:space-y-8 bg-slate-800/80 backdrop-blur-sm rounded-3xl shadow-2xl border border-sky-500/20">
         <div className="text-center">
-          <div className="inline-block p-4 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-2xl mb-4">
+          <div className="inline-block p-4 bg-gradient-to-br from-sky-500/20 to-blue-500/20 rounded-2xl mb-4">
             <h1 className="text-4xl sm:text-5xl font-bold text-white">
-              <span className="text-cyan-400">Neo</span>Link
+              <span className="text-sky-400">Neo</span>Link
             </h1>
           </div>
           <p className="mt-3 text-base sm:text-lg text-slate-300 font-medium">
@@ -115,7 +115,7 @@ const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) 
               className={`p-4 sm:p-5 rounded-xl border-2 transition-all duration-200 ${
                 college.enabled
                   ? selectedCollege.name === college.name
-                    ? 'bg-cyan-500/20 border-cyan-500 shadow-lg shadow-cyan-500/20 cursor-pointer'
+                    ? 'bg-blue-500/20 border-sky-500 shadow-lg shadow-sky-500/20 cursor-pointer'
                     : 'bg-slate-700/50 border-slate-600 hover:border-slate-500 cursor-pointer'
                   : 'bg-slate-700/20 border-slate-700 opacity-50 cursor-not-allowed'
               }`}
@@ -124,7 +124,7 @@ const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) 
                 <div className="flex-1">
                   <h3 className={`font-bold text-sm sm:text-base mb-1 ${
                     college.enabled && selectedCollege.name === college.name
-                      ? 'text-cyan-300'
+                      ? 'text-sky-300'
                       : college.enabled
                       ? 'text-slate-200'
                       : 'text-slate-500'
@@ -143,7 +143,7 @@ const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) 
                   </span>
                 )}
                 {college.enabled && selectedCollege.name === college.name && (
-                  <span className="ml-2 text-cyan-400 text-xl">✓</span>
+                  <span className="ml-2 text-sky-400 text-xl">✓</span>
                 )}
               </div>
             </div>
@@ -153,7 +153,7 @@ const CollegeSelection: React.FC<CollegeSelectionProps> = ({ onSelectCollege }) 
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
           <button
             onClick={handleContinue}
-            className="w-full py-3 sm:py-4 px-4 border border-transparent text-sm sm:text-base font-semibold rounded-xl text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 focus:ring-offset-slate-800 transition-all shadow-lg hover:shadow-cyan-500/50"
+            className="w-full py-3 sm:py-4 px-4 border border-transparent text-sm sm:text-base font-semibold rounded-xl text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 focus:ring-offset-slate-800 transition-all shadow-lg hover:shadow-sky-500/50"
           >
             ✓ Continue to {selectedCollege.name === 'Nalbari Medical College and Hospital' ? 'Nalbari Medical College' : 'Login'}
           </button>

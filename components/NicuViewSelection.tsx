@@ -21,7 +21,7 @@ const NicuViewSelection: React.FC<NicuViewSelectionProps> = ({ selectedView, onS
               onClick={() => onSelectView(view)}
               className={`px-6 py-2 rounded-md text-sm font-semibold transition-all duration-300 min-w-[100px] ${
                 selectedView === view
-                  ? 'bg-cyan-500 text-white shadow-md'
+                  ? 'bg-blue-500 text-white shadow-md'
                   : 'text-slate-300 hover:bg-slate-600/50'
               }`}
             >

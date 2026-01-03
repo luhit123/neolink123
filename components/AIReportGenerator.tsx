@@ -83,15 +83,15 @@ const AIReportGenerator: React.FC<AIReportGeneratorProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl border border-cyan-500/30 my-4">
+      <div className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl border border-sky-500/30 my-4">
         {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-900/50 to-blue-900/50 p-3 sm:p-4 border-b border-cyan-500/20 flex justify-between items-center">
+        <div className="bg-gradient-to-r from-sky-900/50 to-blue-900/50 p-3 sm:p-4 border-b border-sky-500/20 flex justify-between items-center">
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
               <span className="text-2xl">📊</span>
               AI Report Generator
             </h2>
-            <p className="text-xs sm:text-sm text-cyan-300 mt-1">
+            <p className="text-xs sm:text-sm text-sky-300 mt-1">
               {institutionName} • {unit}
             </p>
           </div>
@@ -113,7 +113,7 @@ const AIReportGenerator: React.FC<AIReportGeneratorProps> = ({
                   onClick={() => setReportType('monthly')}
                   className={`p-4 rounded-lg border-2 transition-all text-left min-h-[80px] ${
                     reportType === 'monthly'
-                      ? 'border-cyan-500 bg-cyan-500/10'
+                      ? 'border-sky-500 bg-blue-500/10'
                       : 'border-slate-700 bg-slate-800/50 hover:border-slate-600'
                   }`}
                 >
@@ -156,7 +156,7 @@ const AIReportGenerator: React.FC<AIReportGeneratorProps> = ({
                 <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-cyan-500 text-sm min-h-[48px]"
+                  className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-sky-500 text-sm min-h-[48px]"
                 >
                   {monthOptions.map(month => {
                     const date = new Date(month + '-01');
@@ -175,7 +175,7 @@ const AIReportGenerator: React.FC<AIReportGeneratorProps> = ({
             <button
               onClick={generateReport}
               disabled={loading}
-              className="w-full px-4 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors text-sm sm:text-base min-h-[48px] flex items-center justify-center gap-2"
+              className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors text-sm sm:text-base min-h-[48px] flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>

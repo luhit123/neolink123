@@ -15,7 +15,7 @@ const UnitSelection: React.FC<UnitSelectionProps> = ({ selectedUnit, onSelectUni
           onClick={() => onSelectUnit(unit)}
           className={`px-6 py-2 rounded-md text-sm font-semibold transition-all duration-300 w-1/2 ${
             selectedUnit === unit
-              ? 'bg-cyan-500 text-white shadow-md'
+              ? 'bg-blue-500 text-white shadow-md'
               : 'text-slate-300 hover:bg-slate-600/50'
           }`}
         >

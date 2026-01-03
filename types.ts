@@ -22,9 +22,46 @@ export enum AdmissionType {
     Outborn = "Outborn"
 }
 
+export interface VitalSigns {
+    temperature?: string; // Temperature in °C or °F
+    hr?: string; // Heart Rate (bpm)
+    rr?: string; // Respiratory Rate (breaths/min)
+    bp?: string; // Blood Pressure (mmHg)
+    spo2?: string; // Oxygen Saturation (%)
+    crt?: string; // Capillary Refill Time (seconds)
+    weight?: string; // Weight (kg/g)
+    [key: string]: string | undefined; // Allow additional vitals
+}
+
+export interface ClinicalExamination {
+    cns?: string; // Central Nervous System
+    cvs?: string; // Cardiovascular System
+    chest?: string; // Chest/Respiratory examination
+    perAbdomen?: string; // Per Abdomen examination
+    otherFindings?: string; // Other significant findings
+}
+
+export interface Medication {
+    name: string;
+    dose: string;
+    route?: string; // IV, PO, IM, etc.
+    frequency?: string; // TID, QID, BD, etc.
+}
+
 export interface ProgressNote {
     date: string; // ISO string
-    note: string;
+    note?: string; // General clinical note (optional now)
+
+    // Vital Signs
+    vitals?: VitalSigns;
+
+    // Clinical Examination
+    examination?: ClinicalExamination;
+
+    // Medications
+    medications?: Medication[];
+
+    // Legacy support
     addedBy?: string; // User name who added the note
     addedByEmail?: string; // User email for documentation
 }
@@ -81,12 +118,18 @@ export interface MonthlyAdmission {
     discharges: number;
 }
 
+export interface BedCapacity {
+  PICU: number;
+  NICU: number;
+}
+
 export interface Institution {
   id: string;
   name: string;
   adminEmail: string; // Admin email for this institution
   createdAt: string;
   createdBy: string; // SuperAdmin email who created it
+  bedCapacity?: BedCapacity; // Bed capacity for each unit
 }
 
 export interface InstitutionUser {

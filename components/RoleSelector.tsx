@@ -39,7 +39,7 @@ const RoleSelector: React.FC<RoleSelectorProps> = ({ userId, currentRole, userEm
           <select
             value={selectedRole}
             onChange={(e) => setSelectedRole(e.target.value as UserRole)}
-            className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-blue-400"
             disabled={updating}
           >
             <option value={UserRole.SuperAdmin}>Super Administrator</option>
@@ -52,7 +52,7 @@ const RoleSelector: React.FC<RoleSelectorProps> = ({ userId, currentRole, userEm
             <button
               onClick={handleUpdateRole}
               disabled={updating}
-              className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
             >
               {updating ? 'Updating...' : 'Update Role'}
             </button>
@@ -60,8 +60,8 @@ const RoleSelector: React.FC<RoleSelectorProps> = ({ userId, currentRole, userEm
         </div>
       </div>
       {selectedRole !== currentRole && (
-        <div className="mt-4 p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
-          <p className="text-sm text-cyan-300">
+        <div className="mt-4 p-3 bg-blue-500/10 border border-sky-500/30 rounded-lg">
+          <p className="text-sm text-sky-300">
             ℹ️ Click "Update Role" to save. The page will automatically refresh to apply the changes.
           </p>
         </div>

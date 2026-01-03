@@ -13,13 +13,13 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelectRole, userName })
       role: UserRole.Admin,
       icon: <AdminIcon className="w-16 h-16" />,
       description: 'Full access to all features, manage users and data',
-      color: 'from-purple-500 to-purple-700'
+      color: 'from-blue-500 to-blue-700'
     },
     {
       role: UserRole.Doctor,
       icon: <DoctorIcon className="w-16 h-16" />,
       description: 'Add, edit patients and manage clinical notes',
-      color: 'from-medical-teal to-teal-700'
+      color: 'from-medical-teal to-sky-700'
     },
     {
       role: UserRole.Nurse,
@@ -30,7 +30,7 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelectRole, userName })
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-teal-50 to-blue-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-sky-50 to-blue-50 flex items-center justify-center p-4">
       <div className="max-w-4xl w-full">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-slate-900 mb-2">Welcome, {userName}! 👋</h1>

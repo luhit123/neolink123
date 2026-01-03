@@ -93,15 +93,15 @@ const SmartHandoff: React.FC<SmartHandoffProps> = ({ patients, unit, onClose }) 
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-6xl border border-cyan-500/30 my-4">
+      <div className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-6xl border border-sky-500/30 my-4">
         {/* Header */}
-        <div className="bg-gradient-to-r from-cyan-900/50 to-blue-900/50 p-3 sm:p-4 border-b border-cyan-500/20 flex justify-between items-center">
+        <div className="bg-gradient-to-r from-sky-900/50 to-blue-900/50 p-3 sm:p-4 border-b border-sky-500/20 flex justify-between items-center">
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
               <span className="text-2xl">📝</span>
               Smart Handoff Generator - {unit}
             </h2>
-            <p className="text-xs sm:text-sm text-cyan-300 mt-1">
+            <p className="text-xs sm:text-sm text-sky-300 mt-1">
               AI-powered SBAR handoff notes for {activePatients.length} active patients
             </p>
           </div>
@@ -119,7 +119,7 @@ const SmartHandoff: React.FC<SmartHandoffProps> = ({ patients, unit, onClose }) 
               onClick={() => setActiveView('individual')}
               className={`flex-1 sm:flex-none px-4 py-2 rounded-lg font-medium transition-colors text-sm min-h-[44px] ${
                 activeView === 'individual'
-                  ? 'bg-cyan-600 text-white'
+                  ? 'bg-sky-600 text-white'
                   : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
               }`}
             >
@@ -129,7 +129,7 @@ const SmartHandoff: React.FC<SmartHandoffProps> = ({ patients, unit, onClose }) 
               onClick={() => setActiveView('rounding')}
               className={`flex-1 sm:flex-none px-4 py-2 rounded-lg font-medium transition-colors text-sm min-h-[44px] ${
                 activeView === 'rounding'
-                  ? 'bg-cyan-600 text-white'
+                  ? 'bg-sky-600 text-white'
                   : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
               }`}
             >
@@ -190,7 +190,7 @@ const SmartHandoff: React.FC<SmartHandoffProps> = ({ patients, unit, onClose }) 
                 <button
                   onClick={generateIndividualHandoffs}
                   disabled={selectedPatients.size === 0 || loading}
-                  className="w-full px-4 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors text-sm sm:text-base min-h-[48px]"
+                  className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors text-sm sm:text-base min-h-[48px]"
                 >
                   {loading
                     ? 'Generating Handoffs...'
@@ -204,13 +204,13 @@ const SmartHandoff: React.FC<SmartHandoffProps> = ({ patients, unit, onClose }) 
                 {activePatients.map(patient => (
                   <label
                     key={patient.id}
-                    className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700 hover:border-cyan-500/50 cursor-pointer transition-colors"
+                    className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700 hover:border-sky-500/50 cursor-pointer transition-colors"
                   >
                     <input
                       type="checkbox"
                       checked={selectedPatients.has(patient.id)}
                       onChange={() => togglePatientSelection(patient.id)}
-                      className="w-5 h-5 rounded border-slate-600 text-cyan-600 focus:ring-cyan-500"
+                      className="w-5 h-5 rounded border-slate-600 text-sky-600 focus:ring-blue-400"
                     />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-white text-sm sm:text-base truncate">{patient.name}</div>
@@ -245,7 +245,7 @@ const SmartHandoff: React.FC<SmartHandoffProps> = ({ patients, unit, onClose }) 
                     return (
                       <div key={patientId} className="bg-slate-800/50 rounded-lg border border-slate-700 p-4">
                         <div className="flex justify-between items-start mb-3">
-                          <h4 className="font-bold text-cyan-400 text-sm sm:text-base">{patient?.name}</h4>
+                          <h4 className="font-bold text-sky-400 text-sm sm:text-base">{patient?.name}</h4>
                           <button
                             onClick={() => copyToClipboard(handoff)}
                             className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs font-medium transition-colors min-h-[36px]"
@@ -271,7 +271,7 @@ const SmartHandoff: React.FC<SmartHandoffProps> = ({ patients, unit, onClose }) 
                 <button
                   onClick={generateRoundingList}
                   disabled={loading}
-                  className="w-full px-4 py-3 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors text-sm sm:text-base min-h-[48px]"
+                  className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors text-sm sm:text-base min-h-[48px]"
                 >
                   {loading ? 'Generating Rounding Sheet...' : 'Generate Prioritized Rounding List'}
                 </button>
@@ -294,7 +294,7 @@ const SmartHandoff: React.FC<SmartHandoffProps> = ({ patients, unit, onClose }) 
                     </div>
 
                     <div className="bg-slate-800/50 rounded-lg border border-slate-700 p-4">
-                      <h3 className="font-bold text-cyan-400 mb-3 text-sm sm:text-base">Prioritized Rounding List</h3>
+                      <h3 className="font-bold text-sky-400 mb-3 text-sm sm:text-base">Prioritized Rounding List</h3>
                       <div className="prose prose-invert prose-sm sm:prose-base max-w-none">
                         <div className="whitespace-pre-line text-slate-300 text-sm sm:text-base leading-relaxed">
                           {roundingSheet}

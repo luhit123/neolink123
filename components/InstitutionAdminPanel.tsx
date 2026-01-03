@@ -88,7 +88,7 @@ const InstitutionAdminPanel: React.FC<InstitutionAdminPanelProps> = ({ instituti
         <div className="mb-6">
           <button
             onClick={() => setShowAddForm(!showAddForm)}
-            className="px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold transition-colors"
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
           >
             + Add New User
           </button>
@@ -109,7 +109,7 @@ const InstitutionAdminPanel: React.FC<InstitutionAdminPanelProps> = ({ instituti
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     required
-                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
                     placeholder="user@example.com"
                   />
                 </div>
@@ -120,7 +120,7 @@ const InstitutionAdminPanel: React.FC<InstitutionAdminPanelProps> = ({ instituti
                   <select
                     value={formData.role}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-blue-400"
                   >
                     <option value={UserRole.Admin}>Administrator</option>
                     <option value={UserRole.Doctor}>Doctor</option>
@@ -131,7 +131,7 @@ const InstitutionAdminPanel: React.FC<InstitutionAdminPanelProps> = ({ instituti
               <div className="flex gap-3">
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold transition-colors"
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
                 >
                   Add User
                 </button>
@@ -156,7 +156,7 @@ const InstitutionAdminPanel: React.FC<InstitutionAdminPanelProps> = ({ instituti
           
           {loading ? (
             <div className="p-12 text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500 mx-auto"></div>
               <p className="text-slate-400 mt-4">Loading users...</p>
             </div>
           ) : users.length === 0 ? (

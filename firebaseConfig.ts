@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 
 // Firebase configuration for NeoLink PICU/NICU Medical Records System
 // Configuration is loaded from environment variables for security
@@ -33,7 +33,9 @@ if (missingEnvVars.length > 0) {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+const db = initializeFirestore(app, {
+  ignoreUndefinedProperties: true
+});
 
 // Analytics loaded lazily only if needed
 let analytics: any = null;

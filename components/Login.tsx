@@ -21,7 +21,7 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-teal-50 to-blue-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-sky-100 to-blue-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md border border-medical-teal/20">
         {/* Logo/Icon */}
         <div className="flex justify-center mb-6">

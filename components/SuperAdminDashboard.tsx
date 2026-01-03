@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, query, where, setDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, query, where, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Institution, UserRole } from '../types';
 // import { initializeDatabase } from '../databaseInit';
@@ -27,34 +27,62 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminRoles, setNewAdminRoles] = useState<UserRole[]>([UserRole.Admin]);
 
+  // Real-time listener for institutions
   useEffect(() => {
-    loadInstitutions();
+    setLoading(true);
+    const institutionsRef = collection(db, 'institutions');
+
+    const unsubscribe = onSnapshot(
+      institutionsRef,
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id,
+        } as Institution));
+        setInstitutions(data);
+        setLoading(false);
+        console.log('✅ Real-time update: Loaded', data.length, 'institutions');
+      },
+      (err) => {
+        console.error('❌ Error loading institutions:', err);
+        setError('Failed to load institutions: ' + err.message);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
   }, []);
 
+  // Real-time listener for patients (when viewing data tab)
   useEffect(() => {
-    if (activeTab === 'data') {
-      loadPatients();
-    }
-  }, [activeTab, selectedInstitution]);
+    if (activeTab !== 'data') return;
 
-  const loadInstitutions = async () => {
-    try {
-      setLoading(true);
-      const institutionsRef = collection(db, 'institutions');
-      const snapshot = await getDocs(institutionsRef);
-      const data = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,
-      } as Institution));
-      setInstitutions(data);
-      console.log('✅ Loaded institutions:', data.length);
-    } catch (err: any) {
-      console.error('❌ Error loading institutions:', err);
-      setError('Failed to load institutions: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    setPatientsLoading(true);
+    const patientsRef = collection(db, 'patients');
+
+    const q = selectedInstitution === 'all'
+      ? patientsRef
+      : query(patientsRef, where('institutionId', '==', selectedInstitution));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id,
+        }));
+        setPatients(data);
+        setPatientsLoading(false);
+        console.log('✅ Real-time update: Loaded', data.length, 'patients');
+      },
+      (err) => {
+        console.error('❌ Error loading patients:', err);
+        setPatientsLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [activeTab, selectedInstitution]);
 
   const handleAddInstitution = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,14 +133,14 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
       await Promise.all(addPromises);
       console.log('✅ Admin added to approved_users with roles:', newAdminRoles);
 
-      setSuccess(`✅ Institution "${newInstitutionName}" added successfully!\n\nAdmin "${newAdminEmail}" can now log in with roles: ${newAdminRoles.join(', ')}.`);
+      setSuccess(`✅ Institution "${newInstitutionName}" added successfully!\n\nAdmin "${newAdminEmail}" can now log in with roles: ${newAdminRoles.join(', ')}.\n\n⚠️ If this admin was previously assigned to another institution, they must LOG OUT completely and LOG BACK IN to see the new institution.`);
       setNewInstitutionName('');
       setNewAdminEmail('');
       setNewAdminRoles([UserRole.Admin]); // Reset to default
       setShowAddForm(false);
 
       // Reload institutions
-      loadInstitutions();
+      // Real-time listener will automatically update
     } catch (err: any) {
       console.error('❌ Error adding institution:', err);
       setError('Failed to add institution: ' + err.message);
@@ -120,15 +148,72 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
   };
 
   const handleDeleteInstitution = async (institutionId: string, institutionName: string) => {
-    if (!confirm(`Are you sure you want to delete "${institutionName}"?`)) {
+    if (!confirm(`Are you sure you want to delete "${institutionName}"? This will delete ALL associated data including approved users and patient records. This action cannot be undone.`)) {
       return;
     }
 
     try {
+      console.log('🗑️ Starting cascade deletion for institution:', institutionId);
+
+      // Step 1: Delete all approved_users entries for this institution
+      const approvedUsersQuery = query(
+        collection(db, 'approved_users'),
+        where('institutionId', '==', institutionId)
+      );
+      const approvedUsersSnapshot = await getDocs(approvedUsersQuery);
+
+      console.log(`📋 Found ${approvedUsersSnapshot.size} approved users to delete`);
+
+      // Collect UIDs before deleting to clear user cache
+      const userUIDs = approvedUsersSnapshot.docs
+        .map(userDoc => userDoc.data().uid)
+        .filter(uid => uid); // Filter out undefined/empty UIDs
+
+      const userDeletePromises = approvedUsersSnapshot.docs.map(userDoc =>
+        deleteDoc(doc(db, 'approved_users', userDoc.id))
+      );
+      await Promise.all(userDeletePromises);
+      console.log('✅ Deleted all approved users');
+
+      // Step 1.5: Clear cached user profiles in users collection
+      if (userUIDs.length > 0) {
+        console.log(`🧹 Clearing cached profiles for ${userUIDs.length} user(s)`);
+        const userCacheClearPromises = userUIDs.map(uid =>
+          updateDoc(doc(db, 'users', uid), {
+            institutionId: null,
+            institutionName: null,
+            role: null
+          }).catch(err => {
+            // Ignore errors if user document doesn't exist
+            console.log(`Note: Could not clear cache for UID ${uid}:`, err.message);
+          })
+        );
+        await Promise.all(userCacheClearPromises);
+        console.log('✅ Cleared user profile cache');
+      }
+
+      // Step 2: Delete all patient records for this institution
+      const patientsQuery = query(
+        collection(db, 'patients'),
+        where('institutionId', '==', institutionId)
+      );
+      const patientsSnapshot = await getDocs(patientsQuery);
+
+      console.log(`📋 Found ${patientsSnapshot.size} patient records to delete`);
+
+      const patientDeletePromises = patientsSnapshot.docs.map(patientDoc =>
+        deleteDoc(doc(db, 'patients', patientDoc.id))
+      );
+      await Promise.all(patientDeletePromises);
+      console.log('✅ Deleted all patient records');
+
+      // Step 3: Delete the institution document itself
       await deleteDoc(doc(db, 'institutions', institutionId));
-      setSuccess(`Institution "${institutionName}" deleted successfully`);
-      console.log('✅ Institution deleted:', institutionId);
-      loadInstitutions();
+      console.log('✅ Deleted institution document');
+
+      setSuccess(`Institution "${institutionName}" and all associated data deleted successfully.\n\n⚠️ IMPORTANT: Users who were part of this institution must LOG OUT and LOG BACK IN to see the changes.`);
+      console.log('✅ Institution deleted completely:', institutionId);
+      // Real-time listener will automatically update
     } catch (err: any) {
       console.error('❌ Error deleting institution:', err);
       setError('Failed to delete institution: ' + err.message);
@@ -193,7 +278,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
       console.log(`✅ Updated ${updatePromises.length} role entries for admin email change`);
 
       // Reload institutions to show updated email
-      loadInstitutions();
+      // Real-time listener will automatically update
 
     } catch (err: any) {
       console.error('❌ Error updating admin email:', err);
@@ -332,7 +417,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
       if (totalMigrated > 0) {
         setSuccess(`✅ Migration successful!\n\n${totalMigrated} patient(s) migrated to the new collection.\n${totalErrors} error(s) encountered.\n\nThe old nested collection data still exists as backup. You can now edit patients normally!`);
         // Reload patients to show migrated data
-        await loadPatients();
+        // Real-time listener will automatically update
       } else {
         setSuccess('✅ No patients found to migrate. Your data is already in the new format!');
       }
@@ -348,7 +433,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-900 dark:to-indigo-900 border-b border-purple-500 dark:border-purple-700 transition-colors duration-200">
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-900 dark:to-indigo-900 border-b border-blue-500 dark:border-blue-700 transition-colors duration-200">
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             <div>
@@ -358,7 +443,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                 </svg>
                 SuperAdmin Dashboard
               </h1>
-              <p className="text-purple-100 dark:text-purple-300 mt-1">Manage institutions and assign admins</p>
+              <p className="text-blue-100 dark:text-blue-300 mt-1">Manage institutions and assign admins</p>
             </div>
             <button
               onClick={onBack}
@@ -394,7 +479,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
           <button
             onClick={() => setActiveTab('institutions')}
             className={`px-6 py-3 font-semibold transition-colors border-b-2 ${activeTab === 'institutions'
-              ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400'
+              ? 'border-sky-500 text-sky-600 dark:text-sky-400'
               : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
               }`}
           >
@@ -408,7 +493,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
           <button
             onClick={() => setActiveTab('data')}
             className={`px-6 py-3 font-semibold transition-colors border-b-2 ${activeTab === 'data'
-              ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400'
+              ? 'border-sky-500 text-sky-600 dark:text-sky-400'
               : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
               }`}
           >
@@ -429,7 +514,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
               <div className="mb-6 flex gap-4 flex-wrap">
                 <button
                   onClick={() => setShowAddForm(true)}
-                  className="px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -482,7 +567,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
 
             {/* Add Institution Form */}
             {showAddForm && (
-              <div className="bg-white dark:bg-slate-800 rounded-xl p-6 mb-8 border border-cyan-500/20 shadow-lg transition-colors duration-200">
+              <div className="bg-white dark:bg-slate-800 rounded-xl p-6 mb-8 border border-sky-500/20 shadow-lg transition-colors duration-200">
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Add New Institution</h2>
                 <form onSubmit={handleAddInstitution} className="space-y-4">
                   <div>
@@ -494,7 +579,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                       value={newInstitutionName}
                       onChange={(e) => setNewInstitutionName(e.target.value)}
                       placeholder="e.g., City Medical Center"
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
+                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
                       required
                     />
                   </div>
@@ -508,7 +593,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                       value={newAdminEmail}
                       onChange={(e) => setNewAdminEmail(e.target.value)}
                       placeholder="admin@example.com"
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
+                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
                       required
                     />
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -536,7 +621,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                               }
                             }
                           }}
-                          className="w-4 h-4 text-cyan-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
+                          className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
                           disabled={true} // Always checked, cannot be unchecked
                         />
                         <label htmlFor="admin-role-admin" className="ml-2 text-slate-700 dark:text-slate-300">
@@ -555,7 +640,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                               setNewAdminRoles(prev => prev.filter(role => role !== UserRole.Doctor));
                             }
                           }}
-                          className="w-4 h-4 text-cyan-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
+                          className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
                         />
                         <label htmlFor="admin-role-doctor" className="ml-2 text-slate-700 dark:text-slate-300">
                           <span className="font-medium">Doctor</span> - Can add/edit patient records and view all data
@@ -573,7 +658,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                               setNewAdminRoles(prev => prev.filter(role => role !== UserRole.Nurse));
                             }
                           }}
-                          className="w-4 h-4 text-cyan-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-cyan-500 focus:ring-2"
+                          className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
                         />
                         <label htmlFor="admin-role-nurse" className="ml-2 text-slate-700 dark:text-slate-300">
                           <span className="font-medium">Nurse</span> - Can add patient drafts and view records
@@ -588,7 +673,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                   <div className="flex gap-3">
                     <button
                       type="submit"
-                      className="px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold transition-colors"
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
                     >
                       Create Institution
                     </button>
@@ -621,7 +706,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
 
               {loading ? (
                 <div className="p-8 text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto"></div>
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500 mx-auto"></div>
                   <p className="text-slate-500 dark:text-slate-400 mt-4">Loading institutions...</p>
                 </div>
               ) : institutions.length === 0 ? (
@@ -644,7 +729,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                           <div className="space-y-1 text-sm">
                             <p className="text-slate-600 dark:text-slate-300">
                               <span className="text-slate-500">Admin Email:</span>{' '}
-                              <span className="text-cyan-600 dark:text-cyan-400">{institution.adminEmail}</span>
+                              <span className="text-sky-600 dark:text-sky-400">{institution.adminEmail}</span>
                             </p>
                             <p className="text-slate-500 dark:text-slate-400">
                               <span className="text-slate-500">Created:</span>{' '}
@@ -703,7 +788,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
               <select
                 value={selectedInstitution}
                 onChange={(e) => setSelectedInstitution(e.target.value)}
-                className="w-full max-w-md px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-colors"
+                className="w-full max-w-md px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
               >
                 <option value="all">All Institutions</option>
                 {institutions.map(inst => (
@@ -726,7 +811,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
 
               {patientsLoading ? (
                 <div className="p-8 text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto"></div>
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500 mx-auto"></div>
                   <p className="text-slate-500 dark:text-slate-400 mt-4">Loading patients...</p>
                 </div>
               ) : patients.length === 0 ? (
@@ -766,7 +851,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                               patient.outcome === 'Discharged' ? 'bg-green-500/20 text-green-400' :
                                 patient.outcome === 'Referred' ? 'bg-blue-500/20 text-blue-400' :
                                   patient.outcome === 'Deceased' ? 'bg-red-500/20 text-red-400' :
-                                    'bg-purple-500/20 text-purple-400'
+                                    'bg-blue-500/20 text-blue-400'
                               }`}>
                               {patient.outcome}
                             </span>

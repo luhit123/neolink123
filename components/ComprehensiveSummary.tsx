@@ -129,7 +129,7 @@ const UnitSummary: React.FC<{ data: Patient[], title: string, isOutborn?: boolea
 
     return (
         <div className="p-3 sm:p-4 space-y-4 sm:space-y-6">
-            <h2 className="text-xl sm:text-2xl font-bold text-cyan-400">{title}</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-sky-400">{title}</h2>
             
             {/* Key Metrics */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
@@ -278,7 +278,7 @@ const ComprehensiveSummary: React.FC<ComprehensiveSummaryProps> = ({ patients, o
                 <div className="flex bg-slate-700/50 p-1 rounded-lg border border-slate-600 w-full">
                     {nicuTabs.map(tab => (
                         <button key={tab} onClick={() => setActiveNicuTab(tab)} 
-                        className={`px-3 sm:px-6 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all duration-300 flex-1 ${activeNicuTab === tab ? 'bg-cyan-500 text-white shadow-md' : 'text-slate-300 hover:bg-slate-600/50 active:bg-slate-600'}`}>
+                        className={`px-3 sm:px-6 py-2 rounded-md text-xs sm:text-sm font-semibold transition-all duration-300 flex-1 ${activeNicuTab === tab ? 'bg-blue-500 text-white shadow-md' : 'text-slate-300 hover:bg-slate-600/50 active:bg-slate-600'}`}>
                             {tab}
                         </button>
                     ))}

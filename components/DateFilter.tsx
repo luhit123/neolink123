@@ -12,7 +12,7 @@ interface DateFilterProps {
 }
 
 const DateFilter: React.FC<DateFilterProps> = ({ onFilterChange }) => {
-  const [period, setPeriod] = useState<Period>('All Time');
+  const [period, setPeriod] = useState<Period>('Today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -59,7 +59,7 @@ const DateFilter: React.FC<DateFilterProps> = ({ onFilterChange }) => {
   const handlePeriodChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setPeriod(e.target.value as Period);
   };
-  
+
   const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newStartDate = e.target.value;
     setStartDate(newStartDate);

@@ -1,5 +1,7 @@
 import {
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -10,15 +12,40 @@ import {
 import { auth, googleProvider } from '../firebaseConfig';
 import { saveUserProfile, getUserProfile } from './firestoreService';
 import { UserRole } from '../types';
+import { isPWAMode } from '../utils/pwaDetection';
 
 // Sign in with Google
 export const signInWithGoogle = async () => {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
+    // Use redirect flow for PWA mode, popup for browser
+    if (isPWAMode()) {
+      // In PWA mode, use redirect (this doesn't return immediately)
+      await signInWithRedirect(auth, googleProvider);
+      // The page will redirect and come back - result handled in handleRedirectResult
+      return null;
+    } else {
+      // In browser mode, use popup
+      const result = await signInWithPopup(auth, googleProvider);
+      return result.user;
+    }
   } catch (error: any) {
     console.error('Error signing in with Google:', error);
     throw new Error(error.message || 'Failed to sign in with Google');
+  }
+};
+
+// Handle redirect result (call this on app load)
+export const handleRedirectResult = async () => {
+  try {
+    const result = await getRedirectResult(auth);
+    if (result) {
+      // User successfully signed in via redirect
+      return result.user;
+    }
+    return null;
+  } catch (error: any) {
+    console.error('Error handling redirect result:', error);
+    throw new Error(error.message || 'Failed to complete sign in');
   }
 };
 

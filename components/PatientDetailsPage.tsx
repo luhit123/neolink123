@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Patient, Unit, UserRole } from '../types';
 import CollapsiblePatientCard from './CollapsiblePatientCard';
 import DateFilter, { DateFilterValue } from './DateFilter';
+import ShiftFilter, { ShiftFilterConfigs } from './ShiftFilter';
 import PatientFilters, { OutcomeFilter } from './PatientFilters';
 import NicuViewSelection from './NicuViewSelection';
 
@@ -29,7 +30,12 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
     return userRole === role || (allRoles && allRoles.includes(role));
   };
 
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'This Month' });
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'Today' });
+  const [shiftFilter, setShiftFilter] = useState<ShiftFilterConfigs>({
+    enabled: false,
+    startTime: '08:00',
+    endTime: '20:00'
+  });
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('All');
   const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('All');
 
@@ -41,107 +47,143 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
       baseFiltered = baseFiltered.filter(p => p.admissionType === nicuView);
     }
 
-    if (dateFilter.period === 'All Time') {
-      return baseFiltered;
+    let filtered = baseFiltered;
+
+    if (dateFilter.period !== 'All Time') {
+      let startDate: Date;
+      let endDate: Date;
+
+      const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
+
+      if (periodIsMonth) {
+        const [year, month] = dateFilter.period.split('-').map(Number);
+        startDate = new Date(Date.UTC(year, month - 1, 1));
+        endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      } else {
+        const now = new Date();
+        switch (dateFilter.period) {
+          case 'Today':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Week':
+            const firstDayOfWeek = new Date(now);
+            firstDayOfWeek.setDate(now.getDate() - now.getDay());
+            startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
+
+            const lastDayOfWeek = new Date(firstDayOfWeek);
+            lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+            endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+            break;
+          case 'Custom':
+            if (!dateFilter.startDate || !dateFilter.endDate) {
+              startDate = new Date(0);
+              endDate = new Date();
+            } else {
+              startDate = new Date(dateFilter.startDate);
+              startDate.setHours(0, 0, 0, 0);
+              endDate = new Date(dateFilter.endDate);
+              endDate.setHours(23, 59, 59, 999);
+            }
+            break;
+          default:
+            startDate = new Date(0);
+            endDate = new Date();
+            break;
+        }
+      }
+
+      if (dateFilter.period === 'Custom' && (!dateFilter.startDate || !dateFilter.endDate)) {
+        // keep filtered as is
+      } else {
+        filtered = filtered.filter(p => {
+          const admissionDate = new Date(p.admissionDate);
+
+          // For discharged patients, filter by discharge date
+          if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
+            const dischargeDate = new Date(p.finalDischargeDate || p.releaseDate!);
+            return dischargeDate >= startDate && dischargeDate <= endDate;
+          }
+
+          // For step down patients, filter by step down date
+          if (p.outcome === 'Step Down' && p.stepDownDate) {
+            const stepDownDate = new Date(p.stepDownDate);
+            return stepDownDate >= startDate && stepDownDate <= endDate;
+          }
+
+          // For In Progress patients
+          if (p.outcome === 'In Progress') {
+            const isAdmittedBeforeOrDuringPeriod = admissionDate <= endDate;
+            const releaseDate = p.releaseDate || p.finalDischargeDate;
+            const stillInProgressDuringPeriod = !releaseDate || new Date(releaseDate) >= startDate;
+            return isAdmittedBeforeOrDuringPeriod && stillInProgressDuringPeriod;
+          }
+
+          // For Referred patients
+          if (p.outcome === 'Referred') {
+            if (p.releaseDate) {
+              const referralDate = new Date(p.releaseDate);
+              return referralDate >= startDate && referralDate <= endDate;
+            }
+            return admissionDate >= startDate && admissionDate <= endDate;
+          }
+
+          // For Deceased patients
+          if (p.outcome === 'Deceased') {
+            if (p.releaseDate) {
+              const deathDate = new Date(p.releaseDate);
+              return deathDate >= startDate && deathDate <= endDate;
+            }
+            return admissionDate >= startDate && admissionDate <= endDate;
+          }
+
+          // Default
+          return admissionDate >= startDate && admissionDate <= endDate;
+        });
+      }
     }
 
-    let startDate: Date;
-    let endDate: Date;
+    // Apply Shift Filter if enabled
+    if (shiftFilter.enabled && shiftFilter.startTime && shiftFilter.endTime) {
+      filtered = filtered.filter(p => {
+        // Determine the relevant date/time for the patient based on their outcome
+        let eventDate: Date;
 
-    const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
+        if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
+          eventDate = new Date(p.finalDischargeDate || p.releaseDate!);
+        } else if (p.outcome === 'Step Down' && p.stepDownDate) {
+          eventDate = new Date(p.stepDownDate);
+        } else if (p.outcome === 'Referred' && p.releaseDate) {
+          eventDate = new Date(p.releaseDate);
+        } else if (p.outcome === 'Deceased' && p.releaseDate) {
+          eventDate = new Date(p.releaseDate);
+        } else {
+          // Default to admission date for 'In Progress' or others
+          eventDate = new Date(p.admissionDate);
+        }
 
-    if (periodIsMonth) {
-      const [year, month] = dateFilter.period.split('-').map(Number);
-      startDate = new Date(year, month - 1, 1);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(year, month, 0);
-      endDate.setHours(23, 59, 59, 999);
-    } else {
-      const now = new Date();
-      switch (dateFilter.period) {
-        case 'Today':
-          startDate = new Date();
-          startDate.setHours(0, 0, 0, 0);
-          endDate = new Date();
-          endDate.setHours(23, 59, 59, 999);
-          break;
-        case 'This Week':
-          const firstDayOfWeek = new Date(now);
-          firstDayOfWeek.setDate(now.getDate() - now.getDay());
-          startDate = new Date(firstDayOfWeek);
-          startDate.setHours(0, 0, 0, 0);
+        const eventTime = eventDate.getHours() * 60 + eventDate.getMinutes();
+        const [startHour, startMinute] = shiftFilter.startTime.split(':').map(Number);
+        const [endHour, endMinute] = shiftFilter.endTime.split(':').map(Number);
+        const startTime = startHour * 60 + startMinute;
+        const endTime = endHour * 60 + endMinute;
 
-          const lastDayOfWeek = new Date(firstDayOfWeek);
-          lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
-          endDate = new Date(lastDayOfWeek);
-          endDate.setHours(23, 59, 59, 999);
-          break;
-        case 'This Month':
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          startDate.setHours(0, 0, 0, 0);
-          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-          endDate.setHours(23, 59, 59, 999);
-          break;
-        case 'Custom':
-          if (!dateFilter.startDate || !dateFilter.endDate) return baseFiltered;
-          startDate = new Date(dateFilter.startDate);
-          startDate.setHours(0, 0, 0, 0);
-          endDate = new Date(dateFilter.endDate);
-          endDate.setHours(23, 59, 59, 999);
-          break;
-        default:
-          return baseFiltered;
-      }
+        if (startTime <= endTime) {
+          // Day shift (e.g. 08:00 to 20:00)
+          return eventTime >= startTime && eventTime <= endTime;
+        } else {
+          // Night shift (e.g. 20:00 to 08:00) - spans midnight
+          return eventTime >= startTime || eventTime <= endTime;
+        }
+      });
     }
 
-    return baseFiltered.filter(p => {
-      const admissionDate = new Date(p.admissionDate);
-
-      // For discharged patients, filter by discharge date
-      if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
-        const dischargeDate = new Date(p.finalDischargeDate || p.releaseDate!);
-        return dischargeDate >= startDate && dischargeDate <= endDate;
-      }
-
-      // For step down patients, filter by step down date
-      if (p.outcome === 'Step Down' && p.stepDownDate) {
-        const stepDownDate = new Date(p.stepDownDate);
-        return stepDownDate >= startDate && stepDownDate <= endDate;
-      }
-
-      // For In Progress patients: show if they were admitted before/during the period
-      // AND are still in progress (not discharged or discharged after the period starts)
-      if (p.outcome === 'In Progress') {
-        const isAdmittedBeforeOrDuringPeriod = admissionDate <= endDate;
-        const releaseDate = p.releaseDate || p.finalDischargeDate;
-        const stillInProgressDuringPeriod = !releaseDate || new Date(releaseDate) >= startDate;
-        return isAdmittedBeforeOrDuringPeriod && stillInProgressDuringPeriod;
-      }
-
-      // For Referred patients: filter by release date if available, otherwise admission date
-      if (p.outcome === 'Referred') {
-        if (p.releaseDate) {
-          const referralDate = new Date(p.releaseDate);
-          return referralDate >= startDate && referralDate <= endDate;
-        }
-        // If no release date, fall back to admission date
-        return admissionDate >= startDate && admissionDate <= endDate;
-      }
-
-      // For Deceased patients: filter by release date if available, otherwise admission date
-      if (p.outcome === 'Deceased') {
-        if (p.releaseDate) {
-          const deathDate = new Date(p.releaseDate);
-          return deathDate >= startDate && deathDate <= endDate;
-        }
-        // If no release date, fall back to admission date
-        return admissionDate >= startDate && admissionDate <= endDate;
-      }
-
-      // Default: filter by admission date
-      return admissionDate >= startDate && admissionDate <= endDate;
-    });
-  }, [patients, selectedUnit, nicuView, dateFilter]);
+    return filtered;
+  }, [patients, selectedUnit, nicuView, dateFilter, shiftFilter]);
 
   // Apply outcome filter
   const filteredPatients = useMemo(() => {
@@ -202,9 +244,12 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
             <svg className="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <h2 className="text-lg font-bold text-sky-900">Date Range Filter</h2>
+            <h2 className="text-lg font-bold text-sky-900">Date & Shift Filters</h2>
           </div>
-          <DateFilter onFilterChange={setDateFilter} />
+          <div className="flex flex-col md:flex-row gap-4">
+            <DateFilter onFilterChange={setDateFilter} />
+            <ShiftFilter onFilterChange={setShiftFilter} />
+          </div>
         </div>
 
         {/* Status Filter */}

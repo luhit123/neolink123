@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+/* Custom theme configuration */
+@theme {
+  --color-medical-teal: #0EA5E9;
+  --color-medical-teal-light: #38BDF8;
+  --color-medical-blue: #0284C7;
+  --color-medical-blue-light: #0EA5E9;
+  --color-medical-green: #16A34A;
+  --color-medical-red: #B91C1C;
+  --color-medical-orange: #C2410C;
+  --color-hospital-bg: #E0F2FE;
+  --color-hospital-card: #FFFFFF;
+}
+
+/* Custom component styles */
+.form-input {
+  width: 100%;
+  background-color: white;
+  border: 1px solid rgb(203 213 225);
+  color: rgb(15 23 42);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  transition: border-color 0.15s ease-in-out;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-medical-teal);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+}

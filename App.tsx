@@ -1,23 +1,30 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { auth, db } from './firebaseConfig';
+import { handleRedirectResult } from './services/authService';
 import Login from './components/Login';
 import Header from './components/Header';
-import { UserRole, UserProfile } from './types';
+import { UserRole, UserProfile, Patient } from './types';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const SuperAdminDashboard = lazy(() => import('./components/SuperAdminDashboard'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const DistrictAdminDashboard = lazy(() => import('./components/DistrictAdminDashboard'));
+const ReferralManagementPage = lazy(() => import('./components/ReferralManagementPage'));
+const PatientForm = lazy(() => import('./components/PatientForm'));
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [redirectChecked, setRedirectChecked] = useState(false);
   const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showReferralManagement, setShowReferralManagement] = useState(false);
+  const [showAddPatientPage, setShowAddPatientPage] = useState(false);
+  const [patientToEdit, setPatientToEdit] = useState<any>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [accessMessage, setAccessMessage] = useState('');
   const [superAdminViewingInstitution, setSuperAdminViewingInstitution] = useState<{
@@ -29,17 +36,53 @@ function App() {
     institutionName: string;
   } | null>(null);
 
+  // Check for redirect result on app load (only once)
+  useEffect(() => {
+    const checkRedirect = async () => {
+      if (!redirectChecked) {
+        try {
+          const user = await handleRedirectResult();
+          if (user) {
+            console.log('✅ User signed in via redirect:', user.email);
+          }
+        } catch (error: any) {
+          console.error('❌ Redirect result error:', error);
+        } finally {
+          setRedirectChecked(true);
+        }
+      }
+    };
+
+    checkRedirect();
+  }, [redirectChecked]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser);
-        await loadUserProfile(firebaseUser);
-      } else {
+      try {
+        if (firebaseUser) {
+          if (!firebaseUser.email) {
+            console.error('❌ User has no email');
+            setAccessDenied(true);
+            setAccessMessage('User account has no email address associated with it.');
+            setUser(null);
+            setUserProfile(null);
+            setLoading(false);
+            return;
+          }
+          setUser(firebaseUser);
+          await loadUserProfile(firebaseUser);
+        } else {
+          setUser(null);
+          setUserProfile(null);
+          setAccessDenied(false);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('❌ Auth state change error:', error);
         setUser(null);
         setUserProfile(null);
-        setAccessDenied(false);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -48,6 +91,11 @@ function App() {
   const loadUserProfile = async (firebaseUser: User) => {
     try {
       console.log('👤 Loading profile for:', firebaseUser.email);
+      const email = firebaseUser.email?.toLowerCase();
+
+      if (!email) {
+        throw new Error('User email is missing');
+      }
 
       // Parallel check: users collection AND approved_users collection
       const [userDoc, approvedSnapshot] = await Promise.all([
@@ -55,7 +103,7 @@ function App() {
         getDocs(
           query(
             collection(db, 'approved_users'),
-            where('email', '==', firebaseUser.email?.toLowerCase()),
+            where('email', '==', email),
             where('enabled', '==', true)
           )
         )
@@ -224,6 +272,8 @@ function App() {
       setAccessDenied(true);
       setAccessMessage('Error loading user profile. Please try again or contact support.');
       setUserProfile(null);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -325,61 +375,93 @@ function App() {
   // Show SuperAdmin Dashboard
   if (showSuperAdminPanel && userProfile.role === UserRole.SuperAdmin) {
     return (
-      <Suspense fallback={
-        <div className="bg-sky-100 min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-4"></div>
-            <p className="text-slate-600 text-lg">Loading SuperAdmin Dashboard...</p>
-          </div>
-        </div>
-      }>
-        <SuperAdminDashboard
-          userEmail={user.email!}
-          onBack={() => setShowSuperAdminPanel(false)}
-          onViewInstitutionDashboard={handleViewInstitutionDashboard}
+      <div className="min-h-screen bg-sky-100 text-slate-900">
+        <Header
+          userRole={UserRole.SuperAdmin}
+          onLogout={handleLogout}
+          collegeName="Super Admin Control System"
         />
-      </Suspense>
+        <main>
+          <Suspense fallback={
+            <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-4"></div>
+                <p className="text-slate-600 text-lg">Loading SuperAdmin Dashboard...</p>
+              </div>
+            </div>
+          }>
+            <SuperAdminDashboard
+              userEmail={user.email!}
+              onBack={() => setShowSuperAdminPanel(false)}
+              onViewInstitutionDashboard={handleViewInstitutionDashboard}
+            />
+          </Suspense>
+        </main>
+      </div>
     );
   }
 
   // Show Admin Dashboard
   if (showAdminPanel && userProfile.role === UserRole.Admin && userProfile.institutionId) {
     return (
-      <Suspense fallback={
-        <div className="bg-sky-100 min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-blue mx-auto mb-4"></div>
-            <p className="text-slate-600 text-lg">Loading Admin Dashboard...</p>
-          </div>
-        </div>
-      }>
-        <AdminDashboard
-          institutionId={userProfile.institutionId}
-          institutionName={userProfile.institutionName!}
-          adminEmail={user.email!}
-          onBack={() => setShowAdminPanel(false)}
+      <div className="min-h-screen bg-sky-100 text-slate-900">
+        <Header
+          userRole={userProfile.role}
+          onLogout={handleLogout}
+          collegeName={userProfile.institutionName}
+          onShowReferrals={() => setShowReferralManagement(true)}
         />
-      </Suspense>
+        <main>
+          <div className="container mx-auto p-4 sm:p-6">
+            <Suspense fallback={
+              <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-blue mx-auto mb-4"></div>
+                  <p className="text-slate-600 text-lg">Loading Admin Dashboard...</p>
+                </div>
+              </div>
+            }>
+              <AdminDashboard
+                institutionId={userProfile.institutionId}
+                institutionName={userProfile.institutionName!}
+                adminEmail={user.email!}
+                onBack={() => setShowAdminPanel(false)}
+              />
+            </Suspense>
+          </div>
+        </main>
+      </div>
     );
   }
 
   // Show District Admin Dashboard
   if (userProfile.role === UserRole.DistrictAdmin && !districtAdminViewingInstitution) {
     return (
-      <Suspense fallback={
-        <div className="bg-sky-100 min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-            <p className="text-slate-600 text-lg">Loading District Dashboard...</p>
-          </div>
-        </div>
-      }>
-        <DistrictAdminDashboard
-          userEmail={user.email!}
+      <div className="min-h-screen bg-sky-100 text-slate-900">
+        <Header
+          userRole={UserRole.DistrictAdmin}
           onLogout={handleLogout}
-          onViewInstitution={handleDistrictAdminViewInstitution}
+          collegeName={`${userProfile.institutionName} Dashboard`}
         />
-      </Suspense>
+        <main>
+          <div className="container mx-auto p-4 sm:p-6">
+            <Suspense fallback={
+              <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                  <p className="text-slate-600 text-lg">Loading District Dashboard...</p>
+                </div>
+              </div>
+            }>
+              <DistrictAdminDashboard
+                userEmail={user.email!}
+                onLogout={handleLogout}
+                onViewInstitution={handleDistrictAdminViewInstitution}
+              />
+            </Suspense>
+          </div>
+        </main>
+      </div>
     );
   }
 
@@ -453,6 +535,112 @@ function App() {
     );
   }
 
+  // Show Referral Management Page
+  if (showReferralManagement && userProfile.institutionId) {
+    return (
+      <div className="min-h-screen bg-sky-100 text-slate-900">
+        <Header
+          userRole={userProfile.role}
+          onLogout={handleLogout}
+          collegeName={userProfile.institutionName}
+          onShowReferrals={() => { }} // Already on referrals page
+        />
+        <main>
+          <div className="container mx-auto p-4 sm:p-6">
+            <Suspense fallback={
+              <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+              </div>
+            }>
+              <ReferralManagementPage
+                institutionId={userProfile.institutionId}
+                institutionName={userProfile.institutionName || ''}
+                userEmail={user.email || ''}
+                userRole={userProfile.role}
+                userName={userProfile.displayName || ''}
+                onBack={() => setShowReferralManagement(false)}
+              />
+            </Suspense>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Show Add/Edit Patient Page
+  if (showAddPatientPage && userProfile.institutionId) {
+    return (
+      <div className="min-h-screen bg-slate-900">
+        <Header
+          userRole={UserRole.Doctor} // Default to Doctor role for adding patients usually, or use userProfile.role
+          onLogout={handleLogout}
+          collegeName={userProfile.institutionName}
+        />
+        <main>
+          <Suspense fallback={
+            <div className="bg-slate-900 min-h-screen flex items-center justify-center">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p className="text-slate-300 text-lg">Loading Patient Form...</p>
+              </div>
+            </div>
+          }>
+            <PatientForm
+              patientToEdit={patientToEdit}
+              onSave={async (patientData: Patient) => {
+                try {
+                  console.log('💾 Saving patient from Add Patient page...');
+
+                  // Clean the data: remove undefined values and ensure progress notes is always an array
+                  const cleanedData = {
+                    ...patientData,
+                    progressNotes: patientData.progressNotes || [],
+                  };
+
+                  // Remove undefined fields to prevent Firestore errors
+                  const sanitizedData = JSON.parse(JSON.stringify(cleanedData, (key, value) => {
+                    return value === undefined ? null : value;
+                  }));
+
+                  if (patientToEdit) {
+                    // Update existing patient
+                    const patientRef = doc(db, 'patients', patientToEdit.id);
+                    await updateDoc(patientRef, sanitizedData);
+                    console.log('✅ Patient updated successfully:', patientData.id);
+                  } else {
+                    // Add new patient
+                    const patientsRef = collection(db, 'patients');
+                    const docRef = await addDoc(patientsRef, sanitizedData);
+                    console.log('✅ Patient added successfully:', docRef.id);
+                  }
+
+                  // Close the page after successful save
+                  setShowAddPatientPage(false);
+                  setPatientToEdit(null);
+                  alert('Patient saved successfully!');
+                } catch (error: any) {
+                  console.error('❌ Error saving patient:', error);
+                  alert('Failed to save patient: ' + error.message);
+                }
+              }}
+              onClose={() => {
+                setShowAddPatientPage(false);
+                setPatientToEdit(null);
+              }}
+              userRole={userProfile.role}
+              defaultUnit={undefined}
+              institutionId={userProfile.institutionId}
+              institutionName={userProfile.institutionName || ''}
+              userEmail={user.email || ''}
+              userName={userProfile.displayName}
+              availableUnits={undefined}
+            />
+          </Suspense>
+        </main>
+      </div>
+    );
+  }
+
   // Main Application
   return (
     <div className="min-h-screen bg-sky-100 text-slate-900">
@@ -460,6 +648,7 @@ function App() {
         userRole={userProfile.role}
         onLogout={handleLogout}
         collegeName={userProfile.institutionName}
+        onShowReferrals={() => setShowReferralManagement(true)}
       />
 
       <main>
@@ -480,6 +669,11 @@ function App() {
               allRoles={userProfile.allRoles}
               setShowSuperAdminPanel={setShowSuperAdminPanel}
               setShowAdminPanel={setShowAdminPanel}
+              onShowReferrals={() => setShowReferralManagement(true)}
+              onShowAddPatient={(patient: any) => {
+                setPatientToEdit(patient || null);
+                setShowAddPatientPage(true);
+              }}
             />
           </Suspense>
         </div>

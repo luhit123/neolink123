@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../firebaseConfig';
+import { signInWithGoogle } from '../services/authService';
 
 const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -11,11 +10,13 @@ const Login: React.FC = () => {
     setError(null);
 
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInWithGoogle();
+      // In PWA mode, the page will redirect away
+      // In browser mode, the popup will handle auth
+      // Auth state listener in App.tsx will handle navigation in both cases
     } catch (err: any) {
       console.error('Login error:', err);
       setError(err.message || 'Failed to sign in. Please try again.');
-    } finally {
       setLoading(false);
     }
   };

@@ -53,6 +53,11 @@ googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
 
+// Ensure redirect works for both browser and PWA mode
+// Firebase handles redirect URIs automatically, but you should verify
+// in Firebase Console > Authentication > Settings > Authorized domains
+// that your domain (including localhost for testing) is listed
+
 // Export all Firebase services
 export { app, db, auth, analytics };
 

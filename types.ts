@@ -23,7 +23,47 @@ export enum AgeUnit {
 
 export enum AdmissionType {
   Inborn = "Inborn",
-  Outborn = "Outborn"
+  OutbornHealthFacility = "Outborn (Health Facility Referred)",
+  OutbornCommunity = "Outborn (Community Referred)"
+}
+
+export enum Category {
+  General = "General",
+  OBC = "OBC",
+  SC = "SC",
+  ST = "ST"
+}
+
+export enum PlaceOfDelivery {
+  Home = "Home",
+  Ambulance = "Ambulance",
+  PrivateHospital = "Private Hospital",
+  GovernmentHospital = "Government Hospital"
+}
+
+export enum ModeOfTransport {
+  SelfArranged = "Self Arranged",
+  GovernmentProvided = "Government Provided"
+}
+
+export enum ModeOfDelivery {
+  Normal = "Normal Vaginal Delivery",
+  Cesarean = "Cesarean Section (C-Section)",
+  Forceps = "Forceps Assisted",
+  Vacuum = "Vacuum Assisted",
+  VBAC = "VBAC (Vaginal Birth After Cesarean)"
+}
+
+export interface AdmissionIndication {
+  id: string;
+  name: string;
+  applicableUnits: Unit[]; // Which units this indication applies to
+  isActive: boolean;
+  order: number; // For sorting
+  createdAt: string;
+  createdBy: string; // SuperAdmin email
+  lastModifiedAt?: string;
+  lastModifiedBy?: string;
 }
 
 export interface VitalSigns {
@@ -82,7 +122,7 @@ export interface Patient {
   name: string;
   age: number;
   ageUnit: AgeUnit;
-  gender: 'Male' | 'Female' | 'Other';
+  gender: 'Male' | 'Female' | 'Other' | 'Ambiguous';
   admissionDate: string; // ISO string
   releaseDate?: string; // ISO string
   diagnosis: string;
@@ -92,10 +132,47 @@ export interface Patient {
   // Institution tracking
   institutionId: string; // Which institution this patient belongs to
   institutionName: string; // Institution name for display
-  // NICU specific
+
+  // SNCU/NICU Administrative & Demographic Information
+  sncuRegNo?: string; // SNCU Registration Number
+  mctsNo?: string; // Mother and Child Tracking System Number
+  doctorInCharge?: string; // Doctor responsible for the patient
+  motherName?: string; // Baby of (Mother's Name)
+  fatherName?: string; // Father's Name
+  category?: Category; // General/OBC/SC/ST
+  address?: string; // Complete Address with Village Name/Ward No.
+  contactNo1?: string; // Primary contact number
+  contactRelation1?: string; // Relation of primary contact
+  contactNo2?: string; // Secondary contact number
+  contactRelation2?: string; // Relation of secondary contact
+
+  // Birth Details
+  dateOfBirth?: string; // ISO string with time
+  birthWeight?: number; // Birth Weight in Kg
+  modeOfDelivery?: ModeOfDelivery; // How the baby was delivered
+
+  // Admission Details
+  admissionDateTime?: string; // ISO string with time
+  ageOnAdmission?: number; // Age on admission
+  ageOnAdmissionUnit?: AgeUnit; // Unit for age on admission
+  weightOnAdmission?: number; // Weight on Admission in Kg
   admissionType?: AdmissionType;
-  referringHospital?: string;
+  placeOfDelivery?: PlaceOfDelivery; // Home/Ambulance/Pvt Hospital/Govt Hospital
+  placeOfDeliveryName?: string; // Name of hospital if delivery place is hospital
+  referringHospital?: string; // Referred From
   referringDistrict?: string;
+  modeOfTransport?: ModeOfTransport; // Self Arranged / Govt. Provided
+
+  // Discharge Details
+  dischargeDateTime?: string; // ISO string with time
+  ageOnDischarge?: number; // Age on discharge
+  ageOnDischargeUnit?: AgeUnit; // Unit for age on discharge
+  weightOnDischarge?: number; // Weight on Discharge in Kg
+
+  // Clinical - Admission Indications (NICU/SNCU/PICU specific)
+  indicationsForAdmission?: string[]; // Array of indication IDs or names
+  customIndication?: string; // Custom indication if not in the list
+
   // PICU Step Down functionality
   stepDownDate?: string; // ISO string when stepped down
   stepDownFrom?: Unit; // Which unit they were stepped down from
@@ -167,23 +244,6 @@ export interface UserProfile {
   allRoles?: UserRole[]; // All roles the user has (for multi-role users)
 }
 
-export interface Hospital {
-  id: string;
-  name: string;
-  address: string;
-  contactNumber: string;
-  email: string;
-  district?: string;
-  state?: string;
-  pincode?: string;
-  facilities: Unit[]; // Available units/facilities
-  createdAt: string;
-  createdBy: string; // SuperAdmin who created it
-  isActive: boolean;
-  bedCapacity?: BedCapacity; // Bed capacity for each unit
-  institutionType?: string; // Type (Medical College, District Hospital, CHC, PHC, etc.)
-}
-
 export interface ReferralDetails {
   reasonForReferral: string;
   diagnosisAtReferral: string;
@@ -215,20 +275,20 @@ export interface Referral {
   patientAge: number;
   patientAgeUnit: AgeUnit;
   patientGender: 'Male' | 'Female' | 'Other';
-  patientAdmissionDate: string; // Original admission date at referring hospital
+  patientAdmissionDate: string; // Original admission date at referring institution
 
-  // Referring Hospital Information
-  fromHospitalId: string;
-  fromHospitalName: string;
+  // Referring Institution Information
+  fromInstitutionId: string;
+  fromInstitutionName: string;
   fromUnit: Unit;
   referredBy: string; // Doctor/user name
   referredByEmail: string;
   referredByRole: UserRole;
   referralDate: string; // ISO string when referral was created
 
-  // Receiving Hospital Information
-  toHospitalId: string;
-  toHospitalName: string;
+  // Receiving Institution Information
+  toInstitutionId: string;
+  toInstitutionName: string;
   toUnit?: Unit; // Suggested unit for admission
 
   // Referral Details
@@ -243,14 +303,14 @@ export interface Referral {
   acceptedBy?: string; // Name of person who accepted
   acceptedByEmail?: string;
   acceptedAt?: string; // ISO string
-  responseNotes?: string; // Notes from receiving hospital
+  responseNotes?: string; // Notes from receiving institution
 
-  // Patient tracking at receiving hospital
-  receivingHospitalPatientId?: string; // Patient ID at receiving hospital if admitted
+  // Patient tracking at receiving institution
+  receivingInstitutionPatientId?: string; // Patient ID at receiving institution if admitted
 
   // Metadata
   createdAt: string;
   lastUpdatedAt: string;
-  isRead?: boolean; // Has receiving hospital seen this referral
+  isRead?: boolean; // Has receiving institution seen this referral
   priority?: 'Low' | 'Medium' | 'High' | 'Critical';
 }

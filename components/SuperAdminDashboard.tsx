@@ -3,6 +3,7 @@ import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, query, where, s
 import { db } from '../firebaseConfig';
 import { Institution, UserRole, Unit } from '../types';
 import { ASSAM_DISTRICTS, INSTITUTION_TYPES } from '../constants';
+import AdmissionIndicationsManager from './AdmissionIndicationsManager';
 
 interface SuperAdminDashboardProps {
   userEmail: string;
@@ -17,7 +18,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [initLoading, setInitLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'institutions' | 'data'>('institutions');
+  const [activeTab, setActiveTab] = useState<'institutions' | 'data' | 'indications'>('institutions');
   const [selectedInstitution, setSelectedInstitution] = useState<string | 'all'>('all');
   const [patients, setPatients] = useState<any[]>([]);
   const [patientsLoading, setPatientsLoading] = useState(false);
@@ -642,6 +643,20 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
               View All Data
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab('indications')}
+            className={`px-6 py-3 font-semibold transition-colors border-b-2 ${activeTab === 'indications'
+              ? 'border-sky-500 text-sky-600 dark:text-sky-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              Admission Indications
+            </div>
+          </button>
         </div>
 
         {/* Institutions Management Tab */}
@@ -1140,6 +1155,11 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
               )}
             </div>
           </>
+        )}
+
+        {/* Admission Indications Management Tab */}
+        {activeTab === 'indications' && (
+          <AdmissionIndicationsManager userEmail={userEmail} />
         )}
       </div>
       {/* Manage Users Modal */}

@@ -5,7 +5,6 @@ import { Patient, Unit, UserRole, AdmissionType, BedCapacity } from '../types';
 import StatCard from './StatCard';
 import PatientList from './PatientList';
 import UnitSelection from './UnitSelection';
-import PatientForm from './PatientForm';
 import PatientDetailModal from './PatientDetailModal';
 import PatientFilters, { OutcomeFilter } from './PatientFilters';
 import CollapsiblePatientCard from './CollapsiblePatientCard';
@@ -18,9 +17,12 @@ import { BedIcon, ArrowRightOnRectangleIcon, ChartBarIcon, PlusIcon, HomeIcon, A
 import { ResponsiveContainer, Tooltip, Legend, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
 import NicuViewSelection from './NicuViewSelection';
 import DateFilter, { DateFilterValue } from './DateFilter';
+import ShiftFilter, { ShiftFilterConfigs } from './ShiftFilter';
+
 import ComprehensiveSummary from './ComprehensiveSummary';
 import DeathsAnalysis from './DeathsAnalysis';
 import PatientDetailsPage from './PatientDetailsPage';
+import ReferralInbox from './ReferralInbox';
 
 interface DashboardProps {
   userRole: UserRole;
@@ -30,11 +32,13 @@ interface DashboardProps {
   allRoles?: UserRole[]; // All roles the user has for multi-role support
   setShowSuperAdminPanel?: (show: boolean) => void; // For SuperAdmin dashboard access
   setShowAdminPanel?: (show: boolean) => void; // For Admin dashboard access
+  onShowReferrals?: () => void; // For switching to full Referral Management page
+  onShowAddPatient?: (patient?: Patient | null) => void; // For navigating to Add Patient page
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
-const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institutionName, userEmail, allRoles, setShowSuperAdminPanel, setShowAdminPanel }) => {
+const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institutionName, userEmail, allRoles, setShowSuperAdminPanel, setShowAdminPanel, onShowReferrals, onShowAddPatient }) => {
   // Helper function to check if user has a specific role
   const hasRole = (role: UserRole) => {
     return userRole === role || (allRoles && allRoles.includes(role));
@@ -55,7 +59,12 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
   const [enabledFacilities, setEnabledFacilities] = useState<Unit[]>([Unit.NICU, Unit.PICU, Unit.SNCU]); // Default to all
   const [selectedUnit, setSelectedUnit] = useState<Unit>(Unit.NICU);
   const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('All');
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'This Month' });
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'Today' });
+  const [shiftFilter, setShiftFilter] = useState<ShiftFilterConfigs>({
+    enabled: false,
+    startTime: '08:00',
+    endTime: '20:00'
+  });
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('All');
 
   // Chart filter state
@@ -72,8 +81,9 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
   const [showSmartHandoff, setShowSmartHandoff] = useState(false);
   const [showAIReportGenerator, setShowAIReportGenerator] = useState(false);
   const [showPatientDetailsPage, setShowPatientDetailsPage] = useState(false);
+  const [showReferralInbox, setShowReferralInbox] = useState(false);
+  const [unreadReferrals, setUnreadReferrals] = useState(0);
 
-  const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
   const [patientToEdit, setPatientToEdit] = useState<Patient | null>(null);
@@ -158,6 +168,27 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
     }
   };
 
+  // Real-time listener for unread referrals
+  useEffect(() => {
+    if (!institutionId) {
+      setUnreadReferrals(0);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'referrals'),
+      where('toInstitutionId', '==', institutionId),
+      where('isRead', '==', false),
+      where('status', '==', 'Pending')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setUnreadReferrals(snapshot.size);
+    });
+
+    return () => unsubscribe();
+  }, [institutionId]);
+
   // Base patients filtered only by unit/institution (NO date filter) - used for charts
   const baseUnitPatients = useMemo(() => {
     let baseFiltered = institutionId
@@ -172,92 +203,138 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
   }, [patients, selectedUnit, nicuView, institutionId]);
 
   const unitPatients = useMemo(() => {
-    const baseFiltered = baseUnitPatients;
+    let filtered = baseUnitPatients;
 
-    if (dateFilter.period === 'All Time') {
-      return baseFiltered;
+    if (dateFilter.period !== 'All Time') {
+      let startDate: Date;
+      let endDate: Date;
+
+      const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
+
+      if (periodIsMonth) {
+        const [year, month] = dateFilter.period.split('-').map(Number);
+        startDate = new Date(Date.UTC(year, month - 1, 1));
+        endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      } else {
+        const now = new Date();
+        switch (dateFilter.period) {
+          case 'Today':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Week':
+            const firstDayOfWeek = new Date(now);
+            firstDayOfWeek.setDate(now.getDate() - now.getDay());
+            startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
+
+            const lastDayOfWeek = new Date(firstDayOfWeek);
+            lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+            endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+            break;
+          case 'Custom':
+            if (!dateFilter.startDate || !dateFilter.endDate) {
+              startDate = new Date(0); // Should keep baseFiltered if invalid custom range? Actually just fail open or closed.
+              // Logic below says "return baseFiltered" if invalid.
+              // Let's just set a wide range or handle "return filtered" early.
+            } else {
+              startDate = new Date(dateFilter.startDate);
+              startDate.setHours(0, 0, 0, 0);
+              endDate = new Date(dateFilter.endDate);
+              endDate.setHours(23, 59, 59, 999);
+            }
+            break;
+          default:
+            startDate = new Date(0);
+            endDate = new Date(); // Just to satisfy TS
+            break;
+        }
+      }
+
+      if (dateFilter.period === 'Custom' && (!dateFilter.startDate || !dateFilter.endDate)) {
+        // Do nothing, filtered stays as baseFiltered
+      } else {
+        filtered = filtered.filter(p => {
+          const admissionDate = new Date(p.admissionDate);
+
+          if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
+            const dischargeDate = new Date(p.finalDischargeDate || p.releaseDate!);
+            return dischargeDate >= startDate && dischargeDate <= endDate;
+          }
+
+          if (p.outcome === 'Step Down' && p.stepDownDate) {
+            const stepDownDate = new Date(p.stepDownDate);
+            return stepDownDate >= startDate && stepDownDate <= endDate;
+          }
+
+          if (p.outcome === 'In Progress') {
+            const isAdmittedBeforeOrDuringPeriod = admissionDate <= endDate;
+            const releaseDate = p.releaseDate || p.finalDischargeDate;
+            const stillInProgressDuringPeriod = !releaseDate || new Date(releaseDate) >= startDate;
+            return isAdmittedBeforeOrDuringPeriod && stillInProgressDuringPeriod;
+          }
+
+          if (p.outcome === 'Referred') {
+            if (p.releaseDate) {
+              const referralDate = new Date(p.releaseDate);
+              return referralDate >= startDate && referralDate <= endDate;
+            }
+            return admissionDate >= startDate && admissionDate <= endDate;
+          }
+
+          if (p.outcome === 'Deceased') {
+            if (p.releaseDate) {
+              const deathDate = new Date(p.releaseDate);
+              return deathDate >= startDate && deathDate <= endDate;
+            }
+            return admissionDate >= startDate && admissionDate <= endDate;
+          }
+
+          return admissionDate >= startDate && admissionDate <= endDate;
+        });
+      }
     }
 
-    let startDate: Date;
-    let endDate: Date;
+    // Apply Shift Filter if enabled
+    if (shiftFilter.enabled && shiftFilter.startTime && shiftFilter.endTime) {
+      filtered = filtered.filter(p => {
+        // Determine the relevant date/time for the patient based on their outcome
+        let eventDate: Date;
 
-    const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
+        if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
+          eventDate = new Date(p.finalDischargeDate || p.releaseDate!);
+        } else if (p.outcome === 'Step Down' && p.stepDownDate) {
+          eventDate = new Date(p.stepDownDate);
+        } else if (p.outcome === 'Referred' && p.releaseDate) {
+          eventDate = new Date(p.releaseDate);
+        } else if (p.outcome === 'Deceased' && p.releaseDate) {
+          eventDate = new Date(p.releaseDate);
+        } else {
+          // Default to admission date for 'In Progress' or others
+          eventDate = new Date(p.admissionDate);
+        }
 
-    if (periodIsMonth) {
-      const [year, month] = dateFilter.period.split('-').map(Number);
-      startDate = new Date(Date.UTC(year, month - 1, 1));
-      endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-    } else {
-      const now = new Date();
-      switch (dateFilter.period) {
-        case 'Today':
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-          break;
-        case 'This Week':
-          const firstDayOfWeek = new Date(now);
-          firstDayOfWeek.setDate(now.getDate() - now.getDay());
-          startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
+        const eventTime = eventDate.getHours() * 60 + eventDate.getMinutes();
+        const [startHour, startMinute] = shiftFilter.startTime.split(':').map(Number);
+        const [endHour, endMinute] = shiftFilter.endTime.split(':').map(Number);
+        const startTime = startHour * 60 + startMinute;
+        const endTime = endHour * 60 + endMinute;
 
-          const lastDayOfWeek = new Date(firstDayOfWeek);
-          lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
-          endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
-          break;
-        case 'This Month':
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-          break;
-        case 'Custom':
-          if (!dateFilter.startDate || !dateFilter.endDate) return baseFiltered;
-          startDate = new Date(dateFilter.startDate);
-          startDate.setHours(0, 0, 0, 0);
-          endDate = new Date(dateFilter.endDate);
-          endDate.setHours(23, 59, 59, 999);
-          break;
-        default:
-          return baseFiltered;
-      }
+        if (startTime <= endTime) {
+          // Day shift (e.g. 08:00 to 20:00)
+          return eventTime >= startTime && eventTime <= endTime;
+        } else {
+          // Night shift (e.g. 20:00 to 08:00) - spans midnight
+          return eventTime >= startTime || eventTime <= endTime;
+        }
+      });
     }
 
-    return baseFiltered.filter(p => {
-      const admissionDate = new Date(p.admissionDate);
-
-      if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
-        const dischargeDate = new Date(p.finalDischargeDate || p.releaseDate!);
-        return dischargeDate >= startDate && dischargeDate <= endDate;
-      }
-
-      if (p.outcome === 'Step Down' && p.stepDownDate) {
-        const stepDownDate = new Date(p.stepDownDate);
-        return stepDownDate >= startDate && stepDownDate <= endDate;
-      }
-
-      if (p.outcome === 'In Progress') {
-        const isAdmittedBeforeOrDuringPeriod = admissionDate <= endDate;
-        const releaseDate = p.releaseDate || p.finalDischargeDate;
-        const stillInProgressDuringPeriod = !releaseDate || new Date(releaseDate) >= startDate;
-        return isAdmittedBeforeOrDuringPeriod && stillInProgressDuringPeriod;
-      }
-
-      if (p.outcome === 'Referred') {
-        if (p.releaseDate) {
-          const referralDate = new Date(p.releaseDate);
-          return referralDate >= startDate && referralDate <= endDate;
-        }
-        return admissionDate >= startDate && admissionDate <= endDate;
-      }
-
-      if (p.outcome === 'Deceased') {
-        if (p.releaseDate) {
-          const deathDate = new Date(p.releaseDate);
-          return deathDate >= startDate && deathDate <= endDate;
-        }
-        return admissionDate >= startDate && admissionDate <= endDate;
-      }
-
-      return admissionDate >= startDate && admissionDate <= endDate;
-    });
-  }, [baseUnitPatients, dateFilter]);
+    return filtered;
+  }, [baseUnitPatients, dateFilter, shiftFilter]);
 
   // Apply outcome filter
   const filteredPatients = useMemo(() => {
@@ -598,13 +675,15 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
   };
 
   const handleAddPatient = () => {
-    setPatientToEdit(null);
-    setIsFormOpen(true);
+    if (onShowAddPatient) {
+      onShowAddPatient(null);
+    }
   };
 
   const handleEditPatient = (patient: Patient) => {
-    setPatientToEdit(patient);
-    setIsFormOpen(true);
+    if (onShowAddPatient) {
+      onShowAddPatient(patient);
+    }
   };
 
   const handleSavePatient = async (patientData: Patient) => {
@@ -640,7 +719,6 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
       }
 
       // Real-time listener will automatically update the patient list
-      setIsFormOpen(false);
       setPatientToEdit(null);
     } catch (error: any) {
       console.error('❌ Error saving patient:', error);
@@ -757,20 +835,6 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
           allRoles={allRoles}
         />
 
-        {/* Modals */}
-        {isFormOpen && institutionId && institutionName && userEmail && (
-          <PatientForm
-            patientToEdit={patientToEdit}
-            onSave={handleSavePatient}
-            onClose={() => setIsFormOpen(false)}
-            userRole={userRole}
-            defaultUnit={selectedUnit}
-            institutionId={institutionId}
-            institutionName={institutionName}
-            userEmail={userEmail}
-          />
-        )}
-
         {isDetailsOpen && patientToView && (
           <PatientDetailModal
             patient={patientToView}
@@ -837,6 +901,20 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
               <span className="sm:hidden">Reports</span>
             </button>
           )}
+          {(hasRole(UserRole.Doctor) || hasRole(UserRole.Admin)) && (
+            <button onClick={() => onShowReferrals ? onShowReferrals() : setShowReferralInbox(true)} className="relative flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-lg transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+              <span className="hidden sm:inline">Referrals</span>
+              <span className="sm:hidden">Ref</span>
+              {unreadReferrals > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full font-bold">
+                  {unreadReferrals}
+                </span>
+              )}
+            </button>
+          )}
           {(hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)) && (
             <button onClick={handleAddPatient} className="flex items-center justify-center gap-2 bg-medical-teal text-white px-4 py-2 rounded-lg hover:bg-medical-teal-light transition-colors font-semibold text-sm sm:text-base min-h-[44px]">
               <PlusIcon className="w-5 h-5" />
@@ -854,13 +932,17 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
             </button>
           )}
         </div>
+
       </div>
 
       {selectedUnit === Unit.NICU && (
         <NicuViewSelection selectedView={nicuView} onSelectView={setNicuView} />
       )}
 
-      <DateFilter onFilterChange={setDateFilter} />
+      <div className="flex flex-col md:flex-row gap-4">
+        <DateFilter onFilterChange={setDateFilter} />
+        <ShiftFilter onFilterChange={setShiftFilter} />
+      </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 md:gap-4">
         <StatCard title={`Admissions ${getPeriodTitle(dateFilter.period)}`} value={stats.admissionsCount} icon={<PlusIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-indigo-500/90" />
@@ -1347,19 +1429,6 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
         />
       )}
 
-      {isFormOpen && institutionId && institutionName && userEmail && (
-        <PatientForm
-          patientToEdit={patientToEdit}
-          onSave={handleSavePatient}
-          onClose={() => setIsFormOpen(false)}
-          userRole={userRole}
-          defaultUnit={selectedUnit}
-          institutionId={institutionId}
-          institutionName={institutionName}
-          userEmail={userEmail}
-        />
-      )}
-
       {isDetailsOpen && patientToView && (
         <PatientDetailModal
           patient={patientToView}
@@ -1383,6 +1452,17 @@ const Dashboard: React.FC<DashboardProps> = ({ userRole, institutionId, institut
           unit={selectedUnit}
           institutionName={institutionName}
           onClose={() => setShowAIReportGenerator(false)}
+        />
+      )}
+
+      {showReferralInbox && institutionId && institutionName && userEmail && (
+        <ReferralInbox
+          institutionId={institutionId}
+          institutionName={institutionName}
+          userEmail={userEmail}
+          userRole={userRole}
+          userName={userEmail.split('@')[0] || 'User'}
+          onBack={() => setShowReferralInbox(false)}
         />
       )}
     </div>

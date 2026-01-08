@@ -5,12 +5,35 @@
   <meta charset="UTF-8" />
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#0891b2" />
-  <meta name="description" content="Medical Records System for PICU/NICU" />
+
+  <!-- Mobile Viewport & Native App Optimization -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0, viewport-fit=cover, user-scalable=yes" />
+
+  <!-- Theme Colors (Android) -->
+  <meta name="theme-color" content="#0EA5E9" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0C4A6E" media="(prefers-color-scheme: dark)" />
+
+  <!-- PWA Meta -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="NeoLink" />
+
+  <!-- Description & SEO -->
+  <meta name="description" content="Medical Records System for PICU/NICU - Professional Healthcare Management" />
+  <meta name="application-name" content="NeoLink" />
+
+  <!-- Disable tap highlight on mobile (we use custom ripple) -->
+  <meta name="msapplication-tap-highlight" content="no" />
+
+  <!-- Manifest & Icons -->
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
   <title>NeoLink - PICU/NICU Records</title>
+
+  <!-- Native App Styles -->
+  <link rel="stylesheet" href="/styles/native.css" />
 </head>
 
 <body class="bg-sky-100 text-slate-900">

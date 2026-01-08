@@ -10,21 +10,70 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: '0.0.0.0',
     },
+    // Build optimization for world-class performance
+    build: {
+      target: 'esnext',
+      minify: 'terser',
+      terserOptions: {
+        compress: {
+          drop_console: mode === 'production',
+          drop_debugger: mode === 'production',
+        },
+      },
+      rollupOptions: {
+        output: {
+          // Manual chunk splitting for optimal loading
+          manualChunks: {
+            // Vendor chunks
+            'react-vendor': ['react', 'react-dom'],
+            'firebase-vendor': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+            'animation-vendor': ['framer-motion'],
+            'chart-vendor': ['recharts'],
+            // Feature chunks
+            'forms': ['react-hook-form', 'zod'],
+            'virtualization': ['react-virtuoso'],
+          },
+        },
+      },
+      // Optimize chunk size
+      chunkSizeWarningLimit: 1000,
+    },
+    // Performance optimizations
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'firebase/app',
+        'firebase/auth',
+        'firebase/firestore',
+        'framer-motion',
+      ],
+    },
     plugins: [
-      react(),
+      react({
+        // Enable Fast Refresh for better DX
+        fastRefresh: true,
+      }),
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['pwa-192.png', 'pwa-512.png', 'apple-touch-icon.png'],
+        devOptions: {
+          enabled: true, // Enable in development
+        },
         manifest: {
           name: 'NeoLink PICU/NICU Records',
           short_name: 'NeoLink',
-          description: 'Medical Records System for PICU/NICU',
-          theme_color: '#0891b2',
-          background_color: '#ffffff',
-          display: 'standalone',
+          description: 'Medical Records System for PICU/NICU - Professional Healthcare Management',
+          theme_color: '#0EA5E9', // Medical teal from theme
+          background_color: '#F8FAFC', // Light background
+          display: 'standalone', // Hide browser UI completely
           scope: '/',
           start_url: '/',
           orientation: 'portrait-primary',
+          categories: ['medical', 'healthcare', 'productivity'],
+          dir: 'ltr',
+          lang: 'en-US',
+          prefer_related_applications: false,
           icons: [
             {
               src: '/pwa-192.png',
@@ -38,7 +87,16 @@ export default defineConfig(({ mode }) => {
               type: 'image/png',
               purpose: 'any maskable'
             }
-          ]
+          ],
+          // Android-specific features
+          display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+          edge_side_panel: {
+            preferred_width: 480
+          },
+          // Launch handler for better app feel
+          launch_handler: {
+            client_mode: ['navigate-existing', 'auto']
+          }
         },
         workbox: {
           // Cache Firebase auth and API calls appropriately

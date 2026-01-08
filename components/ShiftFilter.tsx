@@ -30,42 +30,34 @@ const ShiftFilter: React.FC<ShiftFilterProps> = ({ onFilterChange }) => {
     }, [enabled, startTime, endTime, onFilterChange]);
 
     return (
-        <div className="bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 flex flex-col sm:flex-row items-center gap-4">
-            <div className="flex items-center gap-2">
-                <label className="text-md font-semibold text-slate-300 whitespace-nowrap cursor-pointer flex items-center gap-2">
-                    <input
-                        type="checkbox"
-                        checked={enabled}
-                        onChange={(e) => setEnabled(e.target.checked)}
-                        className="w-5 h-5 rounded border-slate-600 text-teal-600 focus:ring-teal-500 bg-slate-700"
-                    />
-                    Filter by Shift Duty
-                </label>
-            </div>
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <label className="flex items-center gap-1.5 sm:gap-2 cursor-pointer bg-slate-100 dark:bg-slate-800 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2">
+                <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={(e) => setEnabled(e.target.checked)}
+                    className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                />
+                <span className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300">⏰ Shift</span>
+            </label>
 
-            <div className={`flex flex-col sm:flex-row items-center gap-2 transition-opacity duration-200 ${enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-                <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-400">Start:</span>
+            {enabled && (
+                <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 dark:bg-slate-800 rounded-lg px-2 sm:px-3 py-1 sm:py-2">
                     <input
                         type="time"
                         value={startTime}
                         onChange={(e) => setStartTime(e.target.value)}
-                        className="form-input py-1 px-2 text-sm w-32"
-                        disabled={!enabled}
+                        className="bg-transparent border-0 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-medium focus:ring-0 cursor-pointer w-16 sm:w-20"
                     />
-                </div>
-                <span className="text-slate-400 hidden sm:inline">-</span>
-                <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-400">End:</span>
+                    <span className="text-slate-400 text-xs">→</span>
                     <input
                         type="time"
                         value={endTime}
                         onChange={(e) => setEndTime(e.target.value)}
-                        className="form-input py-1 px-2 text-sm w-32"
-                        disabled={!enabled}
+                        className="bg-transparent border-0 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-medium focus:ring-0 cursor-pointer w-16 sm:w-20"
                     />
                 </div>
-            </div>
+            )}
         </div>
     );
 };

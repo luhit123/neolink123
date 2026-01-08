@@ -8,10 +8,12 @@ interface BedOccupancyProps {
     availableUnits?: Unit[];
 }
 
-type TimeRange = '7days' | '30days' | '3months' | '6months' | '12months' | 'current';
+type TimeRange = '7days' | '30days' | '3months' | '6months' | '12months' | 'current' | 'custom';
 
 const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, availableUnits }) => {
     const [timeRange, setTimeRange] = useState<TimeRange>('current');
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
 
     const timeRanges = [
         { value: 'current' as TimeRange, label: 'Current Status', icon: '🏥' },
@@ -20,6 +22,7 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
         { value: '3months' as TimeRange, label: 'Last 3 Months', icon: '🗓️' },
         { value: '6months' as TimeRange, label: 'Last 6 Months', icon: '📊' },
         { value: '12months' as TimeRange, label: 'Last 12 Months', icon: '📈' },
+        { value: 'custom' as TimeRange, label: 'Custom Range', icon: '📆' },
     ];
 
     // Use bed capacity from props or defaults
@@ -47,47 +50,69 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
         // Determine time range and granularity
         let days = 0;
         let stepDays = 1;
+        let startDate: Date;
+        let endDate: Date = new Date();
 
-        switch (timeRange) {
-            case '7days':
-                days = 7;
-                stepDays = 1;
-                break;
-            case '30days':
-                days = 30;
-                stepDays = 1;
-                break;
-            case '3months':
-                days = 90;
-                stepDays = 3;
-                break;
-            case '6months':
-                days = 180;
-                stepDays = 7;
-                break;
-            case '12months':
-                days = 365;
-                stepDays = 15;
-                break;
+        if (timeRange === 'custom') {
+            if (!customStartDate || !customEndDate) return [];
+            startDate = new Date(customStartDate);
+            endDate = new Date(customEndDate);
+            days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+            stepDays = days > 90 ? 7 : days > 30 ? 3 : 1;
+        } else {
+            switch (timeRange) {
+                case '7days':
+                    days = 7;
+                    stepDays = 1;
+                    break;
+                case '30days':
+                    days = 30;
+                    stepDays = 1;
+                    break;
+                case '3months':
+                    days = 90;
+                    stepDays = 3;
+                    break;
+                case '6months':
+                    days = 180;
+                    stepDays = 7;
+                    break;
+                case '12months':
+                    days = 365;
+                    stepDays = 15;
+                    break;
+            }
         }
 
         // Generate data points
         for (let i = days; i >= 0; i -= stepDays) {
-            const date = new Date(now);
-            date.setDate(date.getDate() - i);
+            const date = timeRange === 'custom'
+                ? new Date(new Date(customStartDate).getTime() + (days - i) * 24 * 60 * 60 * 1000)
+                : new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
             date.setHours(0, 0, 0, 0);
 
             const nextDate = new Date(date);
             nextDate.setDate(nextDate.getDate() + 1);
 
-            // Count patients who were in progress on this date
+            // Count patients who were ACTIVE on this date (using same logic as dashboard)
             const patientsOnDate = patients.filter(p => {
                 const admissionDate = new Date(p.admissionDate);
-                const releaseDate = p.releaseDate || p.finalDischargeDate;
-                const endDate = releaseDate ? new Date(releaseDate) : new Date();
 
-                // Patient was occupying a bed if admitted before/on date and not discharged yet
-                return admissionDate <= date && endDate >= date;
+                // Get outcome date
+                let outcomeDate: Date | null = null;
+                if (p.releaseDate) {
+                    outcomeDate = new Date(p.releaseDate);
+                } else if (p.finalDischargeDate) {
+                    outcomeDate = new Date(p.finalDischargeDate);
+                } else if (p.stepDownDate && p.outcome === 'Step Down') {
+                    outcomeDate = new Date(p.stepDownDate);
+                }
+
+                // Patient was active if admitted before/on date AND (still active OR discharged after date)
+                const wasAdmittedByDate = admissionDate <= date;
+                const wasStillActiveOnDate = !outcomeDate || outcomeDate >= date;
+
+                return wasAdmittedByDate && wasStillActiveOnDate;
             });
 
             const nicuCount = patientsOnDate.filter(p => p.unit === Unit.NICU).length;
@@ -112,7 +137,7 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
         }
 
         return dataPoints;
-    }, [patients, timeRange, TOTAL_NICU_BEDS, TOTAL_PICU_BEDS, TOTAL_SNCU_BEDS, TOTAL_HDU_BEDS, TOTAL_GENERAL_WARD_BEDS]);
+    }, [patients, timeRange, customStartDate, customEndDate, TOTAL_NICU_BEDS, TOTAL_PICU_BEDS, TOTAL_SNCU_BEDS, TOTAL_HDU_BEDS, TOTAL_GENERAL_WARD_BEDS]);
 
     const renderBedGrid = (totalBeds: number, occupiedPatients: Patient[], title: string, colorClass: string) => {
         const occupiedCount = occupiedPatients.length;
@@ -215,6 +240,30 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
                         </button>
                     ))}
                 </div>
+
+                {/* Custom Date Range Inputs */}
+                {timeRange === 'custom' && (
+                    <div className="mt-4 flex flex-col sm:flex-row items-center gap-4 bg-white rounded-lg p-4 border-2 border-sky-200">
+                        <label className="text-sm font-semibold text-sky-700 whitespace-nowrap">Select Date Range:</label>
+                        <input
+                            type="date"
+                            value={customStartDate}
+                            onChange={(e) => setCustomStartDate(e.target.value)}
+                            className="px-3 py-2 border-2 border-sky-200 rounded-lg focus:outline-none focus:border-sky-500 text-sky-900 font-medium"
+                            aria-label="Start Date"
+                        />
+                        <span className="text-sky-400 font-semibold">to</span>
+                        <input
+                            type="date"
+                            value={customEndDate}
+                            onChange={(e) => setCustomEndDate(e.target.value)}
+                            min={customStartDate}
+                            disabled={!customStartDate}
+                            className="px-3 py-2 border-2 border-sky-200 rounded-lg focus:outline-none focus:border-sky-500 text-sky-900 font-medium disabled:bg-slate-100 disabled:cursor-not-allowed"
+                            aria-label="End Date"
+                        />
+                    </div>
+                )}
             </div>
 
             {/* Historical Trend Chart */}

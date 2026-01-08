@@ -1,11 +1,14 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { MotionConfig } from 'framer-motion';
 import { auth, db } from './firebaseConfig';
 import { handleRedirectResult } from './services/authService';
+import ErrorBoundary from './components/core/ErrorBoundary';
 import Login from './components/Login';
 import Header from './components/Header';
-import { UserRole, UserProfile, Patient } from './types';
+import { UserRole, UserProfile, Patient, Unit } from './types';
+import { animations } from './theme/material3Theme';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -25,6 +28,7 @@ function App() {
   const [showReferralManagement, setShowReferralManagement] = useState(false);
   const [showAddPatientPage, setShowAddPatientPage] = useState(false);
   const [patientToEdit, setPatientToEdit] = useState<any>(null);
+  const [defaultUnitForAdd, setDefaultUnitForAdd] = useState<Unit | undefined>(undefined);
   const [accessDenied, setAccessDenied] = useState(false);
   const [accessMessage, setAccessMessage] = useState('');
   const [superAdminViewingInstitution, setSuperAdminViewingInstitution] = useState<{
@@ -314,8 +318,16 @@ function App() {
   // Loading state
   if (loading) {
     return (
-      <div className="bg-sky-100 min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-teal"></div>
+      <div className="bg-sky-100 min-h-screen flex items-center justify-center pwa-full-height">
+        <motion.div
+          className="flex flex-col items-center gap-4"
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-teal"></div>
+          <p className="text-slate-600 text-sm">Loading...</p>
+        </motion.div>
       </div>
     );
   }
@@ -366,8 +378,16 @@ function App() {
   // User profile not loaded
   if (!userProfile) {
     return (
-      <div className="bg-sky-100 min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-teal"></div>
+      <div className="bg-sky-100 min-h-screen flex items-center justify-center pwa-full-height">
+        <motion.div
+          className="flex flex-col items-center gap-4"
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-teal"></div>
+          <p className="text-slate-600 text-sm">Loading profile...</p>
+        </motion.div>
       </div>
     );
   }
@@ -626,9 +646,10 @@ function App() {
               onClose={() => {
                 setShowAddPatientPage(false);
                 setPatientToEdit(null);
+                setDefaultUnitForAdd(undefined);
               }}
               userRole={userProfile.role}
-              defaultUnit={undefined}
+              defaultUnit={defaultUnitForAdd}
               institutionId={userProfile.institutionId}
               institutionName={userProfile.institutionName || ''}
               userEmail={user.email || ''}
@@ -641,44 +662,56 @@ function App() {
     );
   }
 
-  // Main Application
+  // Main Application - Wrapped with ErrorBoundary and MotionConfig
   return (
-    <div className="min-h-screen bg-sky-100 text-slate-900">
-      <Header
-        userRole={userProfile.role}
-        onLogout={handleLogout}
-        collegeName={userProfile.institutionName}
-        onShowReferrals={() => setShowReferralManagement(true)}
-      />
+    <ErrorBoundary>
+      <MotionConfig
+        transition={{
+          type: 'spring',
+          stiffness: 300,
+          damping: 30,
+        }}
+        reducedMotion="user"
+      >
+        <div className="min-h-screen bg-sky-100 text-slate-900 no-double-tap-zoom">
+          <Header
+            userRole={userProfile.role}
+            onLogout={handleLogout}
+            collegeName={userProfile.institutionName}
+            onShowReferrals={() => setShowReferralManagement(true)}
+          />
 
-      <main>
-        <div className="container mx-auto p-4 sm:p-6">
-          <Suspense fallback={
-            <div className="flex items-center justify-center min-h-[400px]">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
-                <p className="text-slate-600 text-lg">Loading Dashboard...</p>
-              </div>
+          <main>
+            <div className="container mx-auto p-4 sm:p-6">
+              <Suspense fallback={
+                <div className="flex items-center justify-center min-h-[400px]">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
+                    <p className="text-slate-600 text-lg">Loading Dashboard...</p>
+                  </div>
+                </div>
+              }>
+                <Dashboard
+                  userRole={userProfile.role}
+                  institutionId={userProfile.institutionId}
+                  institutionName={userProfile.institutionName}
+                  userEmail={user.email || ''}
+                  allRoles={userProfile.allRoles}
+                  setShowSuperAdminPanel={setShowSuperAdminPanel}
+                  setShowAdminPanel={setShowAdminPanel}
+                  onShowReferrals={() => setShowReferralManagement(true)}
+                  onShowAddPatient={(patient: any, unit?: Unit) => {
+                    setPatientToEdit(patient || null);
+                    setDefaultUnitForAdd(unit);
+                    setShowAddPatientPage(true);
+                  }}
+                />
+              </Suspense>
             </div>
-          }>
-            <Dashboard
-              userRole={userProfile.role}
-              institutionId={userProfile.institutionId}
-              institutionName={userProfile.institutionName}
-              userEmail={user.email || ''}
-              allRoles={userProfile.allRoles}
-              setShowSuperAdminPanel={setShowSuperAdminPanel}
-              setShowAdminPanel={setShowAdminPanel}
-              onShowReferrals={() => setShowReferralManagement(true)}
-              onShowAddPatient={(patient: any) => {
-                setPatientToEdit(patient || null);
-                setShowAddPatientPage(true);
-              }}
-            />
-          </Suspense>
+          </main>
         </div>
-      </main>
-    </div>
+      </MotionConfig>
+    </ErrorBoundary>
   );
 }
 

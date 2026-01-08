@@ -1,88 +1,33 @@
 import React, { useMemo, useState } from 'react';
 import { Patient } from '../types';
-import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, Cell, ComposedChart } from 'recharts';
+import { DateFilterValue } from './DateFilter';
+import NeolinkAIButton from './NeolinkAIButton';
 
 interface TimeBasedAnalyticsProps {
   patients: Patient[];
+  period: string;
+  startDate?: string;
+  endDate?: string;
 }
 
-type TimeRange = '7days' | '30days' | '3months' | '6months' | '12months' | 'all' | 'custom';
+const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, period, startDate, endDate }) => {
+  // Removed internal state for simple prop-driven behavior
 
-const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients }) => {
-  const [timeRange, setTimeRange] = useState<TimeRange>('12months');
-  const [showCustomRange, setShowCustomRange] = useState(false);
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
-  const [showMonthYearPicker, setShowMonthYearPicker] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
-  const timeRanges = [
-    { value: '7days' as TimeRange, label: 'Last 7 Days', icon: '📅' },
-    { value: '30days' as TimeRange, label: 'Last 30 Days', icon: '📆' },
-    { value: '3months' as TimeRange, label: 'Last 3 Months', icon: '🗓️' },
-    { value: '6months' as TimeRange, label: 'Last 6 Months', icon: '📊' },
-    { value: '12months' as TimeRange, label: 'Last 12 Months', icon: '📈' },
-    { value: 'all' as TimeRange, label: 'All Time', icon: '∞' },
-  ];
-
-  const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 10 }, (_, i) => currentYear - i);
-
-  const handleTimeRangeClick = (range: TimeRange) => {
-    if (range === 'custom') {
-      setShowCustomRange(!showCustomRange);
-      setShowMonthYearPicker(false);
-    } else {
-      setShowCustomRange(false);
-      setShowMonthYearPicker(false);
-      setTimeRange(range);
-    }
-  };
-
-  const handleCustomApply = () => {
-    if (customStartDate && customEndDate) {
-      setTimeRange('custom');
-      setShowCustomRange(false);
-    }
-  };
-
-  const handleMonthYearToggle = () => {
-    setShowMonthYearPicker(!showMonthYearPicker);
-    setShowCustomRange(false);
-  };
-
-  const handleMonthYearApply = () => {
-    // Set custom dates for the selected month/year
-    const startDate = new Date(selectedYear, selectedMonth, 1);
-    const endDate = new Date(selectedYear, selectedMonth + 1, 0);
-
-    setCustomStartDate(startDate.toISOString().split('T')[0]);
-    setCustomEndDate(endDate.toISOString().split('T')[0]);
-    setTimeRange('custom');
-    setShowMonthYearPicker(false);
-  };
 
   // Month-wise data based on selected range
   const monthWiseData = useMemo(() => {
     const months = [];
     const now = new Date();
 
-    let startDate: Date;
-    let endDate: Date;
-
-    if (timeRange === 'custom' && customStartDate && customEndDate) {
-      startDate = new Date(customStartDate);
-      endDate = new Date(customEndDate);
+    if (period === 'Custom' && startDate && endDate) {
+      const sDate = new Date(startDate);
+      const eDate = new Date(endDate);
 
       // Generate monthly data for custom range
-      const current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-      const last = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+      const current = new Date(sDate.getFullYear(), sDate.getMonth(), 1);
+      const last = new Date(eDate.getFullYear(), eDate.getMonth(), 1);
 
       while (current <= last) {
         const monthName = current.toLocaleString('default', { month: 'short', year: '2-digit' });
@@ -108,7 +53,7 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients }) => 
       return months;
     }
 
-    const monthCount = timeRange === '3months' ? 2 : timeRange === '6months' ? 5 : timeRange === '12months' ? 11 : 11;
+    const monthCount = (period === 'Last 3 Months' || period === '3months') ? 2 : (period === 'Last 6 Months' || period === '6months') ? 5 : 11;
 
     for (let i = monthCount; i >= 0; i--) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -131,23 +76,23 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients }) => 
     }
 
     return months;
-  }, [patients, timeRange, customStartDate, customEndDate]);
+  }, [patients, period, startDate, endDate]);
 
   // Day-wise data for short ranges
   const dayWiseData = useMemo(() => {
     const days = [];
     const now = new Date();
 
-    if (timeRange === 'custom' && customStartDate && customEndDate) {
-      const startDate = new Date(customStartDate);
-      const endDate = new Date(customEndDate);
-      const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (period === 'Custom' && startDate && endDate) {
+      const sDate = new Date(startDate);
+      const eDate = new Date(endDate);
+      const daysDiff = Math.floor((eDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24));
 
       // Only use daily data if range is 60 days or less
       if (daysDiff <= 60) {
         for (let i = 0; i <= daysDiff; i++) {
-          const date = new Date(startDate);
-          date.setDate(startDate.getDate() + i);
+          const date = new Date(sDate);
+          date.setDate(sDate.getDate() + i);
           date.setHours(0, 0, 0, 0);
 
           const nextDate = new Date(date);
@@ -172,9 +117,16 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients }) => 
       return [];
     }
 
-    const dayCount = timeRange === '7days' ? 6 : timeRange === '30days' ? 29 : 0;
+    // Determine how many days back to go.
+    // 'Today' = 0
+    // 'Last 7 Days' = 6
+    // 'Last 30 Days' = 29
+    const dayCount = (period === 'Today' || period === 'today') ? 0 :
+      (period === 'Last 7 Days' || period === '7days' || period === 'This Week') ? 6 :
+        (period === 'Last 30 Days' || period === '30days' || period === 'This Month') ? 29 : -1;
 
-    if (dayCount === 0) return [];
+    // If dayCount is -1, it means the selected range isn't supported by this view (e.g. months/years)
+    if (dayCount === -1) return [];
 
     for (let i = dayCount; i >= 0; i--) {
       const date = new Date(now);
@@ -198,11 +150,11 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients }) => 
     }
 
     return days;
-  }, [patients, timeRange, customStartDate, customEndDate]);
+  }, [patients, period, startDate, endDate]);
 
   // Year-wise data for all-time view
   const yearWiseData = useMemo(() => {
-    if (timeRange !== 'all') return [];
+    if (period !== 'All Time' && period !== 'all') return [];
 
     const years = new Map<number, { admissions: number; discharged: number; referred: number; deaths: number }>();
 
@@ -221,7 +173,7 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients }) => 
     return Array.from(years.entries())
       .map(([year, data]) => ({ year: year.toString(), ...data }))
       .sort((a, b) => parseInt(a.year) - parseInt(b.year));
-  }, [patients, timeRange]);
+  }, [patients, period]);
 
   // Diagnosis Distribution
   const diagnosisData = useMemo(() => {
@@ -263,289 +215,378 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients }) => 
   }, [patients]);
 
   const chartData = useMemo(() => {
-    if (timeRange === 'custom' && customStartDate && customEndDate) {
-      const startDate = new Date(customStartDate);
-      const endDate = new Date(customEndDate);
-      const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (period === 'Custom' && startDate && endDate) {
+      const sDate = new Date(startDate);
+      const eDate = new Date(endDate);
+      const daysDiff = Math.floor((eDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24));
 
       // Use daily data if 60 days or less, otherwise monthly
       return daysDiff <= 60 ? dayWiseData : monthWiseData;
     }
 
-    return timeRange === '7days' || timeRange === '30days' ? dayWiseData : timeRange === 'all' ? yearWiseData : monthWiseData;
-  }, [timeRange, dayWiseData, yearWiseData, monthWiseData, customStartDate, customEndDate]);
+    const isDayView = ['Today', 'today', 'Last 7 Days', '7days', 'Last 30 Days', '30days', 'This Week', 'This Month'].includes(period);
+    const isYearView = ['All Time', 'all'].includes(period);
+
+    return isDayView ? dayWiseData : isYearView ? yearWiseData : monthWiseData;
+  }, [period, dayWiseData, yearWiseData, monthWiseData, startDate, endDate]);
 
   const xAxisKey = useMemo(() => {
-    if (timeRange === 'custom' && customStartDate && customEndDate) {
-      const startDate = new Date(customStartDate);
-      const endDate = new Date(customEndDate);
-      const daysDiff = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (period === 'Custom' && startDate && endDate) {
+      const sDate = new Date(startDate);
+      const eDate = new Date(endDate);
+      const daysDiff = Math.floor((eDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24));
 
       return daysDiff <= 60 ? 'day' : 'month';
     }
 
-    return timeRange === 'all' ? 'year' : timeRange === '7days' || timeRange === '30days' ? 'day' : 'month';
-  }, [timeRange, customStartDate, customEndDate]);
+    const isDayView = ['Today', 'today', 'Last 7 Days', '7days', 'Last 30 Days', '30days', 'This Week', 'This Month'].includes(period);
+    const isYearView = ['All Time', 'all'].includes(period);
+
+    return isYearView ? 'year' : isDayView ? 'day' : 'month';
+  }, [period, startDate, endDate]);
+
+  // ---------------------------------------------------------------------------
+  // NEW ANALYTICS: "World Class" Features
+  // ---------------------------------------------------------------------------
+
+  // 1. Birth Weight Analysis (NICU Specific)
+  const weightAnalysisData = useMemo(() => {
+    // Categories:
+    // ELBW: < 1.0 kg
+    // VLBW: 1.0 - 1.499 kg
+    // LBW: 1.5 - 2.499 kg
+    // Normal: 2.5 - 3.8 kg
+    // LGA: > 3.8 kg
+    const buckets = [
+      { name: 'ELBW (<1kg)', min: 0, max: 0.999, total: 0, discharged: 0, referred: 0, deceased: 0, other: 0, survivalRate: 0, totalLOS: 0, avgLOS: 0 },
+      { name: 'VLBW (1-1.5kg)', min: 1, max: 1.499, total: 0, discharged: 0, referred: 0, deceased: 0, other: 0, survivalRate: 0, totalLOS: 0, avgLOS: 0 },
+      { name: 'LBW (1.5-2.5kg)', min: 1.5, max: 2.499, total: 0, discharged: 0, referred: 0, deceased: 0, other: 0, survivalRate: 0, totalLOS: 0, avgLOS: 0 },
+      { name: 'Normal (2.5-3.8kg)', min: 2.5, max: 3.8, total: 0, discharged: 0, referred: 0, deceased: 0, other: 0, survivalRate: 0, totalLOS: 0, avgLOS: 0 },
+      { name: 'LGA (>3.8kg)', min: 3.801, max: 15, total: 0, discharged: 0, referred: 0, deceased: 0, other: 0, survivalRate: 0, totalLOS: 0, avgLOS: 0 },
+    ];
+
+    patients.forEach(p => {
+      // Only count patients with birth weight recorded
+      if (p.birthWeight !== undefined) {
+        const weight = p.birthWeight;
+        const bucket = buckets.find(b => weight >= b.min && weight <= b.max);
+
+        if (bucket) {
+          bucket.total++;
+          if (p.outcome === 'Discharged') bucket.discharged++;
+          else if (p.outcome === 'Referred') bucket.referred++;
+          else if (p.outcome === 'Deceased') bucket.deceased++;
+          else bucket.other++; // In Progress, Step Down, etc.
+
+          // Calculate Length of Stay for all patients in this bucket
+          const start = new Date(p.admissionDate);
+          const end = p.releaseDate ? new Date(p.releaseDate) : new Date();
+          const los = Math.max(0, Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+          bucket.totalLOS += los;
+        }
+      }
+    });
+
+    // Calculate rates and averages
+    buckets.forEach(b => {
+      b.survivalRate = b.total > 0 ? parseFloat(((b.discharged / b.total) * 100).toFixed(1)) : 0;
+      b.avgLOS = b.total > 0 ? parseFloat((b.totalLOS / b.total).toFixed(1)) : 0;
+    });
+
+    return buckets; // Returns all buckets, even if total is 0
+  }, [patients]);
+
+  // 2. Length of Stay vs Mortality
+  const losMortalityData = useMemo(() => {
+    const ranges = [
+      { range: '0-3 Days', total: 0, deceased: 0, mortalityRate: 0 },
+      { range: '4-7 Days', total: 0, deceased: 0, mortalityRate: 0 },
+      { range: '8-14 Days', total: 0, deceased: 0, mortalityRate: 0 },
+      { range: '15-30 Days', total: 0, deceased: 0, mortalityRate: 0 },
+      { range: '30+ Days', total: 0, deceased: 0, mortalityRate: 0 },
+    ];
+
+    patients.forEach(p => {
+      const start = new Date(p.admissionDate);
+      const end = p.releaseDate ? new Date(p.releaseDate) : new Date();
+      const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+      let index = -1;
+      if (days <= 3) index = 0;
+      else if (days <= 7) index = 1;
+      else if (days <= 14) index = 2;
+      else if (days <= 30) index = 3;
+      else index = 4;
+
+      if (index !== -1) {
+        ranges[index].total++;
+        if (p.outcome === 'Deceased') ranges[index].deceased++;
+      }
+    });
+
+    ranges.forEach(r => {
+      r.mortalityRate = r.total > 0 ? parseFloat(((r.deceased / r.total) * 100).toFixed(1)) : 0;
+    });
+
+    return ranges;
+  }, [patients]);
+
+  // 3. Admission vs Outcomes (Discharge & Referral) Comparison
+  // Re-using chartData but structuring for specific comparison
+  const outcomesComparisonData = useMemo(() => {
+    return chartData.map(d => ({
+      ...d,
+      positiveOutcomes: (d.discharged || 0) + (d.referred || 0), // Grouping "Left Alive"
+      negativeOutcomes: d.deaths || 0,
+      netChange: (d.admissions || 0) - ((d.discharged || 0) + (d.referred || 0) + (d.deaths || 0)) // Net bed change
+    }));
+  }, [chartData]);
+
+
+  // 4. Temporal Insights (Admissions by Day of Week)
+  const temporalData = useMemo(() => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const counts = days.map(d => ({ day: d, admissions: 0, deaths: 0 }));
+
+    patients.forEach(p => {
+      const date = new Date(p.admissionDate);
+      const dayIndex = date.getDay();
+      counts[dayIndex].admissions++;
+
+      if (p.outcome === 'Deceased') {
+        const deathDate = p.releaseDate ? new Date(p.releaseDate) : date; // approx if release date missing
+        const deathDayIndex = deathDate.getDay();
+        counts[deathDayIndex].deaths++;
+      }
+    });
+
+    return counts;
+  }, [patients]);
 
   return (
-    <div className="space-y-6">
-      {/* Time Range Filter */}
-      <div className="bg-gradient-to-r from-sky-50 to-blue-50 border-2 border-sky-200 rounded-xl p-6 shadow-lg">
-        <div className="flex items-center gap-3 mb-4">
-          <svg className="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h3 className="text-lg font-bold text-sky-900">Time-Based Analytics</h3>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {timeRanges.map((range) => (
-            <button
-              key={range.value}
-              onClick={() => handleTimeRangeClick(range.value)}
-              className={`
-                px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center gap-2
-                ${timeRange === range.value
-                  ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-lg scale-105'
-                  : 'bg-white text-sky-700 border-2 border-sky-200 hover:border-sky-400 hover:shadow-md'
-                }
-              `}
-            >
-              <span>{range.icon}</span>
-              <span>{range.label}</span>
-            </button>
-          ))}
+    <div className="space-y-8 animate-fadeIn">
 
-          {/* Month/Year Selector Button */}
-          <button
-            onClick={handleMonthYearToggle}
-            className={`
-              px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center gap-2
-              ${showMonthYearPicker
-                ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-lg scale-105'
-                : 'bg-white text-sky-700 border-2 border-sky-200 hover:border-sky-400 hover:shadow-md'
-              }
-            `}
-          >
-            <span>📆</span>
-            <span>Select Month</span>
-          </button>
 
-          {/* Custom Range Button */}
-          <button
-            onClick={() => handleTimeRangeClick('custom')}
-            className={`
-              px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center gap-2
-              ${showCustomRange
-                ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-lg scale-105'
-                : 'bg-white text-sky-700 border-2 border-sky-200 hover:border-sky-400 hover:shadow-md'
-              }
-            `}
-          >
-            <span>🎯</span>
-            <span>Custom Range</span>
-          </button>
-        </div>
+      {/* Row 1: The Big Picture (Comparisons) */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
-        {/* Month/Year Picker */}
-        {showMonthYearPicker && (
-          <div className="mt-4 bg-white border-2 border-sky-300 rounded-xl p-6 space-y-4 animate-slideDown shadow-xl">
-            <div className="flex items-center gap-2 mb-3">
-              <svg className="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <h4 className="font-bold text-sky-900 text-lg">Select Month & Year</h4>
-            </div>
-
-            <div className="space-y-4">
-              {/* Year Selector */}
-              <div>
-                <label className="text-sm font-bold text-sky-700 mb-2 block">Year</label>
-                <div className="grid grid-cols-5 gap-2">
-                  {years.map(year => (
-                    <button
-                      key={year}
-                      onClick={() => setSelectedYear(year)}
-                      className={`
-                        px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200
-                        ${selectedYear === year
-                          ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-md scale-105'
-                          : 'bg-sky-50 text-sky-700 border-2 border-sky-200 hover:border-sky-400 hover:shadow-sm'
-                        }
-                      `}
-                    >
-                      {year}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Month Selector */}
-              <div>
-                <label className="text-sm font-bold text-sky-700 mb-2 block">Month</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {months.map((month, index) => (
-                    <button
-                      key={month}
-                      onClick={() => setSelectedMonth(index)}
-                      className={`
-                        px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200
-                        ${selectedMonth === index
-                          ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-md scale-105'
-                          : 'bg-sky-50 text-sky-700 border-2 border-sky-200 hover:border-sky-400 hover:shadow-sm'
-                        }
-                      `}
-                    >
-                      {month.substring(0, 3)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Selected Display */}
-              <div className="bg-gradient-to-r from-sky-50 to-blue-50 border-2 border-sky-200 rounded-lg p-4">
-                <div className="text-center">
-                  <div className="text-xs text-sky-600 font-semibold mb-1">Selected Period</div>
-                  <div className="text-xl font-bold text-sky-900">
-                    {months[selectedMonth]} {selectedYear}
-                  </div>
-                </div>
-              </div>
-
-              {/* Apply Button */}
-              <button
-                onClick={handleMonthYearApply}
-                className="w-full bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 text-white font-bold py-3 rounded-lg transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Apply Selection
-              </button>
-            </div>
+        {/* Chart 1: Admission vs Outcome Flow */}
+        <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-6 hover:shadow-2xl transition-all">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <span className="text-2xl">🌊</span> Patient Flow Dynamics
+            </h3>
+            <NeolinkAIButton
+              chartTitle="Patient Flow Dynamics"
+              chartType="bar chart"
+              dataPoints={outcomesComparisonData.map(d => ({ label: d[xAxisKey as keyof typeof d] as string, value: `Admissions: ${d.admissions}, Discharged/Referred: ${d.positiveOutcomes}` }))}
+              context="NICU/PICU patient admissions vs discharges/referrals trend"
+            />
           </div>
-        )}
-
-        {/* Custom Date Range Picker */}
-        {showCustomRange && (
-          <div className="mt-4 bg-white border-2 border-sky-300 rounded-xl p-4 space-y-3 animate-slideDown">
-            <div className="flex items-center gap-2 mb-2">
-              <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <h4 className="font-bold text-sky-900">Custom Date Range</h4>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-bold text-sky-700 mb-1 block">Start Date</label>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="w-full px-3 py-2 border-2 border-sky-200 rounded-lg focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none"
+          <p className="text-sm text-slate-500 mb-6">Comparing Inflow (Admissions) vs Outflow (Discharges & Referrals)</p>
+          <div className="h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={outcomesComparisonData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey={xAxisKey} stroke="#64748b" tick={{ fontSize: 11 }} />
+                <YAxis stroke="#64748b" tick={{ fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  cursor={{ fill: '#f1f5f9' }}
                 />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-sky-700 mb-1 block">End Date</label>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  min={customStartDate}
-                  className="w-full px-3 py-2 border-2 border-sky-200 rounded-lg focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none"
-                />
-              </div>
-            </div>
-            <button
-              onClick={handleCustomApply}
-              disabled={!customStartDate || !customEndDate}
-              className="w-full bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 text-white font-bold py-3 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-            >
-              Apply Custom Range
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Main Trend Chart */}
-      <div className="bg-white rounded-xl shadow-xl border-2 border-sky-200 p-6 transition-all duration-200 hover:shadow-2xl">
-        <h3 className="text-xl font-bold text-sky-900 mb-4 flex items-center gap-2">
-          <span className="text-2xl">📈</span>
-          {timeRange === 'all' ? 'Year-wise Trends' : timeRange === '7days' || timeRange === '30days' ? 'Daily Trends' : 'Monthly Trends'}
-        </h3>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Admissions Trend */}
-          <div className="bg-gradient-to-br from-sky-50 to-blue-50 p-4 rounded-lg border border-sky-200">
-            <h4 className="text-base font-semibold text-sky-800 mb-3">Admissions Trend</h4>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis dataKey={xAxisKey} stroke="#0369a1" tick={{ fontSize: 11, fill: '#0369a1' }} angle={-45} textAnchor="end" height={80} />
-                <YAxis stroke="#0369a1" tick={{ fontSize: 11, fill: '#0369a1' }} />
-                <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #0ea5e9', borderRadius: '8px' }} />
-                <Legend wrapperStyle={{ fontSize: '12px' }} />
-                <Line type="monotone" dataKey="admissions" name="Admissions" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 5, fill: '#0ea5e9' }} activeDot={{ r: 7 }} />
-              </LineChart>
+                <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px' }} />
+                <Bar dataKey="admissions" name="Admissions (In)" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                <Bar dataKey="positiveOutcomes" name="Discharged/Referred (Out)" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={50} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
+        </div>
 
-          {/* Outcomes Breakdown */}
-          <div className="bg-gradient-to-br from-sky-50 to-blue-50 p-4 rounded-lg border border-sky-200">
-            <h4 className="text-base font-semibold text-sky-800 mb-3">Outcomes Breakdown</h4>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis dataKey={xAxisKey} stroke="#0369a1" tick={{ fontSize: 11, fill: '#0369a1' }} angle={-45} textAnchor="end" height={80} />
-                <YAxis stroke="#0369a1" tick={{ fontSize: 11, fill: '#0369a1' }} />
-                <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #0ea5e9', borderRadius: '8px' }} />
-                <Legend wrapperStyle={{ fontSize: '12px' }} />
-                <Bar dataKey="discharged" name="Discharged" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="referred" name="Referred" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="deaths" name="Deaths" fill="#ef4444" radius={[4, 4, 0, 0]} />
+        {/* Chart 2: Net Capacity Trends */}
+        <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-6 hover:shadow-2xl transition-all">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <span className="text-2xl">⚖️</span> Net Capacity Impact
+            </h3>
+            <NeolinkAIButton
+              chartTitle="Net Capacity Impact"
+              chartType="bar chart"
+              dataPoints={outcomesComparisonData.map(d => ({ label: d[xAxisKey as keyof typeof d] as string, value: `Net Change: ${d.netChange}` }))}
+              context="Net patient change - positive means beds filling, negative means beds freeing up"
+            />
+          </div>
+          <p className="text-sm text-slate-500 mb-6">Net change in patient load (Admissions - All Exits)</p>
+          <div className="h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={outcomesComparisonData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey={xAxisKey} stroke="#64748b" tick={{ fontSize: 11 }} />
+                <YAxis stroke="#64748b" tick={{ fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  cursor={{ fill: 'transparent' }}
+                />
+                <Legend />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <ReferenceLine y={0} stroke="#94a3b8" />
+                <Bar dataKey="netChange" name="Net Patient Change" fill="#8b5cf6" radius={[4, 4, 0, 0]} maxBarSize={50}>
+                  {
+                    outcomesComparisonData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.netChange > 0 ? '#ef4444' : '#10b981'} />
+                    ))
+                  }
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       </div>
 
-      {/* Diagnosis & Length of Stay */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Diagnoses */}
-        <div className="bg-white rounded-xl shadow-xl border-2 border-sky-200 p-6 transition-all duration-200 hover:shadow-2xl">
-          <h3 className="text-xl font-bold text-sky-900 mb-4 flex items-center gap-2">
-            <span className="text-2xl">🦠</span> Top 5 Diagnoses
-          </h3>
+      {/* Row 2: Deep Dive (Weight & LOS) */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+        {/* Chart 3: Birth Weight Analysis */}
+        <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-6 hover:shadow-2xl transition-all">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <span className="text-2xl">⚖️</span> Outcome by Birth Weight
+            </h3>
+            <NeolinkAIButton
+              chartTitle="Outcome by Birth Weight"
+              chartType="horizontal bar chart"
+              dataPoints={weightAnalysisData.map(d => ({ label: d.name, value: `Total: ${d.total}, Discharged: ${d.discharged}, Deceased: ${d.deceased}, Survival: ${d.survivalRate}%` }))}
+              context="NICU birth weight categories and survival outcomes"
+            />
+          </div>
+          <p className="text-sm text-slate-500 mb-6">Detailed outcome distribution across weight categories</p>
+          <div className="h-[350px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={weightAnalysisData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+                <XAxis type="number" stroke="#64748b" xAxisId="bottom" />
+                <XAxis type="number" stroke="#f59e0b" xAxisId="top" orientation="top" hide />
+                <YAxis dataKey="name" type="category" stroke="#64748b" width={120} tick={{ fontSize: 11, fontWeight: 'bold' }} />
+                <Tooltip
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                />
+                <Legend iconType="circle" />
+
+                {/* Stacked Bars for Outcome */}
+                <Bar dataKey="discharged" name="Discharged" stackId="a" fill="#10b981" barSize={30} xAxisId="bottom" />
+                <Bar dataKey="referred" name="Referred" stackId="a" fill="#f59e0b" barSize={30} xAxisId="bottom" />
+                <Bar dataKey="deceased" name="Deceased" stackId="a" fill="#ef4444" barSize={30} xAxisId="bottom" />
+                <Bar dataKey="other" name="In Progress/Step Down" stackId="a" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={30} xAxisId="bottom" />
+
+                {/* Line for Average LOS */}
+                <Line type="monotone" dataKey="avgLOS" name="Avg Hospital Stay (Days)" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4, fill: '#8b5cf6' }} xAxisId="bottom" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Chart 4: LOS vs Mortality */}
+        <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-6 hover:shadow-2xl transition-all">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <span className="text-2xl">⏱️</span> Length of Stay vs Mortality
+            </h3>
+            <NeolinkAIButton
+              chartTitle="Length of Stay vs Mortality"
+              chartType="combo bar and line chart"
+              dataPoints={losMortalityData.map(d => ({ label: d.range, value: `Total: ${d.total}, Deceased: ${d.deceased}, Mortality: ${d.mortalityRate}%` }))}
+              context="Analyzing critical LOS periods for mortality risk in NICU/PICU"
+            />
+          </div>
+          <p className="text-sm text-slate-500 mb-6">Analyzing critical periods for mortality risk</p>
+          <div className="h-[350px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={losMortalityData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="range" stroke="#64748b" tick={{ fontSize: 11 }} />
+                <YAxis yAxisId="left" orientation="left" stroke="#64748b" />
+                <YAxis yAxisId="right" orientation="right" stroke="#ef4444" unit="%" />
+                <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                <Legend />
+                <Bar yAxisId="left" dataKey="total" name="Total Patients" fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                <Line yAxisId="right" type="monotone" dataKey="mortalityRate" name="Mortality Rate %" stroke="#ef4444" strokeWidth={3} dot={{ r: 4 }} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Row 3: Temporal Analysis */}
+      <div className="grid grid-cols-1 gap-6">
+        <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-6 hover:shadow-2xl transition-all">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <span className="text-2xl">📅</span> Temporal Analysis (Day of Week)
+            </h3>
+            <NeolinkAIButton
+              chartTitle="Temporal Analysis by Day of Week"
+              chartType="bar chart"
+              dataPoints={temporalData.map(d => ({ label: d.day, value: `Admissions: ${d.admissions}, Deaths: ${d.deaths}` }))}
+              context="Day-of-week patterns for admissions and mortality in NICU/PICU"
+            />
+          </div>
+          <p className="text-sm text-slate-500 mb-6">Identifying high-traffic days for resource planning</p>
           <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={temporalData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="day" stroke="#64748b" />
+                <YAxis stroke="#64748b" />
+                <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                <Legend />
+                <Bar dataKey="admissions" name="Admissions" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={60} />
+                <Bar dataKey="deaths" name="Deaths" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={60} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Existing Charts (retained for completeness but styled to match) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 opacity-80 hover:opacity-100 transition-opacity">
+        <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="font-bold text-slate-700">Top Diagnoses</h4>
+            <NeolinkAIButton
+              chartTitle="Top Diagnoses Distribution"
+              chartType="horizontal bar chart"
+              dataPoints={diagnosisData.map(d => ({ label: d.name, value: d.count }))}
+              context="Most common diagnoses in the unit"
+            />
+          </div>
+          <div className="h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={diagnosisData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" horizontal={false} />
-                <XAxis type="number" stroke="#0369a1" tick={{ fontSize: 11, fill: '#0369a1' }} />
-                <YAxis dataKey="name" type="category" stroke="#0369a1" tick={{ fontSize: 11, fill: '#0369a1' }} width={150} />
-                <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #0ea5e9', borderRadius: '8px' }} />
-                <Bar dataKey="count" name="Patients" fill="#8b5cf6" radius={[0, 8, 8, 0]} barSize={25} />
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={20} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
-
-        {/* Length of Stay */}
-        <div className="bg-white rounded-xl shadow-xl border-2 border-sky-200 p-6 transition-all duration-200 hover:shadow-2xl">
-          <h3 className="text-xl font-bold text-sky-900 mb-4 flex items-center gap-2">
-            <span className="text-2xl">⏱️</span> Length of Stay Distribution
-          </h3>
-          <div className="h-[300px]">
+        <div className="bg-slate-50 rounded-xl border border-slate-200 p-6">
+          <h4 className="font-bold text-slate-700 mb-4">Length of Stay (Overall)</h4>
+          <div className="h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={lengthOfStayData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" vertical={false} />
-                <XAxis dataKey="range" stroke="#0369a1" tick={{ fontSize: 11, fill: '#0369a1' }} />
-                <YAxis stroke="#0369a1" tick={{ fontSize: 11, fill: '#0369a1' }} />
-                <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #0ea5e9', borderRadius: '8px' }} />
-                <Bar dataKey="count" name="Patients" fill="#f43f5e" radius={[8, 8, 0, 0]} barSize={50} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="range" tick={{ fontSize: 10 }} />
+                <YAxis hide />
+                <Tooltip />
+                <Bar dataKey="count" fill="#f43f5e" radius={[4, 4, 0, 0]} barSize={30} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       </div>
+
     </div>
   );
 };

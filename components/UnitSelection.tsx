@@ -12,12 +12,12 @@ const UnitSelection: React.FC<UnitSelectionProps> = ({ selectedUnit, onSelectUni
   const unitsToShow = availableUnits || Object.values(Unit);
 
   return (
-    <div className="flex flex-wrap gap-1 bg-slate-700/50 p-1 rounded-lg border border-slate-600">
+    <div className="flex flex-wrap gap-0.5 sm:gap-1 bg-slate-700/50 p-0.5 sm:p-1 rounded-lg border border-slate-600">
       {unitsToShow.map((unit) => (
         <button
           key={unit}
           onClick={() => onSelectUnit(unit)}
-          className={`px-6 py-2 rounded-md text-sm font-semibold transition-all duration-300 flex-1 ${selectedUnit === unit
+          className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-semibold transition-all duration-300 ${selectedUnit === unit
             ? 'bg-blue-500 text-white shadow-md'
             : 'text-slate-300 hover:bg-slate-600/50'
             }`}

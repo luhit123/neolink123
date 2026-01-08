@@ -1006,6 +1006,58 @@ export const suggestDiagnosis = async (
 };
 
 // ============================================================================
+// CHART ANALYTICS AI
+// ============================================================================
+
+export const explainChartData = async (
+  chartTitle: string,
+  chartType: string,
+  dataPoints: { label: string; value: number | string }[],
+  context?: string
+): Promise<string> => {
+  const dataString = dataPoints
+    .map(d => `${d.label}: ${d.value}`)
+    .join('\n');
+
+  const cacheKey = `chart-explain-${chartTitle}-${JSON.stringify(dataPoints).slice(0, 100)}`;
+  const cached = getCachedResult(cacheKey);
+  if (cached) return cached;
+
+  const prompt = `
+    You are NeolinkAI, an expert healthcare analytics assistant for NICU/PICU.
+    Analyze this ${chartType} chart data and provide clinically relevant insights.
+
+    Chart Title: ${chartTitle}
+    ${context ? `Context: ${context}` : ''}
+    
+    Data:
+    ${dataString}
+
+    Provide a concise analysis including:
+    1. **Key Insights** - What does this data tell us? (2-3 bullet points)
+    2. **Trends** - Any notable patterns or trends
+    3. **Clinical Implications** - What should clinicians pay attention to?
+    4. **Recommendations** - Any actionable suggestions
+
+    Keep the response concise (under 200 words) and clinically focused.
+    Use simple bullet points. Be specific to the numbers shown.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: prompt,
+    });
+    const result = response.text + AI_DISCLAIMER;
+    setCachedResult(cacheKey, result);
+    return result;
+  } catch (error) {
+    console.error("Error explaining chart data:", error);
+    return "Unable to generate chart explanation at this time. Please try again.";
+  }
+};
+
+// ============================================================================
 // UTILITY EXPORTS
 // ============================================================================
 

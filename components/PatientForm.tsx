@@ -71,8 +71,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
   // Section expansion states
   const [expandedSections, setExpandedSections] = useState({
     demographics: true,
-    birthDetails: true,
-    admissionDetails: true,
+    admissionDetails: true, // Now includes Birth Details
     dischargeDetails: false
   });
 
@@ -85,6 +84,21 @@ const PatientForm: React.FC<PatientFormProps> = ({
       setPatient(patientToEdit);
     }
   }, [patientToEdit]);
+
+  // Update unit if defaultUnit changes (for new patients)
+  useEffect(() => {
+    if (!patientToEdit && defaultUnit && patient.unit !== defaultUnit) {
+      console.log('🔄 Switching form unit to:', defaultUnit);
+      setPatient(prev => ({ ...prev, unit: defaultUnit }));
+    }
+  }, [defaultUnit, patientToEdit]);
+
+  // Prefill "Baby of " for NICU/SNCU if name is empty
+  useEffect(() => {
+    if ((patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && !patient.name && !patientToEdit) {
+      setPatient(prev => ({ ...prev, name: 'Baby of ' }));
+    }
+  }, [patient.unit, patientToEdit]);
 
   // Fetch admission indications based on unit type
   useEffect(() => {
@@ -158,6 +172,16 @@ const PatientForm: React.FC<PatientFormProps> = ({
         updated.age = calculatedAge.age;
         updated.ageUnit = calculatedAge.ageUnit;
         console.log('✅ Auto-calculated age:', calculatedAge.age, calculatedAge.ageUnit);
+      }
+
+      // Auto-fill Mother's Name from "Baby of ..."
+      if (name === 'name' && typeof processedValue === 'string') {
+        const babyOfPrefix = 'Baby of ';
+        if (processedValue.toLowerCase().startsWith(babyOfPrefix.toLowerCase())) {
+          const extractedMotherName = processedValue.slice(babyOfPrefix.length);
+          // Update even if empty string (to clear it if user backspaces to just "Baby of ")
+          updated.motherName = extractedMotherName;
+        }
       }
 
       // Auto-calculate age on admission from birth date and admission datetime
@@ -235,27 +259,40 @@ const PatientForm: React.FC<PatientFormProps> = ({
   };
 
   const handleSaveProgressNote = (note: ProgressNote) => {
-    console.log('📝 handleSaveProgressNote called with note:', JSON.stringify(note));
+    console.log('🚀 ========================================');
+    console.log('🚀 handleSaveProgressNote CALLED');
+    console.log('🚀 Received note:', JSON.stringify(note, null, 2));
+    console.log('🚀 editingNoteIndex:', editingNoteIndex);
+    console.log('🚀 Current patient.progressNotes length:', patient.progressNotes.length);
+    console.log('🚀 Current patient.progressNotes:', JSON.stringify(patient.progressNotes, null, 2));
+
     if (editingNoteIndex !== null) {
       // Update existing note
+      console.log('🚀 MODE: Updating existing note at index', editingNoteIndex);
       const updatedNotes = [...patient.progressNotes];
       updatedNotes[editingNoteIndex] = note;
-      console.log('📝 Updated notes array:', JSON.stringify(updatedNotes));
+      console.log('🚀 Updated notes array:', JSON.stringify(updatedNotes, null, 2));
       setPatient(prev => ({ ...prev, progressNotes: updatedNotes }));
     } else {
       // Add new note
-      console.log('📝 Adding new note to existing:', JSON.stringify(patient.progressNotes));
+      console.log('🚀 MODE: Adding new note');
+      console.log('🚀 Adding new note to existing:', JSON.stringify(patient.progressNotes, null, 2));
       setPatient(prev => {
         const newNotes = [...prev.progressNotes, note];
-        console.log('📝 New notes array after add:', JSON.stringify(newNotes));
+        console.log('🚀 New notes array after add (length:', newNotes.length, '):', JSON.stringify(newNotes, null, 2));
         return {
           ...prev,
           progressNotes: newNotes
         };
       });
     }
+
+    console.log('🚀 Setting showProgressNoteForm to FALSE');
     setShowProgressNoteForm(false);
+    console.log('🚀 Setting editingNoteIndex to NULL');
     setEditingNoteIndex(null);
+    console.log('🚀 handleSaveProgressNote COMPLETED');
+    console.log('🚀 ========================================');
   };
 
   const handleAddNewProgressNote = () => {
@@ -284,7 +321,13 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
 
   const handleSubmit = (e: React.FormEvent, saveAsDraft: boolean = false) => {
+    console.log('💾 ========================================');
+    console.log('💾 PatientForm handleSubmit CALLED');
+    console.log('💾 Event type:', e.type);
+    console.log('💾 saveAsDraft:', saveAsDraft);
     e.preventDefault();
+    console.log('💾 preventDefault called on form submission');
+
     const updatedPatient = {
       ...patient,
       id: patient.id || Date.now().toString(),
@@ -295,9 +338,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
       institutionId,
       institutionName
     };
-    console.log('📤 PatientForm handleSubmit - updatedPatient.progressNotes:', JSON.stringify(updatedPatient.progressNotes));
-    console.log('📤 PatientForm handleSubmit - Full patient object keys:', Object.keys(updatedPatient));
+    console.log('💾 updatedPatient.progressNotes (length:', updatedPatient.progressNotes.length, '):', JSON.stringify(updatedPatient.progressNotes, null, 2));
+    console.log('💾 Full patient object keys:', Object.keys(updatedPatient));
+    console.log('💾 About to call onSave with updatedPatient');
     onSave(updatedPatient);
+    console.log('💾 onSave completed');
+    console.log('💾 ========================================');
   };
 
   const handleSaveAsDraft = (e: React.FormEvent) => {
@@ -343,6 +389,170 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
         <form onSubmit={handleSaveComplete} className="space-y-6">
           <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 flex-grow">
+
+            {/* Admission & Birth Details Section */}
+            <div className="bg-gradient-to-r from-green-900/30 to-teal-900/30 rounded-xl border border-green-500/30 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('admissionDetails')}
+                className="w-full px-4 py-3 flex items-center justify-between bg-green-900/50 hover:bg-green-900/70 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  <h3 className="text-lg font-bold text-green-200">Admission & Birth Details</h3>
+                </div>
+                <svg className={`w-5 h-5 text-green-400 transition-transform ${expandedSections.admissionDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {expandedSections.admissionDetails && (
+                <div className="p-4 space-y-6">
+                  {/* 1. Admission Context */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
+                      <div>
+                        <label htmlFor="admissionType" className="block text-sm font-medium text-slate-300 mb-1">
+                          Type of Admission <span className="text-red-400">*</span>
+                        </label>
+                        <select
+                          name="admissionType"
+                          id="admissionType"
+                          value={patient.admissionType || ''}
+                          onChange={handleChange}
+                          required
+                          className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent"
+                        >
+                          <option value="">Select Admission Type</option>
+                          {Object.values(AdmissionType).map(at => <option key={at} value={at}>{at}</option>)}
+                        </select>
+                        {patient.admissionType === AdmissionType.Inborn && (
+                          <p className="text-xs text-green-400 mt-1">
+                            ✓ Place of delivery will be set to: {institutionName}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="admissionDateTime" className="block text-sm font-medium text-slate-300 mb-1">Date and Time of Admission <span className="text-red-400">*</span></label>
+                      <input type="datetime-local" name="admissionDateTime" id="admissionDateTime" value={patient.admissionDateTime ? patient.admissionDateTime.slice(0, 16) : patient.admissionDate.slice(0, 16)} onChange={handleChange} required className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" />
+                    </div>
+                  </div>
+
+                  <hr className="border-slate-700/50" />
+
+                  {/* 2. Birth & Weight Info */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
+                      <div>
+                        <label htmlFor="dateOfBirth" className="block text-sm font-medium text-slate-300 mb-1">Date and Time of Birth</label>
+                        <input type="datetime-local" name="dateOfBirth" id="dateOfBirth" value={patient.dateOfBirth ? patient.dateOfBirth.slice(0, 16) : ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" />
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="age" className="block text-sm font-medium text-slate-300 mb-1">Current Age <span className="text-red-400">*</span></label>
+                      <div className="flex gap-2">
+                        <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" className="w-2/3 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" />
+                        <select name="ageUnit" id="ageUnit" value={patient.ageUnit} onChange={handleChange} required className="w-1/3 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent text-sm">
+                          {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) ? (
+                      <div>
+                        <label htmlFor="birthWeight" className="block text-sm font-medium text-slate-300 mb-1">Birth Weight (Kg)</label>
+                        <input type="number" name="birthWeight" id="birthWeight" value={patient.birthWeight || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" placeholder="e.g., 2.500" />
+                      </div>
+                    ) : <div></div>}
+                    <div>
+                      <label htmlFor="weightOnAdmission" className="block text-sm font-medium text-slate-300 mb-1">Weight on Admission (Kg)</label>
+                      <input type="number" name="weightOnAdmission" id="weightOnAdmission" value={patient.weightOnAdmission || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" placeholder="e.g., 2.500" />
+                    </div>
+                  </div>
+
+                  <hr className="border-slate-700/50" />
+
+                  {/* 3. Delivery Details (NICU Only) */}
+                  {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="modeOfDelivery" className="block text-sm font-medium text-slate-300 mb-1">Mode of Delivery</label>
+                        <select name="modeOfDelivery" id="modeOfDelivery" value={patient.modeOfDelivery || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent">
+                          <option value="">Select Mode</option>
+                          {Object.values(ModeOfDelivery).map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="placeOfDelivery" className="block text-sm font-medium text-slate-300 mb-1">
+                          Place of Delivery {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
+                        </label>
+                        <select
+                          name="placeOfDelivery"
+                          id="placeOfDelivery"
+                          value={patient.placeOfDelivery || ''}
+                          onChange={handleChange}
+                          disabled={patient.admissionType === AdmissionType.Inborn}
+                          className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          <option value="">Select Place</option>
+                          {Object.values(PlaceOfDelivery).map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {(patient.placeOfDelivery === PlaceOfDelivery.PrivateHospital || patient.placeOfDelivery === PlaceOfDelivery.GovernmentHospital) && (
+                    <div>
+                      <label htmlFor="placeOfDeliveryName" className="block text-sm font-medium text-slate-300 mb-1">
+                        Hospital Name {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
+                      </label>
+                      <input
+                        type="text"
+                        name="placeOfDeliveryName"
+                        id="placeOfDeliveryName"
+                        value={patient.placeOfDeliveryName || ''}
+                        onChange={handleChange}
+                        disabled={patient.admissionType === AdmissionType.Inborn}
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
+                        placeholder="Enter hospital name"
+                      />
+                    </div>
+                  )}
+
+
+                  {/* 4. Transport & Referral */}
+                  {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="modeOfTransport" className="block text-sm font-medium text-slate-300 mb-1">Mode of Transport</label>
+                        <select name="modeOfTransport" id="modeOfTransport" value={patient.modeOfTransport || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent">
+                          <option value="">Select Mode</option>
+                          {Object.values(ModeOfTransport).map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+
+                      {(patient.admissionType === AdmissionType.OutbornHealthFacility || patient.admissionType === AdmissionType.OutbornCommunity) && (
+                        <div className="space-y-4 md:col-span-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
+                          <div>
+                            <label htmlFor="referringHospital" className="block text-sm font-medium text-slate-300 mb-1">Referred From (Hospital/Facility)</label>
+                            <input type="text" name="referringHospital" id="referringHospital" value={patient.referringHospital || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" placeholder="Name of referring hospital or facility" />
+                          </div>
+                          <div>
+                            <label htmlFor="referringDistrict" className="block text-sm font-medium text-slate-300 mb-1">Referring District</label>
+                            <input type="text" name="referringDistrict" id="referringDistrict" value={patient.referringDistrict || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" placeholder="District name" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Administrative & Demographic Information Section */}
             <div className="bg-gradient-to-r from-blue-900/30 to-indigo-900/30 rounded-xl border border-blue-500/30 overflow-hidden">
@@ -472,166 +682,9 @@ const PatientForm: React.FC<PatientFormProps> = ({
               )}
             </div>
 
-            {/* Birth Details Section */}
-            {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
-              <div className="bg-gradient-to-r from-pink-900/30 to-purple-900/30 rounded-xl border border-pink-500/30 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => toggleSection('birthDetails')}
-                  className="w-full px-4 py-3 flex items-center justify-between bg-pink-900/50 hover:bg-pink-900/70 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <svg className="w-5 h-5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <h3 className="text-lg font-bold text-pink-200">Birth Details</h3>
-                  </div>
-                  <svg className={`w-5 h-5 text-pink-400 transition-transform ${expandedSections.birthDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
 
-                {expandedSections.birthDetails && (
-                  <div className="p-4 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="dateOfBirth" className="block text-sm font-medium text-slate-300 mb-1">Date and Time of Birth</label>
-                        <input type="datetime-local" name="dateOfBirth" id="dateOfBirth" value={patient.dateOfBirth ? patient.dateOfBirth.slice(0, 16) : ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-pink-400 focus:border-transparent" />
-                      </div>
-                      <div>
-                        <label htmlFor="birthWeight" className="block text-sm font-medium text-slate-300 mb-1">Birth Weight (Kg)</label>
-                        <input type="number" name="birthWeight" id="birthWeight" value={patient.birthWeight || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-pink-400 focus:border-transparent" placeholder="e.g., 2.500" />
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="modeOfDelivery" className="block text-sm font-medium text-slate-300 mb-1">Mode of Delivery</label>
-                        <select name="modeOfDelivery" id="modeOfDelivery" value={patient.modeOfDelivery || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-pink-400 focus:border-transparent">
-                          <option value="">Select Mode</option>
-                          {Object.values(ModeOfDelivery).map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label htmlFor="placeOfDelivery" className="block text-sm font-medium text-slate-300 mb-1">
-                          Place of Delivery {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
-                        </label>
-                        <select
-                          name="placeOfDelivery"
-                          id="placeOfDelivery"
-                          value={patient.placeOfDelivery || ''}
-                          onChange={handleChange}
-                          disabled={patient.admissionType === AdmissionType.Inborn}
-                          className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-pink-400 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          <option value="">Select Place</option>
-                          {Object.values(PlaceOfDelivery).map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                      </div>
-                    </div>
 
-                    {(patient.placeOfDelivery === PlaceOfDelivery.PrivateHospital || patient.placeOfDelivery === PlaceOfDelivery.GovernmentHospital) && (
-                      <div>
-                        <label htmlFor="placeOfDeliveryName" className="block text-sm font-medium text-slate-300 mb-1">
-                          Hospital Name {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
-                        </label>
-                        <input
-                          type="text"
-                          name="placeOfDeliveryName"
-                          id="placeOfDeliveryName"
-                          value={patient.placeOfDeliveryName || ''}
-                          onChange={handleChange}
-                          disabled={patient.admissionType === AdmissionType.Inborn}
-                          className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-pink-400 focus:border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
-                          placeholder="Enter hospital name"
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Admission Details Section */}
-            <div className="bg-gradient-to-r from-green-900/30 to-teal-900/30 rounded-xl border border-green-500/30 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggleSection('admissionDetails')}
-                className="w-full px-4 py-3 flex items-center justify-between bg-green-900/50 hover:bg-green-900/70 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                  <h3 className="text-lg font-bold text-green-200">Admission Details</h3>
-                </div>
-                <svg className={`w-5 h-5 text-green-400 transition-transform ${expandedSections.admissionDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {expandedSections.admissionDetails && (
-                <div className="p-4 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="admissionDateTime" className="block text-sm font-medium text-slate-300 mb-1">Date and Time of Admission <span className="text-red-400">*</span></label>
-                      <input type="datetime-local" name="admissionDateTime" id="admissionDateTime" value={patient.admissionDateTime ? patient.admissionDateTime.slice(0, 16) : patient.admissionDate.slice(0, 16)} onChange={handleChange} required className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" />
-                    </div>
-                    <div>
-                      <label htmlFor="weightOnAdmission" className="block text-sm font-medium text-slate-300 mb-1">Weight on Admission (Kg)</label>
-                      <input type="number" name="weightOnAdmission" id="weightOnAdmission" value={patient.weightOnAdmission || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" placeholder="e.g., 2.500" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label htmlFor="age" className="block text-sm font-medium text-slate-300 mb-1">Current Age <span className="text-red-400">*</span></label>
-                      <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" />
-                    </div>
-                    <div>
-                      <label htmlFor="ageUnit" className="block text-sm font-medium text-slate-300 mb-1">Age Unit <span className="text-red-400">*</span></label>
-                      <select name="ageUnit" id="ageUnit" value={patient.ageUnit} onChange={handleChange} required className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent">
-                        {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label htmlFor="ageOnAdmission" className="block text-sm font-medium text-slate-300 mb-1">Age on Admission</label>
-                      <div className="grid grid-cols-2 gap-1">
-                        <input type="number" name="ageOnAdmission" id="ageOnAdmission" value={patient.ageOnAdmission || ''} onChange={handleChange} min="0" className="px-2 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent text-sm" placeholder="Age" />
-                        <select name="ageOnAdmissionUnit" id="ageOnAdmissionUnit" value={patient.ageOnAdmissionUnit || AgeUnit.Days} onChange={handleChange} className="px-2 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent text-sm">
-                          {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
-                    <>
-                      <div>
-                        <label htmlFor="modeOfTransport" className="block text-sm font-medium text-slate-300 mb-1">Mode of Transport</label>
-                        <select name="modeOfTransport" id="modeOfTransport" value={patient.modeOfTransport || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent">
-                          <option value="">Select Mode</option>
-                          {Object.values(ModeOfTransport).map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                      </div>
-
-                      {(patient.admissionType === AdmissionType.OutbornHealthFacility || patient.admissionType === AdmissionType.OutbornCommunity) && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label htmlFor="referringHospital" className="block text-sm font-medium text-slate-300 mb-1">Referred From (Hospital/Facility)</label>
-                            <input type="text" name="referringHospital" id="referringHospital" value={patient.referringHospital || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" placeholder="Name of referring hospital or facility" />
-                          </div>
-                          <div>
-                            <label htmlFor="referringDistrict" className="block text-sm font-medium text-slate-300 mb-1">Referring District</label>
-                            <input type="text" name="referringDistrict" id="referringDistrict" value={patient.referringDistrict || ''} onChange={handleChange} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-green-400 focus:border-transparent" placeholder="District name" />
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
 
             {/* Clinical Information Section */}
             <div className="bg-gradient-to-r from-purple-900/30 to-violet-900/30 rounded-xl border border-purple-500/30 overflow-hidden">
@@ -784,6 +837,54 @@ const PatientForm: React.FC<PatientFormProps> = ({
               </div>
             </div>
 
+            {/* Readmit to ICU Section - Only show for Step Down patients */}
+            {patient.outcome === 'Step Down' && patient.isStepDown && (
+              <div className="bg-gradient-to-r from-red-900/30 to-pink-900/30 rounded-xl border-2 border-red-500/50 overflow-hidden shadow-lg">
+                <div className="px-4 py-3 bg-red-900/50">
+                  <div className="flex items-center gap-3">
+                    <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <h3 className="text-lg font-bold text-red-200">Readmission Required?</h3>
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-3">
+                  <div className="bg-red-50/10 border border-red-400/30 rounded-lg p-4">
+                    <p className="text-sm text-slate-300 mb-4">
+                      This patient is currently in <strong className="text-purple-400">Step Down</strong> status from <strong className="text-purple-400">{patient.stepDownFrom}</strong>.
+                      If the patient requires readmission to intensive care, click the button below.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[Unit.NICU, Unit.PICU, Unit.SNCU].map(unit => (
+                        <button
+                          key={unit}
+                          type="button"
+                          onClick={() => {
+                            setPatient(prev => ({
+                              ...prev,
+                              outcome: 'In Progress',
+                              unit: unit,
+                              isStepDown: false,
+                              readmissionFromStepDown: true,
+                            }));
+                            alert(`Patient readmitted to ${unit} successfully! Status changed to "In Progress".`);
+                          }}
+                          className="px-4 py-3 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white rounded-lg font-bold transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
+                          Readmit to {unit}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Discharge Details Section - Only show when outcome is not In Progress */}
             {patient.outcome !== 'In Progress' && (
               <div className="bg-gradient-to-r from-orange-900/30 to-amber-900/30 rounded-xl border border-orange-500/30 overflow-hidden">
@@ -849,59 +950,99 @@ const PatientForm: React.FC<PatientFormProps> = ({
             )}
 
             {isDoctor && (
-              <div className="bg-slate-800/50 p-6 rounded-lg border border-slate-600">
-                <div className="flex items-center justify-between mb-4">
-                  <label className="block text-lg font-semibold text-slate-200 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Clinical Progress Notes
-                    <span className="ml-2 text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded">
-                      {patient.progressNotes.length}
-                    </span>
+              <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 p-6 rounded-xl border border-slate-600 shadow-xl">
+                <div className="flex items-center justify-between mb-6">
+                  <label className="block text-xl font-bold text-white flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        Clinical Progress Notes
+                        <span className="px-2.5 py-1 bg-blue-500/30 text-blue-300 text-sm font-bold rounded-full border border-blue-400/30">
+                          {patient.progressNotes.length}
+                        </span>
+                      </div>
+                      <div className="text-xs font-normal text-slate-400 mt-0.5">
+                        Add notes at different times throughout the day
+                      </div>
+                    </div>
                   </label>
                   {!showProgressNoteForm && (
                     <button
                       type="button"
                       onClick={handleAddNewProgressNote}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                      className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-lg font-bold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
                     >
-                      <PlusIcon className="w-4 h-4" />
-                      Add Progress Note
+                      <PlusIcon className="w-5 h-5" />
+                      Add New Note
                     </button>
                   )}
                 </div>
 
-                {/* Show existing progress notes */}
+                {/* Timeline View for Progress Notes */}
                 {patient.progressNotes.length > 0 && !showProgressNoteForm && (
-                  <div className="space-y-3 mb-4">
-                    {patient.progressNotes
-                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                      .map((note, index) => (
-                        <div key={index} className="relative">
-                          <ProgressNoteDisplay note={note} />
-                          <div className="absolute top-2 right-2 flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleEditNote(patient.progressNotes.findIndex(n => n.date === note.date))}
-                              className="p-1.5 text-slate-400 hover:text-blue-400 bg-slate-800/80 rounded-lg transition-colors"
-                              title="Edit note"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeNote(patient.progressNotes.findIndex(n => n.date === note.date))}
-                              className="p-1.5 text-slate-400 hover:text-red-400 bg-slate-800/80 rounded-lg transition-colors"
-                              title="Remove note"
-                            >
-                              <TrashIcon className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                  <div className="relative">
+                    {/* Timeline Line */}
+                    <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gradient-to-b from-blue-500 via-purple-500 to-pink-500"></div>
+
+                    <div className="space-y-6 mb-4">
+                      {patient.progressNotes
+                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                        .map((note, index) => {
+                          const noteDate = new Date(note.date);
+                          const timeStr = noteDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                          const dateStr = noteDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+                          return (
+                            <div key={index} className="relative flex gap-4">
+                              {/* Timeline Node */}
+                              <div className="flex flex-col items-center flex-shrink-0">
+                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg ring-4 ring-slate-800 z-10">
+                                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                </div>
+                                <div className="text-center mt-2">
+                                  <div className="text-xs font-bold text-blue-300">{timeStr}</div>
+                                  <div className="text-xs text-slate-400">{dateStr}</div>
+                                </div>
+                              </div>
+
+                              {/* Note Card */}
+                              <div className="flex-1 relative group">
+                                <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-lg border border-slate-600 p-4 shadow-lg hover:shadow-xl transition-all hover:border-blue-500/50">
+                                  <ProgressNoteDisplay note={note} />
+
+                                  {/* Hover Actions */}
+                                  <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditNote(patient.progressNotes.findIndex(n => n.date === note.date))}
+                                      className="p-2 text-slate-400 hover:text-blue-400 bg-slate-900/90 hover:bg-blue-900/50 rounded-lg transition-all shadow-md"
+                                      title="Edit note"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeNote(patient.progressNotes.findIndex(n => n.date === note.date))}
+                                      className="p-2 text-slate-400 hover:text-red-400 bg-slate-900/90 hover:bg-red-900/50 rounded-lg transition-all shadow-md"
+                                      title="Remove note"
+                                    >
+                                      <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
                   </div>
                 )}
 
@@ -915,8 +1056,9 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         setEditingNoteIndex(null);
                       }}
                       existingNote={editingNoteIndex !== null ? patient.progressNotes[editingNoteIndex] : undefined}
+                      lastNote={patient.progressNotes.length > 0 ? patient.progressNotes[patient.progressNotes.length - 1] : undefined}
                       userEmail={userEmail}
-                      userName={userRole}
+                      userName={userName || userEmail}
                     />
                   </div>
                 )}

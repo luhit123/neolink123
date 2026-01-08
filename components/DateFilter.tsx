@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
-type Period = string; // Support for 'All Time', 'Today', 'YYYY-MM', 'Custom', etc.
+type Period = string;
 export type DateFilterValue = {
   period: Period;
   startDate?: string;
@@ -17,28 +17,14 @@ const DateFilter: React.FC<DateFilterProps> = ({ onFilterChange }) => {
   const [endDate, setEndDate] = useState('');
 
   const filterOptions = useMemo(() => {
-    const options: { value: string; label: string }[] = [
-      { value: 'All Time', label: 'All Time' },
+    return [
       { value: 'Today', label: 'Today' },
-      { value: 'This Week', label: 'This Week' },
-      { value: 'This Month', label: 'This Month (Current)' },
+      { value: 'This Week', label: 'Week' },
+      { value: 'This Month', label: 'Month' },
+      { value: 'All Time', label: 'All' },
+      { value: 'Custom', label: 'Custom' },
     ];
-
-    const now = new Date();
-    for (let i = 0; i < 12; i++) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const year = date.getFullYear();
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      options.push({
-        value: `${year}-${month}`,
-        label: date.toLocaleString('default', { month: 'long', year: 'numeric' }),
-      });
-    }
-
-    options.push({ value: 'Custom', label: 'Custom' });
-    return options;
   }, []);
-
 
   useEffect(() => {
     if (period !== 'Custom') {
@@ -46,70 +32,50 @@ const DateFilter: React.FC<DateFilterProps> = ({ onFilterChange }) => {
       setStartDate('');
       setEndDate('');
     } else {
-      // For custom, only trigger update if both dates are set
       if (startDate && endDate) {
         onFilterChange({ period: 'Custom', startDate, endDate });
       } else {
-        // If one date is cleared, we might want to stop filtering
         onFilterChange({ period: 'Custom', startDate: undefined, endDate: undefined });
       }
     }
   }, [period, startDate, endDate, onFilterChange]);
 
-  const handlePeriodChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setPeriod(e.target.value as Period);
-  };
-
-  const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newStartDate = e.target.value;
-    setStartDate(newStartDate);
-    // If end date is before new start date, clear it
-    if (endDate && new Date(newStartDate) > new Date(endDate)) {
-      setEndDate('');
-    }
-  };
-
-  const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setEndDate(e.target.value);
-  };
-
   return (
-    <div className="bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
-      <div className="flex flex-col sm:flex-row items-center gap-4">
-        <label htmlFor="date-filter" className="text-md font-semibold text-slate-300 whitespace-nowrap">
-          Filter by Admission Date:
-        </label>
+    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+      <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 dark:bg-slate-800 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2">
+        <span className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm">📅</span>
         <select
-          id="date-filter"
           value={period}
-          onChange={handlePeriodChange}
-          className="form-input w-full sm:w-auto"
+          onChange={(e) => setPeriod(e.target.value)}
+          className="bg-transparent border-0 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold focus:ring-0 cursor-pointer"
         >
-          {filterOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+          {filterOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
-
-        {period === 'Custom' && (
-          <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-            <input
-              type="date"
-              value={startDate}
-              onChange={handleStartDateChange}
-              className="form-input"
-              aria-label="Start Date"
-            />
-            <span className="text-slate-400 hidden sm:inline">to</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={handleEndDateChange}
-              min={startDate}
-              className="form-input"
-              aria-label="End Date"
-              disabled={!startDate}
-            />
-          </div>
-        )}
       </div>
+
+      {period === 'Custom' && (
+        <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 bg-slate-100 dark:bg-slate-800 rounded-lg px-2 sm:px-3 py-1 sm:py-2">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="bg-transparent border-0 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-medium focus:ring-0 cursor-pointer w-[110px] sm:w-auto"
+          />
+          <span className="text-slate-400 text-xs hidden sm:inline">→</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            min={startDate}
+            className="bg-transparent border-0 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-medium focus:ring-0 cursor-pointer w-[110px] sm:w-auto"
+            disabled={!startDate}
+          />
+        </div>
+      )}
     </div>
   );
 };

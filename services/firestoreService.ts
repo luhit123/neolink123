@@ -136,10 +136,18 @@ export const getPatients = async (collegeId: string): Promise<Patient[]> => {
       // Load progress notes
       const notesRef = collection(db, 'colleges', collegeId, 'patients', docSnap.id, 'progressNotes');
       const notesSnapshot = await getDocs(query(notesRef, orderBy('date', 'asc')));
-      patient.progressNotes = notesSnapshot.docs.map(noteDoc => ({
-        note: noteDoc.data().note,
-        date: timestampToISO(noteDoc.data().date),
-      }));
+      patient.progressNotes = notesSnapshot.docs.map(noteDoc => {
+        const data = noteDoc.data();
+        return {
+          date: timestampToISO(data.date),
+          note: data.note,
+          vitals: data.vitals,
+          examination: data.examination,
+          medications: data.medications,
+          addedBy: data.addedBy,
+          addedByEmail: data.addedByEmail,
+        };
+      });
       
       patients.push(patient);
     }
@@ -168,17 +176,21 @@ export const addPatient = async (
     if (patient.progressNotes && patient.progressNotes.length > 0) {
       const batch = writeBatch(db);
       const notesRef = collection(db, 'colleges', collegeId, 'patients', docRef.id, 'progressNotes');
-      
+
       patient.progressNotes.forEach((note) => {
         const noteRef = doc(notesRef);
         batch.set(noteRef, {
-          note: note.note,
           date: isoToTimestamp(note.date),
-          addedBy: userId,
+          note: note.note,
+          vitals: note.vitals,
+          examination: note.examination,
+          medications: note.medications,
+          addedBy: note.addedBy || userId,
+          addedByEmail: note.addedByEmail,
           addedByRole: userRole,
         });
       });
-      
+
       await batch.commit();
     }
     
@@ -224,9 +236,13 @@ export const updatePatient = async (
       patient.progressNotes.forEach((note) => {
         const noteRef = doc(notesRef);
         batch.set(noteRef, {
-          note: note.note,
           date: isoToTimestamp(note.date),
-          addedBy: userId,
+          note: note.note,
+          vitals: note.vitals,
+          examination: note.examination,
+          medications: note.medications,
+          addedBy: note.addedBy || userId,
+          addedByEmail: note.addedByEmail,
           addedByRole: userRole,
         });
       });

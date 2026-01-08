@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Patient } from '../types';
+import SwipeableListItem from './gestures/SwipeableListItem';
+import { haptics } from '../utils/haptics';
 
 interface CollapsiblePatientCardProps {
   patient: Patient;
@@ -11,6 +13,18 @@ interface CollapsiblePatientCardProps {
 const formatDate = (dateString: string) => {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const formatDateTime = (dateString: string) => {
+  const date = new Date(dateString);
+  return date.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
 };
 
 const CollapsiblePatientCard: React.FC<CollapsiblePatientCardProps> = ({ patient, onEdit, onView, canEdit }) => {
@@ -32,12 +46,47 @@ const CollapsiblePatientCard: React.FC<CollapsiblePatientCardProps> = ({ patient
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md border-2 border-sky-200 hover:border-sky-400 hover:shadow-xl transition-all duration-200 overflow-hidden">
-      {/* Collapsed View - Always Visible */}
-      <div
-        className="p-5 cursor-pointer bg-gradient-to-r from-white to-sky-50"
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
+    <SwipeableListItem
+      onSwipeLeft={() => {
+        if (canEdit) {
+          haptics.tap();
+          onEdit(patient);
+        }
+      }}
+      onSwipeRight={() => {
+        haptics.tap();
+        onView(patient);
+      }}
+      leftAction={{
+        label: 'View',
+        color: 'bg-blue-500',
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+        ),
+      }}
+      rightAction={
+        canEdit
+          ? {
+              label: 'Edit',
+              color: 'bg-emerald-500',
+              icon: (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              ),
+            }
+          : undefined
+      }
+    >
+      <div className="bg-white rounded-xl shadow-md border-2 border-sky-200 hover:border-sky-400 hover:shadow-xl transition-all duration-200 overflow-hidden">
+        {/* Collapsed View - Always Visible */}
+        <div
+          className="p-5 cursor-pointer bg-gradient-to-r from-white to-sky-50"
+          onClick={() => setIsExpanded(!isExpanded)}
+        >
         <div className="flex items-start justify-between gap-4">
           {/* Left: Patient Info */}
           <div className="flex-1 min-w-0">
@@ -51,6 +100,20 @@ const CollapsiblePatientCard: React.FC<CollapsiblePatientCardProps> = ({ patient
               <span className={`px-3 py-1 rounded-full text-xs font-bold border-2 ${getOutcomeColor(patient.outcome)}`}>
                 {patient.outcome}
               </span>
+              {/* View Patient Details Icon - Always Visible */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onView(patient);
+                }}
+                className="ml-auto p-2 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 text-white rounded-lg transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center group"
+                title="View Full Details"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </button>
             </div>
 
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-sky-700 ml-12">
@@ -135,28 +198,33 @@ const CollapsiblePatientCard: React.FC<CollapsiblePatientCardProps> = ({ patient
 
           {/* Step Down Info */}
           {patient.isStepDown && (
-            <div className="bg-gradient-to-r from-sky-50 to-blue-50 border-2 border-sky-300 rounded-lg p-4">
+            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-lg p-4 shadow-lg">
               <div className="flex items-center gap-2 mb-3">
-                <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
                 </svg>
-                <label className="text-sm font-bold text-sky-700 uppercase tracking-wide">Step Down</label>
+                <label className="text-base font-bold text-purple-700 uppercase tracking-wide">Step Down Status</label>
               </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <span className="text-sky-600 font-semibold">From:</span>
-                  <span className="text-sky-900 ml-2 font-medium">{patient.stepDownFrom}</span>
+              <div className="space-y-3">
+                <div className="bg-white rounded-lg p-3 border border-purple-200">
+                  <span className="text-xs text-purple-600 font-semibold uppercase block mb-1">Stepped Down From:</span>
+                  <span className="text-lg text-purple-900 font-bold">{patient.stepDownFrom}</span>
                 </div>
                 {patient.stepDownDate && (
-                  <div>
-                    <span className="text-sky-600 font-semibold">Date:</span>
-                    <span className="text-sky-900 ml-2 font-medium">{formatDate(patient.stepDownDate)}</span>
+                  <div className="bg-white rounded-lg p-3 border border-purple-200">
+                    <span className="text-xs text-purple-600 font-semibold uppercase block mb-1">Step Down Date & Time:</span>
+                    <span className="text-base text-purple-900 font-bold">{formatDateTime(patient.stepDownDate)}</span>
                   </div>
                 )}
               </div>
               {patient.readmissionFromStepDown && (
-                <div className="mt-3 pt-3 border-t border-sky-300">
-                  <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded">⚠️ Readmitted from Step Down</span>
+                <div className="mt-3 pt-3 border-t-2 border-red-300">
+                  <div className="flex items-center gap-2 bg-red-50 border-2 border-red-400 px-3 py-2 rounded-lg">
+                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <span className="text-sm font-bold text-red-700">⚠️ Readmitted from Step Down</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -255,6 +323,7 @@ const CollapsiblePatientCard: React.FC<CollapsiblePatientCardProps> = ({ patient
         </div>
       )}
     </div>
+    </SwipeableListItem>
   );
 };
 

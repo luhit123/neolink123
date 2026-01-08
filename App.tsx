@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
-import { MotionConfig } from 'framer-motion';
+import { MotionConfig, motion } from 'framer-motion';
 import { auth, db } from './firebaseConfig';
 import { handleRedirectResult } from './services/authService';
 import ErrorBoundary from './components/core/ErrorBoundary';
@@ -9,6 +9,7 @@ import Login from './components/Login';
 import Header from './components/Header';
 import { UserRole, UserProfile, Patient, Unit } from './types';
 import { animations } from './theme/material3Theme';
+import SharedBottomNav from './components/SharedBottomNav';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -17,6 +18,7 @@ const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const DistrictAdminDashboard = lazy(() => import('./components/DistrictAdminDashboard'));
 const ReferralManagementPage = lazy(() => import('./components/ReferralManagementPage'));
 const PatientForm = lazy(() => import('./components/PatientForm'));
+
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -39,6 +41,111 @@ function App() {
     institutionId: string;
     institutionName: string;
   } | null>(null);
+
+  // Navigation State
+  const [showPatientList, setShowPatientList] = useState(false);
+  const [triggerAnalyticsScroll, setTriggerAnalyticsScroll] = useState(0);
+
+  // Refs for checking state inside popstate listener without re-binding
+  const stateRef = React.useRef({
+    showSuperAdminPanel,
+    showAdminPanel,
+    showReferralManagement,
+    showAddPatientPage,
+    superAdminViewingInstitution,
+    districtAdminViewingInstitution,
+    // Add other states if needed
+  });
+
+  // Update refs when state changes
+  useEffect(() => {
+    stateRef.current = {
+      showSuperAdminPanel,
+      showAdminPanel,
+      showReferralManagement,
+      showAddPatientPage,
+      superAdminViewingInstitution,
+      districtAdminViewingInstitution
+    };
+  }, [showSuperAdminPanel, showAdminPanel, showReferralManagement, showAddPatientPage, superAdminViewingInstitution, districtAdminViewingInstitution]);
+
+  // Smart back navigation
+  useEffect(() => {
+    // Ensure we have a history entry to "back" into
+    // We push a 'trap' state if we don't have one
+    if (!window.history.state) {
+      window.history.replaceState({ page: 'root' }, '', window.location.pathname);
+      window.history.pushState({ page: 'app' }, '', window.location.pathname);
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      const state = stateRef.current;
+
+      // Check for any open modals/panels in priority order
+      if (state.showAddPatientPage) {
+        setShowAddPatientPage(false);
+        setPatientToEdit(null);
+        // Restore the 'app' state so the back button is "reset"
+        window.history.pushState({ page: 'app' }, '', window.location.pathname);
+        return;
+      }
+
+      if (state.showReferralManagement) {
+        setShowReferralManagement(false);
+        window.history.pushState({ page: 'app' }, '', window.location.pathname);
+        return;
+      }
+
+      if (state.showAdminPanel) {
+        setShowAdminPanel(false);
+        window.history.pushState({ page: 'app' }, '', window.location.pathname);
+        return;
+      }
+
+      if (state.superAdminViewingInstitution) {
+        setSuperAdminViewingInstitution(null);
+        setShowSuperAdminPanel(true);
+        window.history.pushState({ page: 'app' }, '', window.location.pathname);
+        return;
+      }
+
+      if (state.showSuperAdminPanel) {
+        setShowSuperAdminPanel(false);
+        window.history.pushState({ page: 'app' }, '', window.location.pathname);
+        return;
+      }
+
+      if (state.districtAdminViewingInstitution) {
+        setDistrictAdminViewingInstitution(null);
+        window.history.pushState({ page: 'app' }, '', window.location.pathname);
+        return;
+      }
+
+      // If nothing is open (Main Dashboard)
+      // We are now technically at 'root' state because 'app' was popped
+      const confirmExit = window.confirm('Are you sure you want to close the app?');
+      if (!confirmExit) {
+        // User cancelled exit, push 'app' state back to trap them
+        window.history.pushState({ page: 'app' }, '', window.location.pathname);
+      } else {
+        // User confirmed exit
+        // We are already at 'root', so if there's history before this, they go there.
+        // If this was a fresh tab, 'root' might be the end. 
+        // We can try to navigate back one more time to truly close/leave if possible, 
+        // or just let them stay at 'root' (which renders the same app but next back exits).
+        // Usually, just letting the pop happen is enough if they have history.
+        // If we want to force close:
+        // window.close(); // Scripts may not be allowed to close windows they didn't open.
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []); // Empty dependency array - relies on refs
+
+  // Track if we're on the main dashboard (for rendering conditional UI if needed)
+  const isOnMainPage = !showSuperAdminPanel && !showAdminPanel && !showReferralManagement &&
+    !showAddPatientPage && !superAdminViewingInstitution && !districtAdminViewingInstitution;
 
   // Check for redirect result on app load (only once)
   useEffect(() => {
@@ -278,6 +385,32 @@ function App() {
       setUserProfile(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBottomNavAction = (tab: 'home' | 'patients' | 'analytics' | 'more') => {
+    // Reset secondary pages to show Dashboard
+    if (tab === 'home') {
+      setShowReferralManagement(false);
+      setShowAddPatientPage(false);
+      setShowPatientList(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (tab === 'patients') {
+      setShowReferralManagement(false);
+      setShowAddPatientPage(false);
+      setShowPatientList(true);
+    } else if (tab === 'analytics') {
+      setShowReferralManagement(false);
+      setShowAddPatientPage(false);
+      setShowPatientList(false);
+      // Trigger scroll in dashboard
+      setTimeout(() => setTriggerAnalyticsScroll(prev => prev + 1), 100);
+    } else if (tab === 'more') {
+      // Just go home for now, quick actions logic is local to dashboard
+      // Ideally we lift that too, but for now Home is safe fallback
+      setShowReferralManagement(false);
+      setShowAddPatientPage(false);
+      setShowPatientList(false);
     }
   };
 
@@ -558,7 +691,7 @@ function App() {
   // Show Referral Management Page
   if (showReferralManagement && userProfile.institutionId) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900">
+      <div className="min-h-screen bg-sky-100 text-slate-900 pb-20">
         <Header
           userRole={userProfile.role}
           onLogout={handleLogout}
@@ -583,6 +716,19 @@ function App() {
             </Suspense>
           </div>
         </main>
+        <SharedBottomNav
+          activeTab="more" // Referrals is kind of 'more' or we can just leave it unset
+          onTabChange={handleBottomNavAction}
+          onAddPatient={() => {
+            if (userProfile.role === UserRole.Doctor || userProfile.role === UserRole.Nurse) {
+              setPatientToEdit(null);
+              setDefaultUnitForAdd(undefined);
+              setShowAddPatientPage(true);
+            }
+          }}
+          showAddButton={false} // Use FAB if desired, or here we can show FAB? 
+        // Actually user removed Add button from bar, so keep false
+        />
       </div>
     );
   }
@@ -705,10 +851,25 @@ function App() {
                     setDefaultUnitForAdd(unit);
                     setShowAddPatientPage(true);
                   }}
+                  showPatientList={showPatientList}
+                  setShowPatientList={setShowPatientList}
+                  triggerAnalyticsScroll={triggerAnalyticsScroll}
                 />
               </Suspense>
             </div>
           </main>
+
+          <SharedBottomNav
+            activeTab={showPatientList ? 'patients' : 'home'}
+            onTabChange={handleBottomNavAction}
+            onAddPatient={() => {
+              // Add button removed from bar per user request, but handler kept if we re-enable
+              setPatientToEdit(null);
+              setDefaultUnitForAdd(undefined);
+              setShowAddPatientPage(true);
+            }}
+            showAddButton={false}
+          />
         </div>
       </MotionConfig>
     </ErrorBoundary>

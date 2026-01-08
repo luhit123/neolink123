@@ -25,12 +25,16 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({
   threshold = 80,
 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const y = useMotionValue(0);
-  const rotation = useTransform(y, [0, threshold], [0, 180]);
-  const opacity = useTransform(y, [0, threshold / 2, threshold], [0, 0.5, 1]);
+  const [canPull, setCanPull] = useState(true);
+
+  const handleDragStart = () => {
+    // Only allow pull-to-refresh when scrolled to top
+    const isAtTop = window.scrollY === 0;
+    setCanPull(isAtTop);
+  };
 
   const handleDragEnd = async (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.y >= threshold && !isRefreshing) {
+    if (canPull && info.offset.y >= threshold && !isRefreshing) {
       setIsRefreshing(true);
       haptics.impact();
 
@@ -42,36 +46,23 @@ const PullToRefresh: React.FC<PullToRefreshProps> = ({
     }
   };
 
-  return (
-    <motion.div className={`relative ${className}`} style={{ y }}>
-      {/* Pull Indicator */}
-      <motion.div
-        className="absolute top-0 left-0 right-0 flex justify-center items-center"
-        style={{
-          opacity,
-          height: useTransform(y, [0, threshold], [0, threshold]),
-        }}
-      >
-        <motion.div
-          className="w-8 h-8 border-3 border-medical-teal border-t-transparent rounded-full"
-          style={{ rotate: rotation }}
-          animate={isRefreshing ? { rotate: 360 } : {}}
-          transition={isRefreshing ? { duration: 1, repeat: Infinity, ease: 'linear' } : {}}
-        />
-      </motion.div>
-
-      {/* Content */}
-      <motion.div
-        drag="y"
-        dragConstraints={{ top: 0, bottom: 0 }}
-        dragElastic={{ top: 0.5, bottom: 0 }}
-        onDragEnd={handleDragEnd}
-        style={{ y: isRefreshing ? threshold : 0 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      >
+  // Simplified version - just wrap children without drag interference
+  if (isRefreshing) {
+    return (
+      <div className={`relative ${className}`}>
+        {/* Pull Indicator */}
+        <div className="flex justify-center items-center py-4">
+          <div className="w-8 h-8 border-3 border-medical-teal border-t-transparent rounded-full animate-spin" />
+        </div>
         {children}
-      </motion.div>
-    </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`relative ${className}`}>
+      {children}
+    </div>
   );
 };
 

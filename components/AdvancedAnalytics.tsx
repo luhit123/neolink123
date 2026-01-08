@@ -862,9 +862,20 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
         <div className="space-y-6">
           {/* Daily Admissions & Discharges Trend */}
           <div className="bg-slate-800 rounded-xl p-6 shadow-xl border border-slate-700">
-            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-              <span className="text-xl">📈</span> Daily Trends (Last 30 Days) - Admissions, Discharges, Deaths, Active Census
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <span className="text-xl">📈</span> Daily Trends (Last 30 Days)
+              </h3>
+              <NeolinkAIButton
+                chartTitle="Daily Admission & Discharge Trends"
+                chartType="area and line chart"
+                dataPoints={dailyTrends.slice(-7).map(d => ({
+                  label: d.date,
+                  value: `Adm: ${d.admissions}, Dis: ${d.discharges}, Deaths: ${d.deaths}, Active: ${d.inProgress}`
+                }))}
+                context={`${selectedUnit} daily patient flow trends - admissions, discharges, deaths, and active census`}
+              />
+            </div>
             <ResponsiveContainer width="100%" height={400}>
               <ComposedChart data={dailyTrends}>
                 <defs>

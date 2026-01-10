@@ -10,6 +10,7 @@ import Header from './components/Header';
 import { UserRole, UserProfile, Patient, Unit } from './types';
 import { animations } from './theme/material3Theme';
 import SharedBottomNav from './components/SharedBottomNav';
+import { ChatProvider } from './contexts/ChatContext';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -45,6 +46,7 @@ function App() {
   // Navigation State
   const [showPatientList, setShowPatientList] = useState(false);
   const [triggerAnalyticsScroll, setTriggerAnalyticsScroll] = useState(0);
+  const [triggerQuickActions, setTriggerQuickActions] = useState(0);
 
   // Refs for checking state inside popstate listener without re-binding
   const stateRef = React.useRef({
@@ -406,11 +408,15 @@ function App() {
       // Trigger scroll in dashboard
       setTimeout(() => setTriggerAnalyticsScroll(prev => prev + 1), 100);
     } else if (tab === 'more') {
-      // Just go home for now, quick actions logic is local to dashboard
-      // Ideally we lift that too, but for now Home is safe fallback
+      console.log('🔘 App: More tab clicked calling setTriggerQuickActions');
       setShowReferralManagement(false);
       setShowAddPatientPage(false);
       setShowPatientList(false);
+      // Trigger quick actions in dashboard
+      setTimeout(() => {
+        console.log('🔘 App: Setting triggerQuickActions');
+        setTriggerQuickActions(prev => prev + 1);
+      }, 100);
     }
   };
 
@@ -810,69 +816,72 @@ function App() {
 
   // Main Application - Wrapped with ErrorBoundary and MotionConfig
   return (
-    <ErrorBoundary>
-      <MotionConfig
-        transition={{
-          type: 'spring',
-          stiffness: 300,
-          damping: 30,
-        }}
-        reducedMotion="user"
-      >
-        <div className="min-h-screen bg-sky-100 text-slate-900 no-double-tap-zoom">
-          <Header
-            userRole={userProfile.role}
-            onLogout={handleLogout}
-            collegeName={userProfile.institutionName}
-            onShowReferrals={() => setShowReferralManagement(true)}
-          />
+    <ChatProvider>
+      <ErrorBoundary>
+        <MotionConfig
+          transition={{
+            type: 'spring',
+            stiffness: 300,
+            damping: 30,
+          }}
+          reducedMotion="user"
+        >
+          <div className="min-h-screen bg-sky-100 text-slate-900 no-double-tap-zoom">
+            <Header
+              userRole={userProfile.role}
+              onLogout={handleLogout}
+              collegeName={userProfile.institutionName}
+              onShowReferrals={() => setShowReferralManagement(true)}
+            />
 
-          <main>
-            <div className="container mx-auto p-4 sm:p-6">
-              <Suspense fallback={
-                <div className="flex items-center justify-center min-h-[400px]">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
-                    <p className="text-slate-600 text-lg">Loading Dashboard...</p>
+            <main>
+              <div className="container mx-auto p-4 sm:p-6">
+                <Suspense fallback={
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
+                      <p className="text-slate-600 text-lg">Loading Dashboard...</p>
+                    </div>
                   </div>
-                </div>
-              }>
-                <Dashboard
-                  userRole={userProfile.role}
-                  institutionId={userProfile.institutionId}
-                  institutionName={userProfile.institutionName}
-                  userEmail={user.email || ''}
-                  allRoles={userProfile.allRoles}
-                  setShowSuperAdminPanel={setShowSuperAdminPanel}
-                  setShowAdminPanel={setShowAdminPanel}
-                  onShowReferrals={() => setShowReferralManagement(true)}
-                  onShowAddPatient={(patient: any, unit?: Unit) => {
-                    setPatientToEdit(patient || null);
-                    setDefaultUnitForAdd(unit);
-                    setShowAddPatientPage(true);
-                  }}
-                  showPatientList={showPatientList}
-                  setShowPatientList={setShowPatientList}
-                  triggerAnalyticsScroll={triggerAnalyticsScroll}
-                />
-              </Suspense>
-            </div>
-          </main>
+                }>
+                  <Dashboard
+                    userRole={userProfile.role}
+                    institutionId={userProfile.institutionId}
+                    institutionName={userProfile.institutionName}
+                    userEmail={user.email || ''}
+                    allRoles={userProfile.allRoles}
+                    setShowSuperAdminPanel={setShowSuperAdminPanel}
+                    setShowAdminPanel={setShowAdminPanel}
+                    onShowReferrals={() => setShowReferralManagement(true)}
+                    onShowAddPatient={(patient: any, unit?: Unit) => {
+                      setPatientToEdit(patient || null);
+                      setDefaultUnitForAdd(unit);
+                      setShowAddPatientPage(true);
+                    }}
+                    showPatientList={showPatientList}
+                    setShowPatientList={setShowPatientList}
+                    triggerAnalyticsScroll={triggerAnalyticsScroll}
+                    triggerQuickActions={triggerQuickActions}
+                  />
+                </Suspense>
+              </div>
+            </main>
 
-          <SharedBottomNav
-            activeTab={showPatientList ? 'patients' : 'home'}
-            onTabChange={handleBottomNavAction}
-            onAddPatient={() => {
-              // Add button removed from bar per user request, but handler kept if we re-enable
-              setPatientToEdit(null);
-              setDefaultUnitForAdd(undefined);
-              setShowAddPatientPage(true);
-            }}
-            showAddButton={false}
-          />
-        </div>
-      </MotionConfig>
-    </ErrorBoundary>
+            <SharedBottomNav
+              activeTab={showPatientList ? 'patients' : 'home'}
+              onTabChange={handleBottomNavAction}
+              onAddPatient={() => {
+                // Add button removed from bar per user request, but handler kept if we re-enable
+                setPatientToEdit(null);
+                setDefaultUnitForAdd(undefined);
+                setShowAddPatientPage(true);
+              }}
+              showAddButton={false}
+            />
+          </div>
+        </MotionConfig>
+      </ErrorBoundary>
+    </ChatProvider>
   );
 }
 

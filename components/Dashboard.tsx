@@ -32,6 +32,8 @@ import BottomNavigation, { NavItem } from './material/BottomNavigation';
 import DashboardSkeleton from './skeletons/DashboardSkeleton';
 import { haptics } from '../utils/haptics';
 import { IconHome, IconChartBar, IconUsers, IconSettings, IconPlus } from '@tabler/icons-react';
+import GlobalAIChatWidget from './GlobalAIChatWidget';
+import { useChatContext } from '../contexts/ChatContext';
 
 interface DashboardProps {
   userRole: UserRole;
@@ -46,6 +48,7 @@ interface DashboardProps {
   showPatientList: boolean;
   setShowPatientList: (show: boolean) => void;
   triggerAnalyticsScroll?: number;
+  triggerQuickActions?: number;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
@@ -62,7 +65,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   onShowAddPatient,
   showPatientList,
   setShowPatientList,
-  triggerAnalyticsScroll
+  triggerAnalyticsScroll,
+  triggerQuickActions
 }) => {
   // Map props to internal names to avoid refactoring everything
   const showPatientDetailsPage = showPatientList;
@@ -118,6 +122,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [activeNavItem, setActiveNavItem] = useState('dashboard');
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Chat context for AI widget
+  const { updateContext } = useChatContext();
 
   // Pull to Refresh Handler
   const handleRefresh = async () => {
@@ -206,6 +213,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       }, 100);
     }
   }, [triggerAnalyticsScroll]);
+
+  // Open Quick Actions when triggered from bottom nav
+  useEffect(() => {
+    console.log('🔘 Dashboard: triggerQuickActions effect changed:', triggerQuickActions);
+    if (triggerQuickActions && triggerQuickActions > 0) {
+      console.log('🔘 Dashboard: Opening Quick Actions');
+      setShowQuickActions(true);
+    }
+  }, [triggerQuickActions]);
 
   // Load patients and bed capacity from Firestore with real-time updates
   useEffect(() => {
@@ -305,6 +321,24 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     return () => unsubscribe();
   }, [institutionId]);
+
+  // Update chat context when dashboard state changes
+  useEffect(() => {
+    updateContext({
+      currentPage: 'dashboard',
+      selectedUnit,
+      activeFilters: {
+        unit: selectedUnit,
+        outcome: outcomeFilter !== 'All' ? outcomeFilter : undefined,
+        dateRange: dateFilter.startDate && dateFilter.endDate
+          ? { start: dateFilter.startDate, end: dateFilter.endDate }
+          : undefined,
+      },
+      visibleData: {
+        patientCount: patients.length,
+      },
+    });
+  }, [selectedUnit, outcomeFilter, dateFilter, patients.length, updateContext]);
 
   // Base patients filtered only by unit/institution (NO date filter) - used for charts
   const baseUnitPatients = useMemo(() => {
@@ -1590,6 +1624,9 @@ const Dashboard: React.FC<DashboardProps> = ({
           className="md:hidden !bottom-20"
         />
       )}
+
+      {/* Global AI Chat Widget */}
+      <GlobalAIChatWidget patients={filteredPatients} />
 
       {/* Persistent Mobile Bottom App Bar - Removed, using SharedBottomNav in App.tsx */}
     </>

@@ -9,10 +9,13 @@ interface PatientDetailModalProps {
   onClose: () => void;
 }
 
-const DetailItem: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
-  <div>
-    <p className="text-sm font-medium text-slate-400">{label}</p>
-    <p className="text-md text-slate-200">{value || 'N/A'}</p>
+const DetailItem: React.FC<{ label: string; value: React.ReactNode; icon?: React.ReactNode }> = ({ label, value, icon }) => (
+  <div className="bg-gradient-to-br from-white to-sky-50 rounded-2xl p-4 border border-sky-100 shadow-sm hover:shadow-md transition-all duration-300 hover:scale-[1.02]">
+    <div className="flex items-center gap-2 mb-1">
+      {icon && <span className="text-sky-600">{icon}</span>}
+      <p className="text-xs font-bold text-sky-600 uppercase tracking-wider">{label}</p>
+    </div>
+    <p className="text-base font-semibold text-slate-800 ml-6">{value || 'N/A'}</p>
   </div>
 );
 
@@ -21,7 +24,8 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({ patient, onClos
     const [isLoadingSummary, setIsLoadingSummary] = useState(false);
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
-    
+    const [isClosing, setIsClosing] = useState(false);
+
     const handleGenerateSummary = async () => {
         setIsLoadingSummary(true);
         setError('');
@@ -43,76 +47,178 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({ patient, onClos
             setTimeout(() => setCopied(false), 2000);
         }
     };
-    
+
+    const handleClose = () => {
+        setIsClosing(true);
+        setTimeout(() => {
+            onClose();
+        }, 200);
+    };
+
     useEffect(() => {
         // Reset state when patient changes
         setSummary('');
         setError('');
         setIsLoadingSummary(false);
         setCopied(false);
+        setIsClosing(false);
     }, [patient]);
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
-      <div className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-3xl border border-slate-700 max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b border-slate-700 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-white">Patient Details</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-            <XIcon className="w-6 h-6" />
-          </button>
+    <div
+      className={`fixed inset-0 bg-black/70 backdrop-blur-md flex items-end md:items-center justify-center z-50 transition-opacity duration-300 ${isClosing ? 'opacity-0' : 'opacity-100'}`}
+      onClick={handleClose}
+    >
+      {/* Material Design Bottom Sheet on Mobile, Dialog on Desktop */}
+      <div
+        className={`bg-gradient-to-b from-white to-sky-50/30 w-full md:max-w-4xl md:mx-4 md:rounded-3xl rounded-t-3xl md:rounded-b-3xl shadow-2xl border-t-4 md:border-4 border-sky-500 max-h-[90vh] md:max-h-[85vh] flex flex-col overflow-hidden transform transition-all duration-300 ${isClosing ? 'translate-y-full md:translate-y-0 md:scale-95' : 'translate-y-0 md:scale-100'}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Material Design Header with Drag Handle */}
+        <div className="sticky top-0 z-10 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 text-white shadow-lg">
+          {/* Mobile Drag Handle */}
+          <div className="md:hidden flex justify-center pt-2 pb-1">
+            <div className="w-12 h-1.5 bg-white/40 rounded-full" />
+          </div>
+
+          <div className="px-5 md:px-6 py-4 md:py-5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-2.5 rounded-xl backdrop-blur-sm">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl md:text-2xl font-bold tracking-tight">Patient Details</h2>
+                <p className="text-xs text-white/80 font-medium mt-0.5">Medical Record View</p>
+              </div>
+            </div>
+            <button
+              onClick={handleClose}
+              className="text-white hover:bg-white/20 p-2.5 rounded-xl transition-all duration-200 active:scale-95"
+            >
+              <XIcon className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
-        <div className="p-6 overflow-y-auto space-y-6">
-            <div className="bg-slate-700/50 p-4 rounded-lg">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <DetailItem label="Full Name" value={patient.name} />
-                    <DetailItem label="Age" value={`${patient.age} ${patient.ageUnit}`} />
-                    <DetailItem label="Gender" value={patient.gender} />
-                    <DetailItem label="Unit" value={patient.unit} />
-                    <DetailItem label="Admission Date" value={new Date(patient.admissionDate).toLocaleDateString()} />
-                    <DetailItem label="Status" value={patient.outcome} />
-                    <DetailItem label="Date of Release" value={patient.releaseDate ? new Date(patient.releaseDate).toLocaleDateString() : 'N/A'} />
-                    {patient.unit === 'Neonatal Intensive Care Unit' && <DetailItem label="Admission Type" value={patient.admissionType}/>}
-                    {patient.admissionType === 'Outborn' && <DetailItem label="Referring Hospital" value={patient.referringHospital}/>}
-                    {patient.admissionType === 'Outborn' && <DetailItem label="Referring District" value={patient.referringDistrict}/>}
+        {/* Scrollable Content with Material Design Cards */}
+        <div className="overflow-y-auto flex-1 px-4 md:px-6 py-5 space-y-5">
+            {/* Patient Overview Card */}
+            <div className="bg-white rounded-3xl shadow-lg border-2 border-sky-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-3">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Patient Information
+                    </h3>
+                </div>
+                <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <DetailItem
+                        label="Full Name"
+                        value={patient.name}
+                        icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>}
+                    />
+                    <DetailItem
+                        label="Age"
+                        value={`${patient.age} ${patient.ageUnit}`}
+                        icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                    />
+                    <DetailItem
+                        label="Gender"
+                        value={patient.gender}
+                        icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>}
+                    />
+                    <DetailItem
+                        label="Unit"
+                        value={patient.unit}
+                        icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>}
+                    />
+                    <DetailItem
+                        label="Admission Date"
+                        value={new Date(patient.admissionDate).toLocaleDateString()}
+                        icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
+                    />
+                    <DetailItem
+                        label="Status"
+                        value={patient.outcome}
+                        icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                    />
+                    <DetailItem
+                        label="Date of Release"
+                        value={patient.releaseDate ? new Date(patient.releaseDate).toLocaleDateString() : 'N/A'}
+                        icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>}
+                    />
+                    {patient.unit === 'Neonatal Intensive Care Unit' && (
+                        <DetailItem
+                            label="Admission Type"
+                            value={patient.admissionType}
+                            icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>}
+                        />
+                    )}
+                    {patient.admissionType === 'Outborn' && (
+                        <DetailItem
+                            label="Referring Hospital"
+                            value={patient.referringHospital}
+                            icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>}
+                        />
+                    )}
+                    {patient.admissionType === 'Outborn' && (
+                        <DetailItem
+                            label="Referring District"
+                            value={patient.referringDistrict}
+                            icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
+                        />
+                    )}
                 </div>
             </div>
 
             {/* Step Down Information Section */}
             {(patient.isStepDown || patient.stepDownDate || patient.readmissionFromStepDown || patient.finalDischargeDate) && (
-                <div className="bg-blue-500/10 border border-blue-500/30 p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold text-blue-300 mb-3 flex items-center gap-2">
-                        🟣 Step Down Information
-                    </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-100 rounded-3xl shadow-lg border-2 border-purple-300 overflow-hidden">
+                    <div className="bg-gradient-to-r from-purple-500 to-indigo-600 px-5 py-3">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                            </svg>
+                            Step Down Information
+                        </h3>
+                    </div>
+                    <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
                         {patient.stepDownDate && (
-                            <DetailItem 
-                                label="Step Down Date" 
-                                value={new Date(patient.stepDownDate).toLocaleString()} 
+                            <DetailItem
+                                label="Step Down Date"
+                                value={new Date(patient.stepDownDate).toLocaleString()}
+                                icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
                             />
                         )}
                         {patient.stepDownFrom && (
-                            <DetailItem 
-                                label="Stepped Down From" 
-                                value={patient.stepDownFrom === 'Neonatal Intensive Care Unit' ? 'NICU' : 'PICU'} 
+                            <DetailItem
+                                label="Stepped Down From"
+                                value={patient.stepDownFrom === 'Neonatal Intensive Care Unit' ? 'NICU' : 'PICU'}
+                                icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>}
                             />
                         )}
                         {patient.isStepDown && (
-                            <DetailItem 
-                                label="Current Status" 
-                                value={<span className="text-blue-400 font-semibold">Currently in Step Down</span>} 
+                            <DetailItem
+                                label="Current Status"
+                                value={<span className="text-purple-600 font-bold">Currently in Step Down</span>}
+                                icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
                             />
                         )}
                         {patient.readmissionFromStepDown && (
-                            <DetailItem 
-                                label="Readmission Status" 
-                                value={<span className="text-orange-400 font-semibold">Readmitted from Step Down</span>} 
+                            <DetailItem
+                                label="Readmission Status"
+                                value={<span className="text-red-600 font-bold">⚠️ Readmitted from Step Down</span>}
+                                icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>}
                             />
                         )}
                         {patient.finalDischargeDate && (
-                            <DetailItem 
-                                label="Final Discharge Date" 
-                                value={new Date(patient.finalDischargeDate).toLocaleString()} 
+                            <DetailItem
+                                label="Final Discharge Date"
+                                value={new Date(patient.finalDischargeDate).toLocaleString()}
+                                icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>}
                             />
                         )}
                     </div>
@@ -121,89 +227,141 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({ patient, onClos
 
             {/* Referral Information Section */}
             {patient.outcome === 'Referred' && (patient.referralReason || patient.referredTo) && (
-                <div className="bg-orange-500/10 border border-orange-500/30 p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold text-orange-300 mb-3 flex items-center gap-2">
-                        🔄 Referral Information
-                    </h3>
-                    <div className="space-y-3">
+                <div className="bg-gradient-to-br from-orange-50 to-amber-100 rounded-3xl shadow-lg border-2 border-orange-300 overflow-hidden">
+                    <div className="bg-gradient-to-r from-orange-500 to-amber-600 px-5 py-3">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                            Referral Information
+                        </h3>
+                    </div>
+                    <div className="p-5 space-y-3">
                         {patient.referredTo && (
-                            <DetailItem 
-                                label="Referred To" 
-                                value={<span className="text-orange-400 font-semibold">{patient.referredTo}</span>} 
-                            />
+                            <div className="bg-white rounded-2xl p-4 border border-orange-200 shadow-sm">
+                                <p className="text-xs font-bold text-orange-600 uppercase tracking-wider mb-1">Referred To</p>
+                                <p className="text-base font-bold text-orange-900">{patient.referredTo}</p>
+                            </div>
                         )}
                         {patient.referralReason && (
-                            <div>
-                                <p className="text-sm font-medium text-slate-400 mb-1">Reason for Referral</p>
-                                <p className="text-md text-slate-200 bg-slate-700/40 p-3 rounded-md whitespace-pre-wrap">{patient.referralReason}</p>
+                            <div className="bg-white rounded-2xl p-4 border border-orange-200 shadow-sm">
+                                <p className="text-xs font-bold text-orange-600 uppercase tracking-wider mb-2">Reason for Referral</p>
+                                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{patient.referralReason}</p>
                             </div>
                         )}
                     </div>
                 </div>
             )}
 
-             <div>
-                <h3 className="text-lg font-semibold text-slate-200 mb-2">Primary Diagnosis</h3>
-                <p className="text-slate-300">{patient.diagnosis}</p>
+             {/* Primary Diagnosis Card */}
+             <div className="bg-white rounded-3xl shadow-lg border-2 border-sky-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-emerald-500 to-teal-600 px-5 py-3">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                        </svg>
+                        Primary Diagnosis
+                    </h3>
+                </div>
+                <div className="p-5">
+                    <p className="text-base text-slate-800 leading-relaxed font-medium">{patient.diagnosis}</p>
+                </div>
             </div>
-            <div>
-                <h3 className="text-lg font-semibold text-slate-200 mb-4 flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Clinical Progress Notes
-                    <span className="ml-auto text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded">
-                        {patient.progressNotes.length} {patient.progressNotes.length === 1 ? 'entry' : 'entries'}
-                    </span>
-                </h3>
-                <div className="space-y-4">
+
+            {/* Clinical Progress Notes Card */}
+            <div className="bg-white rounded-3xl shadow-lg border-2 border-sky-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-5 py-3">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Clinical Progress Notes
+                        </h3>
+                        <span className="text-xs bg-white/25 text-white font-bold px-3 py-1.5 rounded-full backdrop-blur-sm">
+                            {patient.progressNotes.length} {patient.progressNotes.length === 1 ? 'entry' : 'entries'}
+                        </span>
+                    </div>
+                </div>
+                <div className="p-5 space-y-3">
                     {patient.progressNotes.length > 0 ? (
                         patient.progressNotes
                             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                             .map((note, index) => (
-                                <ProgressNoteDisplay key={index} note={note} />
+                                <div key={index} className="transform transition-all hover:scale-[1.01]">
+                                    <ProgressNoteDisplay note={note} />
+                                </div>
                             ))
                     ) : (
-                        <div className="text-slate-400 text-center py-8 bg-slate-800/30 rounded-lg border border-slate-700 border-dashed">
-                            <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="text-slate-400 text-center py-12 bg-gradient-to-br from-slate-50 to-sky-50 rounded-2xl border-2 border-dashed border-sky-200">
+                            <svg className="w-16 h-16 mx-auto mb-3 opacity-30 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
-                            <p>No progress notes yet</p>
+                            <p className="text-base font-semibold text-slate-500">No progress notes yet</p>
                         </div>
                     )}
                 </div>
             </div>
 
-            <div className="border-t border-slate-700 pt-6">
-                <h3 className="text-lg font-semibold text-slate-200 mb-2">AI-Generated Handoff Summary</h3>
-                 <button onClick={handleGenerateSummary} disabled={isLoadingSummary} className="flex items-center gap-2 px-4 py-2 mb-4 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors font-semibold disabled:bg-sky-800 disabled:cursor-not-allowed">
-                    {isLoadingSummary ? (
-                        <>
-                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            {/* AI Summary Card */}
+            <div className="bg-gradient-to-br from-violet-50 to-fuchsia-100 rounded-3xl shadow-lg border-2 border-violet-300 overflow-hidden mb-6">
+                <div className="bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 px-5 py-3">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
-                        Generating...
-                        </>
-                    ) : (
-                        <>
-                        <WandIcon className="w-5 h-5"/>
-                        Generate Summary
-                        </>
+                        AI-Generated Handoff Summary
+                    </h3>
+                </div>
+                <div className="p-5 space-y-4">
+                    <button
+                        onClick={handleGenerateSummary}
+                        disabled={isLoadingSummary}
+                        className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-white bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 transition-all duration-300 font-bold shadow-lg hover:shadow-xl disabled:from-slate-400 disabled:to-slate-500 disabled:cursor-not-allowed active:scale-95 transform"
+                    >
+                        {isLoadingSummary ? (
+                            <>
+                                <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span className="text-lg">Generating Summary...</span>
+                            </>
+                        ) : (
+                            <>
+                                <WandIcon className="w-6 h-6" />
+                                <span className="text-lg">Generate AI Summary</span>
+                            </>
+                        )}
+                    </button>
+
+                    {error && (
+                        <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 flex items-start gap-3">
+                            <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <p className="text-red-700 font-medium text-sm">{error}</p>
+                        </div>
                     )}
-                 </button>
-                 
-                {error && <p className="text-red-400 text-sm mb-2">{error}</p>}
-                
-                {summary && (
-                    <div className="bg-slate-700/50 p-4 rounded-lg relative">
-                        <p className="text-slate-300 whitespace-pre-wrap">{summary}</p>
-                        <button onClick={handleCopyToClipboard} className="absolute top-2 right-2 p-1.5 text-slate-400 hover:text-white bg-slate-600/50 hover:bg-slate-500/50 rounded-md transition-colors">
-                            <ClipboardDocumentListIcon className="w-5 h-5"/>
-                        </button>
-                        {copied && <span className="absolute top-10 right-2 text-xs bg-slate-900 text-white px-2 py-1 rounded">Copied!</span>}
-                    </div>
-                )}
+
+                    {summary && (
+                        <div className="bg-white rounded-2xl border-2 border-violet-200 shadow-sm overflow-hidden">
+                            <div className="bg-violet-100 px-4 py-2 flex items-center justify-between">
+                                <span className="text-xs font-bold text-violet-700 uppercase tracking-wider">Summary Result</span>
+                                <button
+                                    onClick={handleCopyToClipboard}
+                                    className="flex items-center gap-2 px-3 py-1.5 text-violet-700 hover:bg-violet-200 rounded-lg transition-all duration-200 active:scale-95"
+                                >
+                                    <ClipboardDocumentListIcon className="w-4 h-4" />
+                                    <span className="text-xs font-bold">{copied ? 'Copied!' : 'Copy'}</span>
+                                </button>
+                            </div>
+                            <div className="p-4">
+                                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{summary}</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
       </div>

@@ -81,91 +81,99 @@ const CollapsiblePatientCard: React.FC<CollapsiblePatientCardProps> = ({ patient
           : undefined
       }
     >
-      <div className="bg-white rounded-xl shadow-md border-2 border-sky-200 hover:border-sky-400 hover:shadow-xl transition-all duration-200 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-lg border-2 border-sky-200 hover:border-sky-400 hover:shadow-2xl transition-all duration-300 overflow-hidden active:scale-[0.98]">
         {/* Collapsed View - Always Visible */}
         <div
-          className="p-5 cursor-pointer bg-gradient-to-r from-white to-sky-50"
+          className="p-5 md:p-6 cursor-pointer bg-gradient-to-br from-white via-sky-50/30 to-blue-50/40 relative overflow-hidden"
           onClick={() => setIsExpanded(!isExpanded)}
         >
-        <div className="flex items-start justify-between gap-4">
+        {/* Material Design Ripple Effect Background */}
+        <div className="absolute inset-0 bg-gradient-to-r from-sky-400/0 via-sky-400/5 to-blue-400/0 opacity-0 hover:opacity-100 transition-opacity duration-500" />
+
+        <div className="flex items-start justify-between gap-4 relative z-10">
           {/* Left: Patient Info */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="bg-sky-100 p-2 rounded-full">
-                <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
+              <div className="bg-gradient-to-br from-sky-400 to-blue-600 p-3 rounded-2xl shadow-md">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-bold text-sky-900 truncate">{patient.name}</h3>
-              <span className={`px-3 py-1 rounded-full text-xs font-bold border-2 ${getOutcomeColor(patient.outcome)}`}>
+              <h3 className="text-xl md:text-2xl font-bold text-slate-900 truncate flex-1">{patient.name}</h3>
+              <span className={`px-4 py-2 rounded-full text-xs md:text-sm font-bold border-2 shadow-sm ${getOutcomeColor(patient.outcome)}`}>
                 {patient.outcome}
               </span>
-              {/* View Patient Details Icon - Always Visible */}
+              {/* View Patient Details Icon - Material FAB Style */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onView(patient);
                 }}
-                className="ml-auto p-2 bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-600 hover:to-blue-600 text-white rounded-lg transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center group"
+                className="ml-auto p-3 bg-gradient-to-br from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center group active:scale-95 min-h-[48px] min-w-[48px]"
                 title="View Full Details"
+                aria-label="View patient details"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                 </svg>
               </button>
             </div>
 
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-sky-700 ml-12">
-              <span className="flex items-center gap-2 font-medium">
-                <svg className="w-4 h-4 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex flex-wrap gap-3 text-sm md:text-base ml-1 md:ml-3">
+              <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl shadow-sm border border-sky-100">
+                <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
-                {getAgeDisplay()} • {patient.gender}
-              </span>
-              <span className="flex items-center gap-2 font-medium">
-                <svg className="w-4 h-4 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span className="font-semibold text-slate-700">{getAgeDisplay()}</span>
+                <span className="text-slate-400">•</span>
+                <span className="font-semibold text-slate-700">{patient.gender}</span>
+              </div>
+              <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl shadow-sm border border-sky-100">
+                <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                Admitted: {formatDate(patient.admissionDate)}
-              </span>
+                <span className="text-xs font-bold text-sky-600 uppercase">Admitted:</span>
+                <span className="font-semibold text-slate-700">{formatDate(patient.admissionDate)}</span>
+              </div>
             </div>
 
-            {/* Edit Indicator */}
+            {/* Edit Indicator - Material Chip Style */}
             {patient.lastEditedAt && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowEditHistory(!showEditHistory);
                 }}
-                className="mt-3 ml-12 flex items-center gap-2 text-xs text-amber-600 hover:text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200 hover:border-amber-300 transition-all font-medium"
+                className="mt-3 ml-1 md:ml-3 flex items-center gap-2 text-xs md:text-sm text-amber-700 hover:text-amber-800 bg-amber-50 px-4 py-2 rounded-xl border-2 border-amber-200 hover:border-amber-300 hover:bg-amber-100 transition-all font-bold shadow-sm active:scale-95"
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
                 <span>Edited {formatDate(patient.lastEditedAt)}</span>
-                <svg className={`w-3 h-3 transition-transform ${showEditHistory ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-4 h-4 transition-transform duration-300 ${showEditHistory ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
             )}
           </div>
 
-          {/* Right: Expand Button */}
+          {/* Right: Expand Button - Material Design */}
           <button
-            className="flex-shrink-0 p-3 bg-sky-100 hover:bg-sky-200 rounded-lg transition-colors"
+            className="flex-shrink-0 p-3 md:p-4 bg-gradient-to-br from-sky-100 to-blue-100 hover:from-sky-200 hover:to-blue-200 rounded-2xl transition-all duration-300 shadow-md hover:shadow-lg active:scale-95 min-h-[48px] min-w-[48px]"
             onClick={(e) => {
               e.stopPropagation();
               setIsExpanded(!isExpanded);
             }}
+            aria-label={isExpanded ? "Collapse details" : "Expand details"}
           >
             <svg
-              className={`w-6 h-6 text-sky-600 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+              className={`w-6 h-6 text-sky-700 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
         </div>

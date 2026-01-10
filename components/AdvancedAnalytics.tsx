@@ -265,18 +265,6 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
       .slice(0, 10);
   }, [patients]);
 
-  // Age distribution for NICU (detailed)
-  const ageDistribution = useMemo(() => {
-    if (selectedUnit !== Unit.NICU && selectedUnit !== Unit.SNCU) return [];
-
-    return [
-      { name: '<24 hrs (Critical)', value: metrics.under24hrs, color: '#ef4444', mortality: patients.filter(p => p.ageUnit === 'days' && p.age < 1 && p.outcome === 'Deceased').length },
-      { name: '1-7 days', value: metrics.under7days - metrics.under24hrs, color: '#f59e0b', mortality: patients.filter(p => p.ageUnit === 'days' && p.age >= 1 && p.age < 7 && p.outcome === 'Deceased').length },
-      { name: '8-28 days', value: metrics.under28days - metrics.under7days, color: '#10b981', mortality: patients.filter(p => ((p.ageUnit === 'days' && p.age >= 7 && p.age <= 28) || (p.ageUnit === 'weeks' && p.age < 4)) && p.outcome === 'Deceased').length },
-      { name: '>28 days', value: metrics.total - metrics.under28days, color: '#3b82f6', mortality: patients.filter(p => ((p.ageUnit === 'days' && p.age > 28) || (p.ageUnit === 'weeks' && p.age >= 4) || p.ageUnit === 'months' || p.ageUnit === 'years') && p.outcome === 'Deceased').length },
-    ].filter(item => item.value > 0);
-  }, [selectedUnit, metrics, patients]);
-
   // Weight distribution (NICU)
   const weightDistribution = useMemo(() => {
     if (selectedUnit !== Unit.NICU && selectedUnit !== Unit.SNCU) return [];
@@ -1258,38 +1246,6 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                 </div>
               </div>
             </div>
-
-            {/* Age Distribution (NICU) */}
-            {(selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && ageDistribution.length > 0 && (
-              <div className="bg-slate-800 rounded-xl p-6 shadow-xl border border-slate-700">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <span className="text-xl">👶</span> Age at Admission with Mortality
-                  </h3>
-                  <NeolinkAIButton
-                    chartTitle="Age at Admission with Mortality"
-                    chartType="bar chart"
-                    dataPoints={ageDistribution.map(d => ({ label: d.name, value: `Count: ${d.value}, Deaths: ${d.mortality}` }))}
-                    context={`${selectedUnit} neonatal age distribution and mortality`}
-                  />
-                </div>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={ageDistribution}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={80} />
-                    <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155' }} />
-                    <Legend />
-                    <Bar dataKey="value" name="Total Patients" radius={[8, 8, 0, 0]}>
-                      {ageDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Bar>
-                    <Bar dataKey="mortality" name="Deaths" fill="#ef4444" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
 
             {/* Weight Distribution (NICU) */}
             {(selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && weightDistribution.length > 0 && (

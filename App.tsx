@@ -7,10 +7,11 @@ import { handleRedirectResult } from './services/authService';
 import ErrorBoundary from './components/core/ErrorBoundary';
 import Login from './components/Login';
 import Header from './components/Header';
-import { UserRole, UserProfile, Patient, Unit } from './types';
+import { UserRole, UserProfile, Patient, Unit, InstitutionUser } from './types';
 import { animations } from './theme/material3Theme';
 import SharedBottomNav from './components/SharedBottomNav';
 import { ChatProvider } from './contexts/ChatContext';
+import AutoUpdatePrompt from './components/AutoUpdatePrompt';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -24,6 +25,7 @@ const PatientForm = lazy(() => import('./components/PatientForm'));
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [institutionUserData, setInstitutionUserData] = useState<InstitutionUser | null>(null); // Full user data with allowedDashboards
   const [loading, setLoading] = useState(true);
   const [redirectChecked, setRedirectChecked] = useState(false);
   const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
@@ -236,10 +238,12 @@ function App() {
           };
           setUserProfile(profile);
           setAccessDenied(false);
-          console.log('✅ SuperAdmin login');
+          setShowSuperAdminPanel(true); // Automatically show SuperAdmin dashboard
+          console.log('✅ SuperAdmin login - showing SuperAdmin dashboard');
 
           // Update last login
           setDoc(doc(db, 'users', firebaseUser.uid), { lastLoginAt: new Date().toISOString() }, { merge: true });
+          setLoading(false); // Important: Set loading to false for SuperAdmin
           return;
         }
       }
@@ -349,9 +353,13 @@ function App() {
         allRoles: allRoles // Add all roles the user has
       };
 
+      // Store full institution user data (includes allowedDashboards)
+      setInstitutionUserData(primaryRole as InstitutionUser);
+
       setUserProfile(profile);
       setAccessDenied(false);
       console.log('✅ Logged in as', profile.role, '-', profile.institutionName);
+      console.log('📋 Allowed Dashboards:', primaryRole.allowedDashboards || 'All (no restriction)');
 
       // Update users collection with current role and institution info
       const userDocRef = doc(db, 'users', firebaseUser.uid);
@@ -531,8 +539,8 @@ function App() {
     );
   }
 
-  // Show SuperAdmin Dashboard
-  if (showSuperAdminPanel && userProfile.role === UserRole.SuperAdmin) {
+  // Show SuperAdmin Dashboard - SuperAdmins ONLY see this dashboard
+  if (userProfile.role === UserRole.SuperAdmin && !superAdminViewingInstitution) {
     return (
       <div className="min-h-screen bg-sky-100 text-slate-900">
         <Header
@@ -551,7 +559,7 @@ function App() {
           }>
             <SuperAdminDashboard
               userEmail={user.email!}
-              onBack={() => setShowSuperAdminPanel(false)}
+              onBack={handleLogout} // SuperAdmin logs out instead of going to regular dashboard
               onViewInstitutionDashboard={handleViewInstitutionDashboard}
             />
           </Suspense>
@@ -662,6 +670,8 @@ function App() {
                 institutionId={districtAdminViewingInstitution.institutionId}
                 institutionName={districtAdminViewingInstitution.institutionName}
                 userEmail={user.email || ''}
+                displayName={userProfile.displayName}
+                allowedDashboards={undefined} // District Admin sees all dashboards for institution
                 allRoles={[UserRole.DistrictAdmin]}
                 setShowSuperAdminPanel={() => { }} // No-op
                 setShowAdminPanel={() => { }} // No-op
@@ -817,6 +827,9 @@ function App() {
   // Main Application - Wrapped with ErrorBoundary and MotionConfig
   return (
     <ChatProvider>
+      {/* Auto-update prompt for instant updates */}
+      <AutoUpdatePrompt />
+
       <ErrorBoundary>
         <MotionConfig
           transition={{
@@ -849,6 +862,8 @@ function App() {
                     institutionId={userProfile.institutionId}
                     institutionName={userProfile.institutionName}
                     userEmail={user.email || ''}
+                    displayName={institutionUserData?.displayName || userProfile.displayName}
+                    allowedDashboards={institutionUserData?.allowedDashboards}
                     allRoles={userProfile.allRoles}
                     setShowSuperAdminPanel={setShowSuperAdminPanel}
                     setShowAdminPanel={setShowAdminPanel}

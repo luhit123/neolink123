@@ -247,7 +247,6 @@ const AdmissionIndicationsManager: React.FC<AdmissionIndicationsManagerProps> = 
                 <p className="text-sm font-semibold text-slate-200 mb-2">What happens when you click "Initialize Defaults"?</p>
                 <ul className="text-sm text-slate-300 space-y-1 ml-4">
                   <li>✓ Adds 24 standard NICU/SNCU admission indications</li>
-                  <li>✓ Includes: Prematurity, Low Birth Weight, Perinatal Asphyxia, Respiratory Distress, etc.</li>
                   <li>✓ All indications are immediately available to all doctors across all institutions</li>
                   <li>✓ You can edit, reorder, or add more indications anytime</li>
                 </ul>

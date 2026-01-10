@@ -37,7 +37,7 @@ const GlobalAIChatWidget: React.FC<GlobalAIChatWidgetProps> = ({ patients }) => 
         whileTap={{ scale: 0.95 }}
         onClick={handleToggle}
         className={`
-          fixed bottom-20 right-6 sm:bottom-6 sm:right-6
+          fixed bottom-20 left-6 sm:bottom-6 sm:right-6 sm:left-auto
           w-14 h-14 rounded-full shadow-2xl z-40
           flex items-center justify-center
           transition-all duration-300

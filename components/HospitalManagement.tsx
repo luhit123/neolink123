@@ -31,6 +31,8 @@ const HospitalManagement: React.FC<HospitalManagementProps> = ({ userEmail, onBa
     bedCapacity: {
       PICU: 0,
       NICU: 0,
+      NICU_INBORN: 0,
+      NICU_OUTBORN: 0,
       SNCU: 0,
       HDU: 0,
       GENERAL_WARD: 0
@@ -190,6 +192,8 @@ const HospitalManagement: React.FC<HospitalManagementProps> = ({ userEmail, onBa
       bedCapacity: {
         PICU: 0,
         NICU: 0,
+        NICU_INBORN: 0,
+        NICU_OUTBORN: 0,
         SNCU: 0,
         HDU: 0,
         GENERAL_WARD: 0
@@ -215,6 +219,8 @@ const HospitalManagement: React.FC<HospitalManagementProps> = ({ userEmail, onBa
       bedCapacity: hospital.bedCapacity || {
         PICU: 0,
         NICU: 0,
+        NICU_INBORN: 0,
+        NICU_OUTBORN: 0,
         SNCU: 0,
         HDU: 0,
         GENERAL_WARD: 0
@@ -483,23 +489,41 @@ const HospitalManagement: React.FC<HospitalManagementProps> = ({ userEmail, onBa
                 <label className="block text-sm font-semibold text-sky-900 mb-3">
                   Bed Capacity (Optional)
                 </label>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  {Object.keys(formData.bedCapacity).map((unit) => (
-                    <div key={unit}>
-                      <label className="block text-xs text-sky-700 mb-1 font-medium">
-                        {unit === 'PICU' ? 'PICU' : unit === 'NICU' ? 'NICU' : unit === 'SNCU' ? 'SNCU' : unit === 'HDU' ? 'HDU' : 'General Ward'}
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formData.bedCapacity[unit as keyof BedCapacity]}
-                        onChange={(e) => handleBedCapacityChange(unit as keyof BedCapacity, e.target.value)}
-                        className="w-full px-3 py-2 border border-sky-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        placeholder="0"
-                      />
-                    </div>
-                  ))}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {Object.keys(formData.bedCapacity).map((unit) => {
+                    // Skip legacy NICU field
+                    if (unit === 'NICU') return null;
+
+                    const getLabel = () => {
+                      if (unit === 'PICU') return 'PICU';
+                      if (unit === 'NICU_INBORN') return 'NICU Inborn';
+                      if (unit === 'NICU_OUTBORN') return 'NICU Outborn';
+                      if (unit === 'SNCU') return 'SNCU';
+                      if (unit === 'HDU') return 'HDU';
+                      if (unit === 'GENERAL_WARD') return 'General Ward';
+                      return unit;
+                    };
+
+                    return (
+                      <div key={unit}>
+                        <label className="block text-xs text-sky-700 mb-1 font-medium">
+                          {getLabel()}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formData.bedCapacity[unit as keyof BedCapacity] || 0}
+                          onChange={(e) => handleBedCapacityChange(unit as keyof BedCapacity, e.target.value)}
+                          className="w-full px-3 py-2 border border-sky-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                          placeholder="0"
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  💡 For NICU, set separate bed counts for Inborn and Outborn patients
+                </p>
               </div>
 
               {/* Active Status */}
@@ -662,14 +686,27 @@ const HospitalManagement: React.FC<HospitalManagementProps> = ({ userEmail, onBa
                   <div className="mb-4 p-3 bg-sky-50 rounded-lg">
                     <p className="text-xs font-semibold text-sky-700 mb-2">Bed Capacity:</p>
                     <div className="grid grid-cols-2 gap-2 text-xs">
-                      {Object.entries(hospital.bedCapacity).map(([unit, capacity]) => (
-                        capacity > 0 && (
+                      {Object.entries(hospital.bedCapacity).map(([unit, capacity]) => {
+                        // Skip legacy NICU field and zero capacity
+                        if (unit === 'NICU' || capacity === 0) return null;
+
+                        const getLabel = () => {
+                          if (unit === 'PICU') return 'PICU';
+                          if (unit === 'NICU_INBORN') return 'NICU Inborn';
+                          if (unit === 'NICU_OUTBORN') return 'NICU Outborn';
+                          if (unit === 'SNCU') return 'SNCU';
+                          if (unit === 'HDU') return 'HDU';
+                          if (unit === 'GENERAL_WARD') return 'General Ward';
+                          return unit;
+                        };
+
+                        return (
                           <div key={unit} className="flex justify-between">
-                            <span className="text-sky-600">{unit}:</span>
+                            <span className="text-sky-600">{getLabel()}:</span>
                             <span className="font-semibold text-sky-900">{capacity}</span>
                           </div>
-                        )
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

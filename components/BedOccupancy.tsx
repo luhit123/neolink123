@@ -1,16 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { Patient, Unit, BedCapacity } from '../types';
+import { Patient, Unit, BedCapacity, ObservationPatient, ObservationOutcome } from '../types';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area } from 'recharts';
 
 interface BedOccupancyProps {
     patients: Patient[];
     bedCapacity?: BedCapacity;
     availableUnits?: Unit[];
+    observationPatients?: ObservationPatient[];
 }
 
 type TimeRange = '7days' | '30days' | '3months' | '6months' | '12months' | 'current' | 'custom';
 
-const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, availableUnits }) => {
+const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, availableUnits, observationPatients = [] }) => {
     const [timeRange, setTimeRange] = useState<TimeRange>('current');
     const [customStartDate, setCustomStartDate] = useState('');
     const [customEndDate, setCustomEndDate] = useState('');
@@ -26,7 +27,8 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
     ];
 
     // Use bed capacity from props or defaults
-    const TOTAL_NICU_BEDS = bedCapacity?.NICU || 20;
+    const TOTAL_NICU_INBORN_BEDS = bedCapacity?.NICU_INBORN || (bedCapacity?.NICU ? Math.floor(bedCapacity.NICU / 2) : 10);
+    const TOTAL_NICU_OUTBORN_BEDS = bedCapacity?.NICU_OUTBORN || (bedCapacity?.NICU ? Math.ceil(bedCapacity.NICU / 2) : 10);
     const TOTAL_PICU_BEDS = bedCapacity?.PICU || 10;
     const TOTAL_SNCU_BEDS = bedCapacity?.SNCU || 15;
     const TOTAL_HDU_BEDS = bedCapacity?.HDU || 10;
@@ -34,11 +36,50 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
 
     // Current active patients (for bed grid)
     const activePatients = useMemo(() => patients.filter(p => p.outcome === 'In Progress'), [patients]);
-    const nicuPatients = activePatients.filter(p => p.unit === Unit.NICU);
+
+    // Active observation patients (also occupy beds)
+    const activeObservationPatients = useMemo(() =>
+        observationPatients.filter(p => p.outcome === ObservationOutcome.InObservation),
+        [observationPatients]
+    );
+
+    // Split NICU patients by admission type (including observation)
+    const nicuInbornPatients = activePatients.filter(p => {
+        if (p.unit !== Unit.NICU) return false;
+        const birthType = (p as any).birthType?.toLowerCase();
+        const admissionType = p.admissionType?.toLowerCase();
+        return birthType === 'inborn' || admissionType === 'inborn' || admissionType?.includes('inborn');
+    });
+
+    const nicuInbornObservation = activeObservationPatients.filter(p =>
+        p.unit === Unit.NICU && p.admissionType === 'Inborn'
+    );
+
+    const nicuOutbornPatients = activePatients.filter(p => {
+        if (p.unit !== Unit.NICU) return false;
+        const birthType = (p as any).birthType?.toLowerCase();
+        const admissionType = p.admissionType?.toLowerCase();
+        return birthType === 'outborn' ||
+               admissionType?.includes('outborn') ||
+               admissionType === 'outborn (health facility referred)' ||
+               admissionType === 'outborn (community referred)';
+    });
+
+    const nicuOutbornObservation = activeObservationPatients.filter(p =>
+        p.unit === Unit.NICU && p.admissionType === 'Outborn'
+    );
+
     const picuPatients = activePatients.filter(p => p.unit === Unit.PICU);
+    const picuObservation = activeObservationPatients.filter(p => p.unit === Unit.PICU);
+
     const sncuPatients = activePatients.filter(p => p.unit === Unit.SNCU);
+    const sncuObservation = activeObservationPatients.filter(p => p.unit === Unit.SNCU);
+
     const hduPatients = activePatients.filter(p => p.unit === Unit.HDU);
+    const hduObservation = activeObservationPatients.filter(p => p.unit === Unit.HDU);
+
     const generalWardPatients = activePatients.filter(p => p.unit === Unit.GENERAL_WARD);
+    const generalWardObservation = activeObservationPatients.filter(p => p.unit === Unit.GENERAL_WARD);
 
     // Historical occupancy data
     const historicalData = useMemo(() => {
@@ -128,7 +169,7 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
                 SNCU: sncuCount,
                 HDU: hduCount,
                 GENERAL_WARD: generalWardCount,
-                'NICU Capacity': TOTAL_NICU_BEDS,
+                'NICU Capacity': TOTAL_NICU_INBORN_BEDS + TOTAL_NICU_OUTBORN_BEDS,
                 'PICU Capacity': TOTAL_PICU_BEDS,
                 'SNCU Capacity': TOTAL_SNCU_BEDS,
                 'HDU Capacity': TOTAL_HDU_BEDS,
@@ -137,7 +178,7 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
         }
 
         return dataPoints;
-    }, [patients, timeRange, customStartDate, customEndDate, TOTAL_NICU_BEDS, TOTAL_PICU_BEDS, TOTAL_SNCU_BEDS, TOTAL_HDU_BEDS, TOTAL_GENERAL_WARD_BEDS]);
+    }, [patients, timeRange, customStartDate, customEndDate, TOTAL_NICU_INBORN_BEDS, TOTAL_NICU_OUTBORN_BEDS, TOTAL_PICU_BEDS, TOTAL_SNCU_BEDS, TOTAL_HDU_BEDS, TOTAL_GENERAL_WARD_BEDS]);
 
     const renderBedGrid = (totalBeds: number, occupiedPatients: Patient[], title: string, colorClass: string) => {
         const occupiedCount = occupiedPatients.length;
@@ -425,11 +466,17 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
             {/* Current Bed Status Grid */}
             {timeRange === 'current' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {(!availableUnits || availableUnits.includes(Unit.NICU)) && renderBedGrid(TOTAL_NICU_BEDS, nicuPatients, 'NICU Occupancy', 'sky')}
-                    {(!availableUnits || availableUnits.includes(Unit.PICU)) && renderBedGrid(TOTAL_PICU_BEDS, picuPatients, 'PICU Occupancy', 'blue')}
-                    {(!availableUnits || availableUnits.includes(Unit.SNCU)) && renderBedGrid(TOTAL_SNCU_BEDS, sncuPatients, 'SNCU Occupancy', 'green')}
-                    {(!availableUnits || availableUnits.includes(Unit.HDU)) && renderBedGrid(TOTAL_HDU_BEDS, hduPatients, 'HDU Occupancy', 'yellow')}
-                    {(!availableUnits || availableUnits.includes(Unit.GENERAL_WARD)) && renderBedGrid(TOTAL_GENERAL_WARD_BEDS, generalWardPatients, 'General Ward Occupancy', 'slate')}
+                    {/* NICU - Now split into Inborn and Outborn (including observation patients) */}
+                    {(!availableUnits || availableUnits.includes(Unit.NICU)) && (
+                        <>
+                            {renderBedGrid(TOTAL_NICU_INBORN_BEDS, [...nicuInbornPatients, ...nicuInbornObservation.map(p => ({ ...p, name: p.babyName }) as any)], `NICU Inborn (${nicuInbornObservation.length} obs)`, 'emerald')}
+                            {renderBedGrid(TOTAL_NICU_OUTBORN_BEDS, [...nicuOutbornPatients, ...nicuOutbornObservation.map(p => ({ ...p, name: p.babyName }) as any)], `NICU Outborn (${nicuOutbornObservation.length} obs)`, 'sky')}
+                        </>
+                    )}
+                    {(!availableUnits || availableUnits.includes(Unit.PICU)) && renderBedGrid(TOTAL_PICU_BEDS, [...picuPatients, ...picuObservation.map(p => ({ ...p, name: p.babyName }) as any)], `PICU Occupancy (${picuObservation.length} obs)`, 'blue')}
+                    {(!availableUnits || availableUnits.includes(Unit.SNCU)) && renderBedGrid(TOTAL_SNCU_BEDS, [...sncuPatients, ...sncuObservation.map(p => ({ ...p, name: p.babyName }) as any)], `SNCU Occupancy (${sncuObservation.length} obs)`, 'purple')}
+                    {(!availableUnits || availableUnits.includes(Unit.HDU)) && renderBedGrid(TOTAL_HDU_BEDS, [...hduPatients, ...hduObservation.map(p => ({ ...p, name: p.babyName }) as any)], `HDU Occupancy (${hduObservation.length} obs)`, 'yellow')}
+                    {(!availableUnits || availableUnits.includes(Unit.GENERAL_WARD)) && renderBedGrid(TOTAL_GENERAL_WARD_BEDS, [...generalWardPatients, ...generalWardObservation.map(p => ({ ...p, name: p.babyName }) as any)], `General Ward (${generalWardObservation.length} obs)`, 'slate')}
                 </div>
             )}
         </div>

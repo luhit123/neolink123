@@ -55,7 +55,7 @@ export default defineConfig(({ mode }) => {
         fastRefresh: true,
       }),
       VitePWA({
-        registerType: 'autoUpdate',
+        registerType: 'prompt', // Changed to 'prompt' for immediate update notification
         includeAssets: ['pwa-192.png', 'pwa-512.png', 'apple-touch-icon.png'],
         devOptions: {
           enabled: true, // Enable in development
@@ -99,6 +99,11 @@ export default defineConfig(({ mode }) => {
           }
         },
         workbox: {
+          // Force immediate activation of new service worker
+          skipWaiting: true,
+          clientsClaim: true,
+          // Clean up old caches
+          cleanupOutdatedCaches: true,
           // Cache Firebase auth and API calls appropriately
           runtimeCaching: [
             {

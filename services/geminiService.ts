@@ -1058,6 +1058,216 @@ export const explainChartData = async (
 };
 
 // ============================================================================
+// DEATH DIAGNOSIS INTERPRETATION
+// ============================================================================
+
+export const interpretDeathDiagnosis = async (
+  fullDiagnosis: string,
+  patientAge: number,
+  patientAgeUnit: string,
+  unit: string
+): Promise<string> => {
+  const cacheKey = `death-diagnosis-${fullDiagnosis.slice(0, 50)}`;
+  const cached = getCachedResult(cacheKey);
+  if (cached) return cached;
+
+  const prompt = `
+    You are an expert medical analyst specializing in mortality documentation for NICU/PICU.
+
+    Analyze this detailed death diagnosis and provide a concise, structured summary for clinical analytics and mortality reporting.
+
+    Patient: ${patientAge} ${patientAgeUnit} old
+    Unit: ${unit}
+
+    Full Diagnosis at Time of Death:
+    ${fullDiagnosis}
+
+    Generate a concise, professional summary (2-3 sentences maximum) that includes:
+    1. Primary cause of death (most important)
+    2. Key contributing factors
+    3. Brief clinical context if relevant
+
+    Requirements:
+    - Use standard medical terminology
+    - Be objective and factual
+    - Focus on causation, not description
+    - Maximum 3 sentences
+    - Suitable for mortality analytics and review
+
+    Output ONLY the concise diagnosis summary, nothing else.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    const result = response.text.trim();
+    setCachedResult(cacheKey, result);
+    return result;
+  } catch (error) {
+    console.error("Error interpreting death diagnosis:", error);
+    return "Error: Unable to interpret diagnosis. The original diagnosis has been recorded.";
+  }
+};
+
+export const analyzeDeathDiagnosisPatterns = async (
+  deceasedPatients: Patient[]
+): Promise<string> => {
+  const diagnosisSummaries = deceasedPatients
+    .filter(p => p.aiInterpretedDeathDiagnosis || p.diagnosisAtDeath)
+    .slice(0, 50)
+    .map(p => {
+      const diagnosis = p.aiInterpretedDeathDiagnosis || p.diagnosisAtDeath || 'Unknown';
+      const daysInUnit = p.dateOfDeath && p.admissionDate
+        ? Math.ceil((new Date(p.dateOfDeath).getTime() - new Date(p.admissionDate).getTime()) / (1000 * 60 * 60 * 24))
+        : 'unknown';
+      return `- ${p.age} ${p.ageUnit}, ${p.unit}, ${daysInUnit} days in unit: ${diagnosis}`;
+    })
+    .join('\n');
+
+  if (!diagnosisSummaries) {
+    return "No death diagnosis data available for analysis.";
+  }
+
+  const prompt = `
+    You are an expert pediatric intensivist and mortality review specialist with deep knowledge of NICU/PICU care patterns.
+
+    Analyze these death diagnoses from NICU/PICU patients and provide a comprehensive, actionable analysis.
+
+    Death Diagnosis Data (${deceasedPatients.length} deceased patients):
+    ${diagnosisSummaries}
+
+    Provide a detailed, evidence-based analysis with the following structure:
+
+    ## 📊 EXECUTIVE SUMMARY
+    - 2-3 sentence overview of key findings
+    - Most critical insight requiring immediate attention
+
+    ## 🎯 PRIMARY CAUSES OF DEATH
+    Rank the top 5-7 causes with:
+    - Specific diagnosis/condition
+    - Estimated percentage (%)
+    - Typical age group affected
+    - Common time to death (early vs late mortality)
+
+    ## 👶 AGE-STRATIFIED ANALYSIS
+    Break down by age groups:
+    - **Neonates (0-28 days)**: Common causes, patterns
+    - **Infants (1-12 months)**: Common causes, patterns
+    - **Children (>1 year)**: Common causes, patterns
+
+    ## 🏥 UNIT-SPECIFIC PATTERNS
+    - **NICU mortality**: Dominant conditions, preventability assessment
+    - **PICU mortality**: Dominant conditions, preventability assessment
+    - Comparison and contrasts between units
+
+    ## ⏱️ TEMPORAL PATTERNS
+    - Early deaths (<24 hours): What's driving these?
+    - Late deaths (>7 days): What conditions lead to prolonged ICU stays before death?
+    - Identify any critical windows
+
+    ## ⚠️ POTENTIALLY PREVENTABLE DEATHS
+    - Which cases might have been preventable with earlier intervention?
+    - What specific gaps in care are suggested?
+    - Are there recurring themes?
+
+    ## 🔬 CLINICAL INSIGHTS
+    - Pathophysiology patterns across cases
+    - Co-morbidities contributing to mortality
+    - Treatment challenges identified
+
+    ## 💡 QUALITY IMPROVEMENT RECOMMENDATIONS
+    Provide 5-7 specific, actionable recommendations:
+    1. **Protocol Changes**: What clinical protocols should be revised?
+    2. **Early Warning Systems**: What monitoring could catch deterioration earlier?
+    3. **Resource Allocation**: Where should resources be focused?
+    4. **Staff Training**: What specific competencies need strengthening?
+    5. **Equipment/Technology**: What could help prevent these deaths?
+    6. **Family Counseling**: How to better support families?
+    7. **Research Opportunities**: What needs further investigation?
+
+    ## 🎓 LEARNING POINTS
+    - Key clinical pearls from this data
+    - What should the team prioritize?
+
+    ## 📈 SUCCESS METRICS
+    - How should improvements be measured?
+    - What KPIs should be tracked?
+
+    Use specific numbers from the data. Be direct, evidence-based, and actionable. Format with clear headers, bullet points, and bold text for emphasis.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    return response.text + "\n\n" + AI_DISCLAIMER;
+  } catch (error) {
+    console.error("Error analyzing death diagnosis patterns:", error);
+    return "Unable to analyze death diagnosis patterns at this time.";
+  }
+};
+
+/**
+ * Analyze individual patient mortality
+ */
+export const analyzeIndividualMortality = async (patient: Patient): Promise<string> => {
+  const daysInUnit = patient.dateOfDeath && patient.admissionDate
+    ? Math.ceil((new Date(patient.dateOfDeath).getTime() - new Date(patient.admissionDate).getTime()) / (1000 * 60 * 60 * 24))
+    : 'unknown';
+
+  const recentNotes = patient.progressNotes
+    .slice(-5)
+    .map(n => `${new Date(n.date).toLocaleString()}: ${n.note || 'No note'}`)
+    .join('\n');
+
+  const prompt = `
+    You are a pediatric mortality review specialist. Provide a concise clinical analysis.
+
+    **Patient Details:**
+    - Age: ${patient.age} ${patient.ageUnit}
+    - Unit: ${patient.unit}
+    - Days in unit: ${daysInUnit}
+    - Admission: ${new Date(patient.admissionDate).toLocaleDateString()}
+    - Death: ${patient.dateOfDeath ? `${new Date(patient.dateOfDeath).toLocaleDateString()} at ${new Date(patient.dateOfDeath).toLocaleTimeString()}` : 'Not recorded'}
+
+    **Diagnosis at Death:**
+    ${patient.diagnosisAtDeath || 'Not recorded'}
+
+    **Recent Clinical Notes:**
+    ${recentNotes || 'No notes available'}
+
+    Provide a brief clinical summary (3-4 concise paragraphs):
+
+    **Clinical Summary:**
+    Briefly describe the patient's presentation, clinical course, and cause of death.
+
+    **Key Findings:**
+    - Primary cause of death
+    - Contributing factors
+    - Critical events in the timeline
+
+    **Assessment:**
+    Brief note on preventability (Preventable/Potentially Preventable/Non-Preventable) with 1-2 sentence justification.
+
+    Keep the response professional, concise, and under 200 words total. No separate detailed sections needed.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    return response.text + "\n\n" + AI_DISCLAIMER;
+  } catch (error) {
+    console.error("Error analyzing individual mortality:", error);
+    return "Unable to analyze individual mortality at this time.";
+  }
+};
+
+// ============================================================================
 // UTILITY EXPORTS
 // ============================================================================
 

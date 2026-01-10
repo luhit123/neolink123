@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { InstitutionUser, UserRole, BedCapacity } from '../types';
+import { InstitutionUser, UserRole, BedCapacity, Unit } from '../types';
+import { generateUserID, getNextSequenceNumber } from '../utils/userIdGenerator';
+import { generateAlphanumericPassword } from '../utils/passwordUtils';
+import { signUpWithEmail } from '../services/authService';
+import CredentialsModal from './CredentialsModal';
 
 interface AdminDashboardProps {
   institutionId: string;
@@ -31,8 +35,67 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newInstitutionName, setNewInstitutionName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPhone, setNewUserPhone] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserRoles, setNewUserRoles] = useState<UserRole[]>([]);
+
+  // User credentials state
+  const [manualUserID, setManualUserID] = useState('');
+  const [manualUserPassword, setManualUserPassword] = useState('');
+  const [showManualUserPassword, setShowManualUserPassword] = useState(false);
+
+  // Credentials modal state
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [createdUserCredentials, setCreatedUserCredentials] = useState({
+    userName: '',
+    userEmail: '',
+    userID: '',
+    password: '',
+    userType: ''
+  });
+
+  // Dashboard access control
+  const [selectedDashboards, setSelectedDashboards] = useState<Unit[]>([Unit.NICU, Unit.PICU]);
+
+  // Auto-generate UserID and Password when Add User form opens
+  useEffect(() => {
+    if (showAddForm) {
+      // Get institution data for district name
+      const loadInstitutionData = async () => {
+        try {
+          const institutionDoc = await getDoc(doc(db, 'institutions', institutionId));
+          if (institutionDoc.exists()) {
+            const data = institutionDoc.data();
+            const districtName = data.district || institutionName;
+            const districtPrefix = districtName.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase();
+
+            // Get existing UserIDs
+            const existingUserIDs = users
+              .map(u => u.userID)
+              .filter(id => id);
+            if (data.userID) existingUserIDs.push(data.userID);
+
+            const sequenceNumber = getNextSequenceNumber(existingUserIDs, districtPrefix);
+            const generatedUserID = generateUserID(districtName, sequenceNumber);
+            setManualUserID(generatedUserID);
+
+            // Auto-generate Password (8-character alphanumeric)
+            const generatedPassword = generateAlphanumericPassword();
+            setManualUserPassword(generatedPassword);
+
+            console.log('✅ Auto-generated credentials for new user:', {
+              userID: generatedUserID,
+              password: generatedPassword
+            });
+          }
+        } catch (error) {
+          console.error('❌ Error loading institution data:', error);
+        }
+      };
+
+      loadInstitutionData();
+    }
+  }, [showAddForm, institutionId, institutionName, users]);
 
   // Real-time listener for users
   useEffect(() => {
@@ -137,18 +200,42 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
 
     try {
+      // Use manual UserID if provided, otherwise keep auto-generated
+      const finalUserID = manualUserID.trim();
+      // Use manual password if provided, otherwise keep auto-generated
+      const finalPassword = manualUserPassword.trim();
+
+      // Create Firebase Auth account
+      try {
+        await signUpWithEmail(
+          newUserEmail.trim().toLowerCase(),
+          finalPassword
+        );
+        console.log('✅ Firebase Auth account created for:', newUserEmail);
+      } catch (authError: any) {
+        // If account exists, continue (allow existing users to be added to institution)
+        if (authError.code !== 'auth/email-already-in-use') {
+          throw authError;
+        }
+        console.log('⚠️ Account already exists, adding to institution');
+      }
+
       const usersRef = collection(db, 'approved_users');
       const addPromises = newUserRoles.map(async (role) => {
         const newUser: Omit<InstitutionUser, 'uid'> & { uid: string } = {
           uid: '', // Will be set when user first logs in
           email: newUserEmail.trim().toLowerCase(),
+          phoneNumber: newUserPhone.trim(), // Add phone number for OTP login
           displayName: newUserName.trim(),
           role: role,
           institutionId,
           institutionName,
           addedBy: adminEmail,
           addedAt: new Date().toISOString(),
-          enabled: true
+          enabled: true,
+          userID: finalUserID, // Add UserID
+          password: finalPassword, // Add Password
+          allowedDashboards: selectedDashboards.length > 0 ? selectedDashboards : [Unit.NICU, Unit.PICU] // Default to NICU and PICU if none selected
         };
 
         return addDoc(usersRef, newUser);
@@ -157,10 +244,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       await Promise.all(addPromises);
       console.log('✅ User added with roles:', newUserRoles);
 
-      setSuccess(`User "${newUserName}" (${newUserEmail}) added successfully with roles: ${newUserRoles.join(', ')}!`);
+      // Show credentials modal
+      setCreatedUserCredentials({
+        userName: newUserName.trim(),
+        userEmail: newUserEmail.trim().toLowerCase(),
+        userID: finalUserID,
+        password: finalPassword,
+        userType: newUserRoles[0] === UserRole.Doctor ? 'Doctor' :
+                  newUserRoles[0] === UserRole.Nurse ? 'Nurse' : 'Admin'
+      });
+      setShowCredentialsModal(true);
+
       setNewUserEmail('');
+      setNewUserPhone('');
       setNewUserName('');
       setNewUserRoles([]);
+      setManualUserID('');
+      setManualUserPassword('');
+      setSelectedDashboards([Unit.NICU, Unit.PICU]); // Reset to default
+      setShowManualUserPassword(false);
       setShowAddForm(false);
 
       // Real-time listener will automatically update
@@ -526,6 +628,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div>
                 <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2">
+                  Phone Number (for OTP login) *
+                </label>
+                <input
+                  type="tel"
+                  value={newUserPhone}
+                  onChange={(e) => setNewUserPhone(e.target.value)}
+                  placeholder="+91 1234567890"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2">
                   Full Name *
                 </label>
                 <input
@@ -536,6 +652,85 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors"
                   required
                 />
+              </div>
+
+              {/* UserID Field */}
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2 flex items-center justify-between">
+                  <span>UserID (Auto-generated)</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const existingUserIDs = users.map(u => u.userID).filter(id => id);
+                      const districtName = institutionName;
+                      const districtPrefix = districtName.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase();
+                      const sequenceNumber = getNextSequenceNumber(existingUserIDs, districtPrefix);
+                      setManualUserID(generateUserID(districtName, sequenceNumber));
+                    }}
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Regenerate
+                  </button>
+                </label>
+                <input
+                  type="text"
+                  value={manualUserID}
+                  onChange={(e) => setManualUserID(e.target.value.toUpperCase())}
+                  maxLength={6}
+                  placeholder="e.g., GUW002"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors font-mono"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Auto-generated based on institution. Edit if needed.
+                </p>
+              </div>
+
+              {/* Password Field */}
+              <div>
+                <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2 flex items-center justify-between">
+                  <span>Password (Auto-generated)</span>
+                  <button
+                    type="button"
+                    onClick={() => setManualUserPassword(generateAlphanumericPassword())}
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Regenerate
+                  </button>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showManualUserPassword ? 'text' : 'password'}
+                    value={manualUserPassword}
+                    onChange={(e) => setManualUserPassword(e.target.value)}
+                    placeholder="8-character password"
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-colors font-mono pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowManualUserPassword(!showManualUserPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                  >
+                    {showManualUserPassword ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  8-character alphanumeric password. Edit if needed.
+                </p>
               </div>
 
               <div>
@@ -600,6 +795,56 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                   Select one or more roles for this user. They will have access to all selected role capabilities.
+                </p>
+              </div>
+
+              {/* Dashboard Access Selection */}
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                  </svg>
+                  Dashboard Access (Select which dashboards this user can access)
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                  {[Unit.PICU, Unit.NICU, Unit.SNCU, Unit.HDU, Unit.GENERAL_WARD].map(unit => (
+                    <label
+                      key={unit}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${
+                        selectedDashboards.includes(unit)
+                          ? 'bg-medical-teal text-white shadow-md'
+                          : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedDashboards.includes(unit)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedDashboards([...selectedDashboards, unit]);
+                          } else {
+                            setSelectedDashboards(selectedDashboards.filter(d => d !== unit));
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                      <div className="flex-1 text-sm font-medium">
+                        {unit === Unit.PICU ? 'PICU' :
+                         unit === Unit.NICU ? 'NICU' :
+                         unit === Unit.SNCU ? 'SNCU' :
+                         unit === Unit.HDU ? 'HDU' :
+                         'Ward'}
+                      </div>
+                      {selectedDashboards.includes(unit) && (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                  ℹ️ User will only see selected dashboards after login. At least one must be selected (defaults to NICU & PICU).
                 </p>
               </div>
 
@@ -704,7 +949,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   enabled: user.enabled,
                   addedAt: user.addedAt,
                   addedBy: user.addedBy,
-                  userIds: []
+                  userIds: [],
+                  userID: user.userID, // Add userID
+                  password: user.password // Add password
                 };
               }
               acc[email].roles.push(user.role);
@@ -758,6 +1005,62 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <p className="text-slate-500 dark:text-slate-400">
                               <span className="text-slate-500">Added By:</span> {user.addedBy}
                             </p>
+
+                            {/* Login Credentials */}
+                            {user.userID && user.password && (
+                              <div className="mt-3 bg-gradient-to-r from-sky-50 to-blue-50 dark:from-sky-900/20 dark:to-blue-900/20 border border-sky-200 dark:border-sky-700 rounded-lg p-3">
+                                <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold mb-2 flex items-center gap-1">
+                                  <svg className="w-3 h-3 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                  </svg>
+                                  Login Credentials
+                                </p>
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1">
+                                      <span className="text-xs text-slate-500 dark:text-slate-400">UserID:</span>
+                                      <p className="font-mono font-bold text-slate-900 dark:text-white text-sm">{user.userID}</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        await navigator.clipboard.writeText(user.userID);
+                                        setSuccess('UserID copied to clipboard!');
+                                        setTimeout(() => setSuccess(''), 2000);
+                                      }}
+                                      className="px-2 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded text-xs flex items-center gap-1 transition-colors"
+                                      title="Copy UserID"
+                                    >
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                      </svg>
+                                      Copy
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1">
+                                      <span className="text-xs text-slate-500 dark:text-slate-400">Password:</span>
+                                      <p className="font-mono font-bold text-slate-900 dark:text-white text-sm">{user.password}</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        await navigator.clipboard.writeText(user.password);
+                                        setSuccess('Password copied to clipboard!');
+                                        setTimeout(() => setSuccess(''), 2000);
+                                      }}
+                                      className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs flex items-center gap-1 transition-colors"
+                                      title="Copy Password"
+                                    >
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                      </svg>
+                                      Copy
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -815,6 +1118,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           })()}
         </div>
       </div>
+
+      {/* Credentials Modal */}
+      <CredentialsModal
+        isOpen={showCredentialsModal}
+        onClose={() => setShowCredentialsModal(false)}
+        userName={createdUserCredentials.userName}
+        userEmail={createdUserCredentials.userEmail}
+        userID={createdUserCredentials.userID}
+        password={createdUserCredentials.password}
+        userType={createdUserCredentials.userType}
+      />
+
     </div >
   );
 };

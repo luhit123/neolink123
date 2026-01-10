@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { motion } from 'framer-motion';
 import { db } from '../firebaseConfig';
 import { Patient, Unit, UserRole, AdmissionType, BedCapacity } from '../types';
 import StatCard from './StatCard';
@@ -20,6 +21,7 @@ import NicuViewSelection from './NicuViewSelection';
 import DateFilter, { DateFilterValue } from './DateFilter';
 import ShiftFilter, { ShiftFilterConfigs } from './ShiftFilter';
 import DeathsAnalysis from './DeathsAnalysis';
+import DeathAnalyticsPage from './DeathAnalyticsPage';
 import PatientDetailsPage from './PatientDetailsPage';
 import ReferralInbox from './ReferralInbox';
 import AdvancedAnalytics from './AdvancedAnalytics';
@@ -34,12 +36,17 @@ import { haptics } from '../utils/haptics';
 import { IconHome, IconChartBar, IconUsers, IconSettings, IconPlus } from '@tabler/icons-react';
 import GlobalAIChatWidget from './GlobalAIChatWidget';
 import { useChatContext } from '../contexts/ChatContext';
+import AddPatientChoiceModal from './AddPatientChoiceModal';
+import ObservationPatientForm from './ObservationPatientForm';
+import { ObservationPatient, ObservationOutcome } from '../types';
 
 interface DashboardProps {
   userRole: UserRole;
   institutionId?: string; // SuperAdmin doesn't have institutionId
   institutionName?: string; // SuperAdmin doesn't have institutionName
   userEmail?: string; // User email for tracking
+  displayName?: string; // User's display name for welcome message
+  allowedDashboards?: Unit[]; // Dashboards user can access (PICU, NICU, SNCU, HDU, GENERAL_WARD)
   allRoles?: UserRole[]; // All roles the user has for multi-role support
   setShowSuperAdminPanel?: (show: boolean) => void; // For SuperAdmin dashboard access
   setShowAdminPanel?: (show: boolean) => void; // For Admin dashboard access
@@ -58,6 +65,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   institutionId,
   institutionName,
   userEmail,
+  displayName,
+  allowedDashboards,
   allRoles,
   setShowSuperAdminPanel,
   setShowAdminPanel,
@@ -122,6 +131,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [activeNavItem, setActiveNavItem] = useState('dashboard');
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Add Patient Choice Modal
+  const [showAddPatientChoice, setShowAddPatientChoice] = useState(false);
+  const [showObservationForm, setShowObservationForm] = useState(false);
+
+  // Observation Patients
+  const [observationPatients, setObservationPatients] = useState<ObservationPatient[]>([]);
 
   // Chat context for AI widget
   const { updateContext } = useChatContext();
@@ -283,16 +299,35 @@ const Dashboard: React.FC<DashboardProps> = ({
         }
 
         if (data.facilities && data.facilities.length > 0) {
-          setEnabledFacilities(data.facilities);
+          let facilitiesToEnable = data.facilities;
+
+          // Filter by user's allowed dashboards if specified
+          if (allowedDashboards && allowedDashboards.length > 0) {
+            facilitiesToEnable = data.facilities.filter((facility: Unit) =>
+              allowedDashboards.includes(facility)
+            );
+            console.log('🔒 Dashboard access restricted to:', allowedDashboards);
+          }
+
+          setEnabledFacilities(facilitiesToEnable);
 
           // Ensure selected unit is valid
-          if (!data.facilities.includes(selectedUnit)) {
-            setSelectedUnit(data.facilities[0]);
+          if (!facilitiesToEnable.includes(selectedUnit)) {
+            setSelectedUnit(facilitiesToEnable[0] || Unit.NICU);
           }
-          console.log('✅ Loaded facilities:', data.facilities);
+          console.log('✅ Loaded facilities:', facilitiesToEnable);
         } else {
           // Default to NICU+PICU if not set (backward compatibility)
-          setEnabledFacilities([Unit.NICU, Unit.PICU]);
+          let defaultFacilities = [Unit.NICU, Unit.PICU];
+
+          // Filter defaults by allowedDashboards if specified
+          if (allowedDashboards && allowedDashboards.length > 0) {
+            defaultFacilities = defaultFacilities.filter(facility =>
+              allowedDashboards.includes(facility)
+            );
+          }
+
+          setEnabledFacilities(defaultFacilities);
         }
       }
     } catch (error: any) {
@@ -300,6 +335,36 @@ const Dashboard: React.FC<DashboardProps> = ({
       setBedCapacity({ PICU: 10, NICU: 20 }); // Fallback to defaults
     }
   };
+
+  // Load observation patients from Firestore with real-time updates
+  useEffect(() => {
+    if (!institutionId) {
+      setObservationPatients([]);
+      return;
+    }
+
+    const observationRef = collection(db, 'observationPatients');
+    const q = query(observationRef, where('institutionId', '==', institutionId));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const allObservationPatients = snapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id,
+        } as ObservationPatient));
+
+        setObservationPatients(allObservationPatients);
+        console.log('✅ Real-time update: Loaded', allObservationPatients.length, 'observation patients');
+      },
+      (error) => {
+        console.error('❌ Error loading observation patients:', error);
+        setObservationPatients([]);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [institutionId]);
 
   // Real-time listener for unread referrals
   useEffect(() => {
@@ -635,6 +700,90 @@ const Dashboard: React.FC<DashboardProps> = ({
     };
   }, [unitPatients, selectedUnit]);
 
+  // Active observation patients filtered by selected unit AND date filter
+  const activeObservationPatients = useMemo(() => {
+    let filtered = observationPatients.filter(p =>
+      p.unit === selectedUnit &&
+      p.outcome === ObservationOutcome.InObservation
+    );
+
+    // Apply date filter
+    if (dateFilter.period !== 'All Time') {
+      let startDate: Date;
+      let endDate: Date;
+
+      const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
+
+      if (periodIsMonth) {
+        const [year, month] = dateFilter.period.split('-').map(Number);
+        startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+        endDate = new Date(year, month, 0, 23, 59, 59, 999);
+      } else {
+        const now = new Date();
+        switch (dateFilter.period) {
+          case 'Today':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Week':
+            const firstDayOfWeek = new Date(now);
+            firstDayOfWeek.setDate(now.getDate() - now.getDay());
+            startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
+            const lastDayOfWeek = new Date(firstDayOfWeek);
+            lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+            endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+            break;
+          case 'Custom':
+            if (!dateFilter.startDate || !dateFilter.endDate) {
+              startDate = new Date(0);
+              endDate = new Date();
+            } else {
+              startDate = new Date(dateFilter.startDate);
+              startDate.setHours(0, 0, 0, 0);
+              endDate = new Date(dateFilter.endDate);
+              endDate.setHours(23, 59, 59, 999);
+            }
+            break;
+          default:
+            startDate = new Date(0);
+            endDate = new Date();
+            break;
+        }
+      }
+
+      if (dateFilter.period === 'Custom' && (!dateFilter.startDate || !dateFilter.endDate)) {
+        // Keep filtered as is
+      } else {
+        filtered = filtered.filter(p => {
+          const observationDate = new Date(p.dateOfObservation);
+
+          // Check if patient was in observation during the selected period
+          const wasInObservationDuringPeriod = observationDate <= endDate;
+
+          // Get the outcome/release date
+          let outcomeDate: Date | null = null;
+          if (p.dischargedAt) {
+            outcomeDate = new Date(p.dischargedAt);
+          }
+
+          // Patient is active during period if:
+          // - Started observation before/during period AND
+          // - (Still in observation OR outcome happened during/after period start)
+          const wasActiveDuringPeriod = wasInObservationDuringPeriod &&
+            (!outcomeDate || outcomeDate >= startDate);
+
+          return wasActiveDuringPeriod;
+        });
+      }
+    }
+
+    return filtered;
+  }, [observationPatients, selectedUnit, dateFilter]);
+
   const nicuMortalityBreakdown = useMemo(() => {
     if ((selectedUnit !== Unit.NICU && selectedUnit !== Unit.SNCU) || !stats.inbornDeaths || !stats.outbornDeaths) return [];
     return [
@@ -837,7 +986,15 @@ const Dashboard: React.FC<DashboardProps> = ({
 
 
   if (showDeathsAnalysis) {
-    return <DeathsAnalysis patients={patients} onBack={() => setShowDeathsAnalysis(false)} />;
+    return (
+      <DeathAnalyticsPage
+        patients={patients}
+        institutionName={institutionName || 'Unknown Institution'}
+        selectedUnit={selectedUnit}
+        onClose={() => setShowDeathsAnalysis(false)}
+        userRole={userRole}
+      />
+    );
   }
 
   if (showPatientDetailsPage) {
@@ -851,12 +1008,44 @@ const Dashboard: React.FC<DashboardProps> = ({
           onEdit={handleEditPatient}
           userRole={userRole}
           allRoles={allRoles}
+          observationPatients={observationPatients}
+          onConvertObservationToAdmission={(observationPatient) => {
+            // Open patient form pre-filled with observation data
+            setShowPatientDetailsPage(false);
+            if (onShowAddPatient) {
+              const now = new Date().toISOString();
+              const partialPatient: Partial<Patient> = {
+                name: observationPatient.babyName,
+                motherName: observationPatient.motherName,
+                dateOfBirth: observationPatient.dateOfBirth,
+                unit: observationPatient.unit,
+                admissionType: observationPatient.admissionType || 'Inborn',
+                institutionId: observationPatient.institutionId,
+                admissionDate: now,
+                admissionDateTime: now,
+                outcome: 'In Progress',
+              };
+              onShowAddPatient(partialPatient as Patient, observationPatient.unit);
+            }
+          }}
         />
 
         {isDetailsOpen && patientToView && (
           <PatientDetailModal
             patient={patientToView}
             onClose={() => setIsDetailsOpen(false)}
+            onEdit={handleEditPatient}
+            canEdit={hasRole(UserRole.Doctor)}
+            userEmail={userEmail || ''}
+            userName={userEmail?.split('@')[0] || 'User'}
+            userRole={userRole}
+            onPatientUpdate={async (updatedPatient) => {
+              // Update patient in Firestore
+              if (institutionId && updatedPatient.id) {
+                const patientRef = doc(db, 'institutions', institutionId, 'patients', updatedPatient.id);
+                await updateDoc(patientRef, updatedPatient as any);
+              }
+            }}
           />
         )}
       </>
@@ -871,8 +1060,25 @@ const Dashboard: React.FC<DashboardProps> = ({
   return (
     <>
       <PullToRefresh onRefresh={handleRefresh}>
-        <div className="container mx-auto p-4 sm:p-6 space-y-6 pb-24 md:pb-6">
-          <div className="bg-gradient-to-r from-slate-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 -mx-4 px-3 sm:px-6 py-3 sm:py-4 border-b-2 border-slate-200 dark:border-slate-700 shadow-xl transition-all duration-200 mb-4 sm:mb-6 space-y-3 rounded-b-xl sm:rounded-b-2xl">
+        <div className="container mx-auto px-0 sm:px-6 py-2 sm:py-6 space-y-4 sm:space-y-6 pb-24 md:pb-6">
+          <div className="bg-gradient-to-r from-slate-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-2 sm:px-6 py-3 sm:py-4 border-b-2 border-slate-200 dark:border-slate-700 shadow-xl transition-all duration-200 mb-3 sm:mb-6 space-y-3 rounded-b-xl sm:rounded-b-2xl">
+
+            {/* Welcome Message */}
+            {displayName && (
+              <motion.div
+                className="text-center mb-2"
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 25 }}
+              >
+                <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">
+                  Welcome, <span className="text-medical-teal bg-gradient-to-r from-medical-teal to-blue-600 bg-clip-text text-transparent">{displayName}</span>!
+                </h1>
+                <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm mt-1">
+                  {institutionName || 'Healthcare Management'}
+                </p>
+              </motion.div>
+            )}
 
             {/* Row 1: Unit Selection & Date Display Badge (Mobile) */}
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
@@ -944,7 +1150,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
-                  Deaths
+                  Mortality Analytics
                 </button>
               )}
 
@@ -1014,9 +1220,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               <button
                 onClick={() => {
                   haptics.tap();
-                  if (onShowAddPatient) {
-                    onShowAddPatient(null, selectedUnit);
-                  }
+                  setShowAddPatientChoice(true);
                 }}
                 className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg hover:from-emerald-600 hover:to-emerald-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold text-sm"
               >
@@ -1048,7 +1252,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 md:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-2 sm:gap-3 md:gap-4 px-2 sm:px-0">
             <StatCard title={`Admissions ${getPeriodTitle(dateFilter.period)}`} value={stats.admissionsCount} icon={<PlusIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-indigo-500/90" />
             <StatCard title={`Total Patients ${getPeriodTitle(dateFilter.period)}`} value={stats.total} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-blue/90" />
             <StatCard title={`In Progress ${getPeriodTitle(dateFilter.period)}`} value={stats.inProgress} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-blue-light/90" />
@@ -1057,6 +1261,17 @@ const Dashboard: React.FC<DashboardProps> = ({
             <StatCard title={`Referred ${getPeriodTitle(dateFilter.period)}`} value={stats.referred} icon={<ArrowUpOnSquareIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-orange/90" />
             <StatCard title={`Deceased ${getPeriodTitle(dateFilter.period)}`} value={stats.deceased} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-red/90" />
             <StatCard title={`Mortality Rate ${getPeriodTitle(dateFilter.period)}`} value={stats.mortalityRate} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-red" />
+            <StatCard
+              title="In Observation"
+              value={activeObservationPatients.length}
+              icon={
+                <svg className="w-5 h-5 md:w-6 md:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              }
+              color="bg-amber-500/90"
+            />
           </div>
 
           {/* Additional Rate Metrics */}
@@ -1397,8 +1612,9 @@ const Dashboard: React.FC<DashboardProps> = ({
               startDate={dateFilter.startDate}
               endDate={dateFilter.endDate}
             />
-            <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} availableUnits={enabledFacilities} />
+            <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} availableUnits={enabledFacilities} observationPatients={observationPatients} />
           </div>
+
 
           {/* View All Patients Button */}
 
@@ -1415,6 +1631,18 @@ const Dashboard: React.FC<DashboardProps> = ({
             <PatientDetailModal
               patient={patientToView}
               onClose={() => setIsDetailsOpen(false)}
+              onEdit={handleEditPatient}
+              canEdit={hasRole(UserRole.Doctor)}
+              userEmail={userEmail || ''}
+              userName={userEmail?.split('@')[0] || 'User'}
+              userRole={userRole}
+              onPatientUpdate={async (updatedPatient) => {
+                // Update patient in Firestore
+                if (institutionId && updatedPatient.id) {
+                  const patientRef = doc(db, 'institutions', institutionId, 'patients', updatedPatient.id);
+                  await updateDoc(patientRef, updatedPatient as any);
+                }
+              }}
             />
           )}
 
@@ -1528,7 +1756,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               className="w-full bg-rose-500 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-lg hover:bg-rose-600 transition-all"
             >
               <ChartBarIcon className="w-5 h-5" />
-              Deaths Analysis
+              Mortality Analytics
             </button>
           )}
 
@@ -1616,9 +1844,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           label="Add Patient"
           onClick={() => {
             haptics.impact();
-            if (onShowAddPatient) {
-              onShowAddPatient(null, selectedUnit);
-            }
+            setShowAddPatientChoice(true);
           }}
           extended={false}
           className="md:hidden !bottom-20"
@@ -1627,6 +1853,38 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Global AI Chat Widget */}
       <GlobalAIChatWidget patients={filteredPatients} />
+
+      {/* Add Patient Choice Modal */}
+      <AddPatientChoiceModal
+        isOpen={showAddPatientChoice}
+        onClose={() => setShowAddPatientChoice(false)}
+        onSelectAdmission={() => {
+          setShowAddPatientChoice(false);
+          if (onShowAddPatient) {
+            onShowAddPatient(null, selectedUnit);
+          }
+        }}
+        onSelectObservation={() => {
+          setShowAddPatientChoice(false);
+          setShowObservationForm(true);
+        }}
+        selectedUnit={selectedUnit}
+      />
+
+      {/* Observation Patient Form */}
+      {showObservationForm && (
+        <ObservationPatientForm
+          onClose={() => setShowObservationForm(false)}
+          onSuccess={() => {
+            // Refresh data
+            handleRefresh();
+          }}
+          selectedUnit={selectedUnit}
+          institutionId={institutionId || ''}
+          userEmail={userEmail || ''}
+        />
+      )}
+
 
       {/* Persistent Mobile Bottom App Bar - Removed, using SharedBottomNav in App.tsx */}
     </>

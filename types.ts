@@ -89,7 +89,52 @@ export interface Medication {
   name: string;
   dose: string;
   route?: string; // IV, PO, IM, etc.
-  frequency?: string; // TID, QID, BD, etc.
+  frequency?: string; // TID, QID, BD, Continuous Infusion, etc.
+  startDate?: string; // ISO date when medication was started
+  stopDate?: string; // ISO date when medication was stopped
+  isActive?: boolean; // Whether medication is currently running (default: true)
+  isCustom?: boolean; // Whether medication is custom (not from database)
+}
+
+// Medication Database - Managed by SuperAdmin
+export interface MedicationDatabase {
+  id: string;
+  name: string; // Generic name (e.g., "Ampicillin")
+  brandNames?: string[]; // Alternative brand names
+  category: MedicationCategory; // Antibiotic, Analgesic, etc.
+  commonDoses: string[]; // Common dosage options (e.g., ["50mg/kg", "100mg/kg"])
+  routes: string[]; // Available routes (IV, PO, IM, etc.)
+  frequencies: string[]; // Common frequencies (BD, TID, QID, etc.)
+  indication: string; // Primary indication/usage
+  applicableUnits: Unit[]; // Which units commonly use this (NICU, PICU, etc.)
+  ageGroups?: string[]; // Age groups this is commonly used for
+  warnings?: string; // Important warnings or contraindications
+  isActive: boolean; // Can be deactivated by SuperAdmin
+  createdAt: string; // ISO string
+  createdBy: string; // SuperAdmin email
+  lastModifiedAt?: string; // ISO string
+  lastModifiedBy?: string; // SuperAdmin email
+  searchTerms?: string[]; // Additional search terms for better autocomplete
+}
+
+export enum MedicationCategory {
+  Antibiotic = "Antibiotic",
+  Analgesic = "Analgesic / Pain Relief",
+  Antipyretic = "Antipyretic / Fever Reducer",
+  Respiratory = "Respiratory Support",
+  Cardiovascular = "Cardiovascular",
+  Gastrointestinal = "Gastrointestinal",
+  Neurological = "Neurological",
+  Vitamin = "Vitamin / Supplement",
+  Anticonvulsant = "Anticonvulsant",
+  Sedative = "Sedative / Analgesic",
+  Inotrope = "Inotrope / Vasopressor",
+  Diuretic = "Diuretic",
+  Anticoagulant = "Anticoagulant",
+  Steroid = "Steroid / Corticosteroid",
+  Surfactant = "Surfactant",
+  Fluid = "IV Fluid / Electrolyte",
+  Other = "Other"
 }
 
 export interface ProgressNote {
@@ -141,6 +186,11 @@ export interface Patient {
   fatherName?: string; // Father's Name
   category?: Category; // General/OBC/SC/ST
   address?: string; // Complete Address with Village Name/Ward No.
+  village?: string; // Village/Ward Name
+  postOffice?: string; // Post Office Name
+  pinCode?: string; // 6-digit PIN code
+  district?: string; // District Name
+  state?: string; // State Name
   contactNo1?: string; // Primary contact number
   contactRelation1?: string; // Relation of primary contact
   contactNo2?: string; // Secondary contact number
@@ -182,6 +232,11 @@ export interface Patient {
   // Referral information
   referralReason?: string; // Reason for referring patient to another facility
   referredTo?: string; // Name of facility patient was referred to
+
+  // Death Information (Mandatory when outcome is Deceased)
+  diagnosisAtDeath?: string; // Full diagnosis written by doctor at time of death
+  aiInterpretedDeathDiagnosis?: string; // AI-generated concise diagnosis
+  dateOfDeath?: string; // ISO string when patient died
   // Status tracking
   isDraft?: boolean; // True if nurse saved basic info, waiting for doctor
   createdBy?: UserRole; // Who created the record
@@ -201,27 +256,84 @@ export interface MonthlyAdmission {
 
 export interface BedCapacity {
   PICU: number;
-  NICU: number;
+  NICU: number; // Legacy - kept for backward compatibility
+  NICU_INBORN?: number; // Separate inborn beds for NICU
+  NICU_OUTBORN?: number; // Separate outborn beds for NICU
   SNCU?: number;
   HDU?: number;
   GENERAL_WARD?: number;
+}
+
+export enum ObservationOutcome {
+  InObservation = 'In Observation',
+  HandedOverToMother = 'Handed Over to Mother',
+  ConvertedToAdmission = 'Converted to Admission'
+}
+
+export interface ObservationPatient {
+  id: string;
+  babyName: string;
+  motherName: string;
+  dateOfBirth: string;
+  reasonForObservation: string;
+  unit: Unit;
+  admissionType?: 'Inborn' | 'Outborn';
+  dateOfObservation: string; // When observation started
+  outcome: ObservationOutcome;
+  convertedToPatientId?: string; // If converted to admission, reference to Patient ID
+  dischargedAt?: string; // When handed over to mother
+  institutionId: string;
+  createdBy: string; // Doctor/Nurse email
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Institution {
   id: string;
   name: string;
   adminEmail: string; // Admin email for this institution
+
+  // UserID-based authentication
+  userID?: string; // Unique UserID (e.g., "GUW001", "DIB002")
+  password?: string; // Admin password (set by SuperAdmin)
+
   createdAt: string;
   createdBy: string; // SuperAdmin email who created it
   bedCapacity?: BedCapacity; // Bed capacity for each unit
   facilities?: Unit[]; // Enabled facilities (NICU, PICU, SNCU)
+
+  // Address information
+  address?: string; // Full address
+  village?: string; // Village/Ward name
+  postOffice?: string; // Post Office
+  pinCode?: string; // PIN code
   district?: string; // District name
+  state?: string; // State name
+
   institutionType?: string; // Type of institution (Medical College, PHC, etc.)
+}
+
+// Password Reset Request
+export interface PasswordResetRequest {
+  id: string;
+  institutionId: string;
+  institutionName: string;
+  userID: string;
+  userEmail: string; // Email of user requesting reset
+  userName?: string; // Display name of user
+  userRole?: UserRole; // Role of user (Admin, Doctor, Nurse, etc.)
+  requestedAt: string;
+  requestedBy: string; // Email of person who requested
+  status: 'pending' | 'approved' | 'rejected';
+  newPassword?: string; // Set by SuperAdmin when approved
+  approvedAt?: string;
+  approvedBy?: string; // SuperAdmin email who approved
 }
 
 export interface InstitutionUser {
   uid: string; // Firebase user ID
   email: string;
+  phoneNumber?: string; // Phone number for OTP login
   displayName: string;
   role: UserRole; // Admin, Doctor, Nurse, or DistrictAdmin (not SuperAdmin)
   institutionId: string;
@@ -230,6 +342,9 @@ export interface InstitutionUser {
   addedAt: string;
   enabled: boolean; // Can be disabled by Admin
   assignedDistrict?: string; // For DistrictAdmin role
+  userID?: string; // Unique UserID for login (e.g., "GUW001", "GUW002")
+  password?: string; // Password set by SuperAdmin/Admin
+  allowedDashboards?: Unit[]; // Dashboards user can access (PICU, NICU, SNCU, HDU, GENERAL_WARD)
 }
 
 export interface UserProfile {

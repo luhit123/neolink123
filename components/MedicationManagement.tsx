@@ -61,7 +61,9 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                     return {
                         ...med,
                         isActive: false,
-                        stopDate: new Date().toISOString()
+                        stopDate: new Date().toISOString(),
+                        stoppedBy: userName || userEmail || userRole,
+                        stoppedAt: new Date().toISOString()
                     };
                 }
                 return med;
@@ -365,6 +367,7 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                                                                 </svg>
                                                                 <span className="text-slate-600">
                                                                     Stopped: <span className="font-semibold text-red-700">{new Date(med.stopDate).toLocaleDateString()}</span>
+                                                                    {med.stoppedBy && <span className="ml-2 text-slate-500">by {med.stoppedBy}</span>}
                                                                 </span>
                                                             </div>
                                                         )}

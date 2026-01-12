@@ -139,7 +139,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
             paddingBottom: isHeaderMinimized ? '12px' : '24px'
           }}
           transition={{ duration: 0.3 }}
-          className="bg-gradient-to-r from-red-600 to-red-700 shadow-2xl overflow-hidden"
+          className="bg-gradient-to-r from-blue-600 to-blue-700 shadow-2xl overflow-hidden"
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             {/* Minimized Header View */}
@@ -192,7 +192,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                     </button>
                     <div>
                       <h1 className="text-2xl font-bold text-white">Mortality Analytics</h1>
-                      <p className="text-red-100 text-xs mt-0.5">{institutionName}</p>
+                      <p className="text-blue-100 text-xs mt-0.5">{institutionName}</p>
                     </div>
                   </div>
 
@@ -200,12 +200,12 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                   <div className="hidden md:flex items-center gap-4">
                     <div className="text-right">
                       <div className="text-3xl font-bold text-white">{deceasedPatients.length}</div>
-                      <div className="text-red-100 text-xs">Patients</div>
+                      <div className="text-blue-100 text-xs">Patients</div>
                     </div>
-                    <div className="h-10 w-px bg-red-400/50"></div>
+                    <div className="h-10 w-px bg-blue-400/50"></div>
                     <div className="text-right">
                       <div className="text-3xl font-bold text-white">{mortalityRate}%</div>
-                      <div className="text-red-100 text-xs">Rate</div>
+                      <div className="text-blue-100 text-xs">Rate</div>
                     </div>
                   </div>
                 </div>
@@ -214,7 +214,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                 <div className="mt-4 space-y-2">
                   {/* Time Range Filter Row */}
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-red-100 text-xs font-medium">Period:</span>
+                    <span className="text-blue-100 text-xs font-medium">Period:</span>
                     <div className="flex gap-1.5 flex-wrap">
                       <button
                         onClick={() => {
@@ -223,7 +223,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                         }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                           selectedTimeRange === 'all'
-                            ? 'bg-white text-red-700 shadow-lg'
+                            ? 'bg-white text-blue-700 shadow-lg'
                             : 'bg-white/20 text-white hover:bg-white/30'
                         }`}
                       >
@@ -243,7 +243,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                         }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                           selectedTimeRange === 'month'
-                            ? 'bg-white text-red-700 shadow-lg'
+                            ? 'bg-white text-blue-700 shadow-lg'
                             : 'bg-white/20 text-white hover:bg-white/30'
                         }`}
                       >
@@ -257,7 +257,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                           type="month"
                           value={selectedMonth}
                           onChange={(e) => setSelectedMonth(e.target.value)}
-                          className="px-3 py-1.5 rounded-lg bg-white text-slate-900 font-semibold text-xs border border-white/30 focus:outline-none focus:ring-2 focus:ring-red-500"
+                          className="px-3 py-1.5 rounded-lg bg-white text-slate-900 font-semibold text-xs border border-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       )}
 
@@ -273,7 +273,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                         }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                           selectedTimeRange === 'year'
-                            ? 'bg-white text-red-700 shadow-lg'
+                            ? 'bg-white text-blue-700 shadow-lg'
                             : 'bg-white/20 text-white hover:bg-white/30'
                         }`}
                       >
@@ -286,7 +286,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                           onChange={(e) => setSelectedYear(e.target.value)}
                           min="2000"
                           max={new Date().getFullYear()}
-                          className="px-3 py-1.5 rounded-lg bg-white text-slate-900 font-semibold text-xs border border-white/30 focus:outline-none focus:ring-2 focus:ring-red-500 w-24"
+                          className="px-3 py-1.5 rounded-lg bg-white text-slate-900 font-semibold text-xs border border-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500 w-24"
                         />
                       )}
 
@@ -297,7 +297,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                         }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
                           selectedTimeRange === 'custom'
-                            ? 'bg-white text-red-700 shadow-lg'
+                            ? 'bg-white text-blue-700 shadow-lg'
                             : 'bg-white/20 text-white hover:bg-white/30'
                         }`}
                       >
@@ -321,7 +321,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                       className="flex flex-wrap items-center gap-2 bg-white/10 backdrop-blur-xl rounded-lg p-3 border border-white/20"
                     >
                       <div className="flex items-center gap-2">
-                        <label className="text-red-100 text-xs font-medium">From:</label>
+                        <label className="text-blue-100 text-xs font-medium">From:</label>
                         <input
                           type="date"
                           value={customStartDate}
@@ -330,7 +330,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                         />
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-red-100 text-xs font-medium">To:</label>
+                        <label className="text-blue-100 text-xs font-medium">To:</label>
                         <input
                           type="date"
                           value={customEndDate}
@@ -356,7 +356,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                   <div className="flex flex-wrap items-center gap-2">
                     {/* Unit Filter */}
                     <div className="flex items-center gap-1">
-                      <span className="text-red-100 text-xs font-medium">Unit:</span>
+                      <span className="text-blue-100 text-xs font-medium">Unit:</span>
                       <select
                         value={selectedUnitFilter}
                         onChange={(e) => setSelectedUnitFilter(e.target.value as Unit | 'all')}
@@ -372,7 +372,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                     {/* Birth Type Filter (NICU only) */}
                     {(selectedUnitFilter === Unit.NICU || selectedUnitFilter === 'all') && (
                       <div className="flex items-center gap-1">
-                        <span className="text-red-100 text-xs font-medium">Birth:</span>
+                        <span className="text-blue-100 text-xs font-medium">Birth:</span>
                         <div className="flex gap-1">
                           {[
                             { value: 'all', label: 'All' },
@@ -384,7 +384,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
                               onClick={() => setBirthTypeFilter(option.value as BirthType)}
                               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                                 birthTypeFilter === option.value
-                                  ? 'bg-white text-red-700 shadow-lg'
+                                  ? 'bg-white text-blue-700 shadow-lg'
                                   : 'bg-white/20 text-white hover:bg-white/30'
                               }`}
                             >

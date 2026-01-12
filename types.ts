@@ -94,6 +94,11 @@ export interface Medication {
   stopDate?: string; // ISO date when medication was stopped
   isActive?: boolean; // Whether medication is currently running (default: true)
   isCustom?: boolean; // Whether medication is custom (not from database)
+  // Audit tracking
+  addedBy?: string; // Name of person who added
+  addedAt?: string; // ISO date when added
+  stoppedBy?: string; // Name of person who stopped
+  stoppedAt?: string; // ISO date when stopped
 }
 
 // Medication Database - Managed by SuperAdmin
@@ -241,8 +246,11 @@ export interface Patient {
   isDraft?: boolean; // True if nurse saved basic info, waiting for doctor
   createdBy?: UserRole; // Who created the record
   createdByEmail?: string; // Email of who created
+  createdByName?: string; // Display name of who created
+  createdAt?: string; // ISO string when record was created
   lastUpdatedBy?: UserRole; // Who last updated
   lastUpdatedByEmail?: string; // Email of who last updated
+  lastUpdatedByName?: string; // Display name of who last updated
   // Edit tracking
   editHistory?: EditHistory[]; // Track all edits
   lastEditedAt?: string; // ISO string of last edit

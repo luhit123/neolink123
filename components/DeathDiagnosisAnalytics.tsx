@@ -277,7 +277,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-red-500 to-red-600 rounded-2xl p-6 shadow-2xl">
+      <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl p-6 shadow-2xl">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 bg-white/20 backdrop-blur-xl rounded-xl flex items-center justify-center">
@@ -287,13 +287,13 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             </div>
             <div>
               <h2 className="text-2xl font-bold text-white">Death Diagnosis Analytics</h2>
-              <p className="text-red-100 text-sm">AI-Powered Mortality Pattern Analysis • {institutionName}</p>
+              <p className="text-blue-100 text-sm">AI-Powered Mortality Pattern Analysis • {institutionName}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
               <div className="text-4xl font-bold text-white">{deceasedPatients.length}</div>
-              <div className="text-red-100 text-sm">Deceased Patients</div>
+              <div className="text-blue-100 text-sm">Deceased Patients</div>
             </div>
             <button
               onClick={() => setShowExportModal(true)}
@@ -716,10 +716,10 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
 
           <div className="space-y-4">
             {causeStats.map((cause, index) => (
-              <div key={index} className="border-l-4 border-red-400 bg-red-50 rounded-r-lg p-4">
+              <div key={index} className="border-l-4 border-blue-400 bg-blue-50 rounded-r-lg p-4">
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex items-start gap-3 flex-1">
-                    <div className="w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
+                    <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
                       {index + 1}
                     </div>
                     <div className="flex-1">
@@ -752,9 +752,9 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
                 </div>
 
                 {/* Progress bar */}
-                <div className="mt-3 w-full bg-red-200 rounded-full h-2">
+                <div className="mt-3 w-full bg-blue-200 rounded-full h-2">
                   <div
-                    className="bg-red-500 h-2 rounded-full transition-all duration-500"
+                    className="bg-blue-500 h-2 rounded-full transition-all duration-500"
                     style={{ width: `${cause.percentage}%` }}
                   />
                 </div>

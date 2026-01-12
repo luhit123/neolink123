@@ -63,7 +63,9 @@ const PatientForm: React.FC<PatientFormProps> = ({
     institutionName,
     isDraft: isNurse,
     createdBy: userRole,
-    createdByEmail: userEmail
+    createdByEmail: userEmail,
+    createdByName: userName || userEmail,
+    createdAt: new Date().toISOString()
   };
 
   // Merge patientToEdit with defaultPatient to ensure all fields exist
@@ -395,6 +397,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
       isDraft: saveAsDraft,
       lastUpdatedBy: userRole,
       lastUpdatedByEmail: userEmail,
+      lastUpdatedByName: userName || userEmail,
       lastEditedAt: new Date().toISOString(),
       institutionId,
       institutionName

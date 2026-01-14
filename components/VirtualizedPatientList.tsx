@@ -10,6 +10,10 @@ export interface VirtualizedPatientListProps {
   onView: (patient: Patient) => void;
   onEdit?: (patient: Patient) => void;
   canEdit: boolean;
+  // Selection mode props (for admin delete)
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelection?: (patientId: string) => void;
 }
 
 /**
@@ -32,7 +36,7 @@ export interface VirtualizedPatientListProps {
  * />
  */
 export const VirtualizedPatientList: React.FC<VirtualizedPatientListProps> = memo(
-  ({ patients, onView, onEdit, canEdit }) => {
+  ({ patients, onView, onEdit, canEdit, selectionMode, selectedIds, onToggleSelection }) => {
     // Empty state
     if (patients.length === 0) {
       return (
@@ -76,7 +80,10 @@ export const VirtualizedPatientList: React.FC<VirtualizedPatientListProps> = mem
             <SimplePatientRow
               key={patient.id}
               patient={patient}
-              onClick={() => onView(patient)}
+              onClick={() => selectionMode && onToggleSelection ? onToggleSelection(patient.id) : onView(patient)}
+              selectionMode={selectionMode}
+              isSelected={selectedIds?.has(patient.id)}
+              onToggleSelection={onToggleSelection}
             />
           )}
           components={{

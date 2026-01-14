@@ -6,9 +6,13 @@ import { haptics } from '../utils/haptics';
 import { validateUserID } from '../utils/userIdGenerator';
 import { isMobileDevice } from '../utils/pwaDetection';
 
-const Login: React.FC = () => {
+interface LoginProps {
+  initialError?: string | null;
+}
+
+const Login: React.FC<LoginProps> = ({ initialError }) => {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError || null);
   const isMobile = isMobileDevice();
 
   // Login state
@@ -31,12 +35,24 @@ const Login: React.FC = () => {
     haptics.tap();
 
     try {
-      await signInWithGoogle();
+      console.log('🔄 Starting Google login...');
+      const result = await signInWithGoogle();
+
+      if (result) {
+        // Popup successful - user is signed in
+        console.log('✅ Google login successful:', result.email);
+        // Auth state listener in App.tsx will handle the rest
+      } else {
+        // Redirect flow was used as fallback (rare case)
+        console.log('🔄 Redirect flow initiated...');
+      }
     } catch (err: any) {
-      console.error('Login error:', err);
+      console.error('❌ Login error:', err);
       setError(err.message || 'Failed to sign in. Please try again.');
-      setLoading(false);
       haptics.error();
+    } finally {
+      // Always reset loading state for popup flow
+      setLoading(false);
     }
   };
 
@@ -344,11 +360,10 @@ const Login: React.FC = () => {
                           setResetMode('userid');
                           setResetEmail('');
                         }}
-                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-                          resetMode === 'userid'
-                            ? 'bg-white text-teal-600 shadow-sm'
-                            : 'text-slate-600 hover:text-slate-800'
-                        }`}
+                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${resetMode === 'userid'
+                          ? 'bg-white text-teal-600 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-800'
+                          }`}
                       >
                         Use UserID
                       </button>
@@ -358,11 +373,10 @@ const Login: React.FC = () => {
                           setResetMode('email');
                           setResetUserID('');
                         }}
-                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${
-                          resetMode === 'email'
-                            ? 'bg-white text-teal-600 shadow-sm'
-                            : 'text-slate-600 hover:text-slate-800'
-                        }`}
+                        className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all ${resetMode === 'email'
+                          ? 'bg-white text-teal-600 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-800'
+                          }`}
                       >
                         Use Email
                       </button>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Patient } from '../types';
 import SwipeableListItem from './gestures/SwipeableListItem';
 import { haptics } from '../utils/haptics';
+import { getFormattedAge } from '../utils/ageCalculator';
 
 interface CollapsiblePatientCardProps {
   patient: Patient;
@@ -42,7 +43,7 @@ const CollapsiblePatientCard: React.FC<CollapsiblePatientCardProps> = ({ patient
   };
 
   const getAgeDisplay = () => {
-    return `${patient.age} ${patient.ageUnit}`;
+    return getFormattedAge(patient.dateOfBirth, patient.age, patient.ageUnit);
   };
 
   return (

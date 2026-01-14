@@ -118,3 +118,37 @@ export function calculateAgeAtDate(dateOfBirth: string, targetDate: string): {
     ageUnit: AgeUnit.Years
   };
 }
+
+/**
+ * Get formatted age display string from date of birth
+ * Calculates current age dynamically
+ */
+export function getFormattedAge(dateOfBirth: string | undefined, fallbackAge?: number, fallbackUnit?: AgeUnit): string {
+  // If we have date of birth, calculate current age dynamically
+  if (dateOfBirth) {
+    const { age, ageUnit } = calculateAgeFromBirthDate(dateOfBirth);
+    return `${age} ${ageUnit}`;
+  }
+
+  // Fall back to stored age if no DOB
+  if (fallbackAge !== undefined && fallbackUnit) {
+    return `${fallbackAge} ${fallbackUnit}`;
+  }
+
+  return 'Unknown';
+}
+
+/**
+ * Get age value and unit from date of birth or fallback
+ * Returns current calculated age if DOB available
+ */
+export function getCurrentAge(dateOfBirth: string | undefined, fallbackAge?: number, fallbackUnit?: AgeUnit): { age: number; ageUnit: AgeUnit } {
+  if (dateOfBirth) {
+    return calculateAgeFromBirthDate(dateOfBirth);
+  }
+
+  return {
+    age: fallbackAge || 0,
+    ageUnit: fallbackUnit || AgeUnit.Days
+  };
+}

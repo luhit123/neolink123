@@ -21,12 +21,16 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
   userRole
 }) => {
   const [deceasedPatients, setDeceasedPatients] = useState<Patient[]>([]);
-  const [selectedTimeRange, setSelectedTimeRange] = useState<'all' | 'month' | 'year' | 'custom'>('all');
+  const [selectedTimeRange, setSelectedTimeRange] = useState<'all' | 'month' | 'year' | 'custom'>('month');
   const [selectedUnitFilter, setSelectedUnitFilter] = useState<Unit | 'all'>(selectedUnit);
   const [birthTypeFilter, setBirthTypeFilter] = useState<BirthType>('all');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
-  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  // Default to current month
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [selectedYear, setSelectedYear] = useState<string>('');
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [isHeaderMinimized, setIsHeaderMinimized] = useState(false);
@@ -144,68 +148,69 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             {/* Minimized Header View */}
             {isHeaderMinimized ? (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <button
                     onClick={onClose}
-                    className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                    className="p-1.5 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0"
                   >
                     <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                     </svg>
                   </button>
-                  <h1 className="text-lg font-bold text-white">Mortality Analytics</h1>
-                  <div className="hidden md:flex items-center gap-3 ml-4">
-                    <span className="px-3 py-1 bg-white/20 text-white rounded-full text-xs font-semibold">
-                      {deceasedPatients.length} Patients
+                  <h1 className="text-base sm:text-lg font-bold text-white truncate">Mortality</h1>
+                  {/* Mobile: Show compact stats */}
+                  <div className="flex items-center gap-1.5 sm:gap-3 overflow-x-auto scrollbar-hide">
+                    <span className="px-2 py-0.5 sm:px-3 sm:py-1 bg-white/20 text-white rounded-full text-[10px] sm:text-xs font-semibold whitespace-nowrap">
+                      {deceasedPatients.length}
                     </span>
-                    <span className="px-3 py-1 bg-white/20 text-white rounded-full text-xs font-semibold">
-                      {mortalityRate}% Rate
+                    <span className="px-2 py-0.5 sm:px-3 sm:py-1 bg-white/20 text-white rounded-full text-[10px] sm:text-xs font-semibold whitespace-nowrap">
+                      {mortalityRate}%
                     </span>
-                    <span className="px-3 py-1 bg-white/20 text-white rounded-full text-xs font-semibold">
+                    <span className="hidden sm:inline-block px-3 py-1 bg-white/20 text-white rounded-full text-xs font-semibold whitespace-nowrap">
                       {getTimeRangeLabel()}
                     </span>
                   </div>
                 </div>
                 <button
                   onClick={() => setIsHeaderMinimized(false)}
-                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1"
+                  className="px-2 py-1 sm:px-3 sm:py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1 flex-shrink-0"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                   </svg>
-                  Filters
+                  <span className="hidden sm:inline">Filters</span>
                 </button>
               </div>
             ) : (
               /* Full Header View */
               <>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                     <button
                       onClick={onClose}
-                      className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                      className="p-1.5 sm:p-2 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0"
                     >
                       <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                       </svg>
                     </button>
-                    <div>
-                      <h1 className="text-2xl font-bold text-white">Mortality Analytics</h1>
-                      <p className="text-blue-100 text-xs mt-0.5">{institutionName}</p>
+                    <div className="min-w-0">
+                      <h1 className="text-lg sm:text-2xl font-bold text-white truncate">Mortality Analytics</h1>
+                      <p className="text-blue-100 text-[10px] sm:text-xs mt-0.5 truncate">{institutionName}</p>
                     </div>
                   </div>
 
-                  {/* Compact Stats */}
-                  <div className="hidden md:flex items-center gap-4">
+                  {/* Stats - Always visible, compact on mobile */}
+                  <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
                     <div className="text-right">
-                      <div className="text-3xl font-bold text-white">{deceasedPatients.length}</div>
-                      <div className="text-blue-100 text-xs">Patients</div>
+                      <div className="text-xl sm:text-3xl font-bold text-white">{deceasedPatients.length}</div>
+                      <div className="text-blue-100 text-[10px] sm:text-xs">Deaths</div>
                     </div>
-                    <div className="h-10 w-px bg-blue-400/50"></div>
+                    <div className="h-8 sm:h-10 w-px bg-blue-400/50"></div>
                     <div className="text-right">
-                      <div className="text-3xl font-bold text-white">{mortalityRate}%</div>
-                      <div className="text-blue-100 text-xs">Rate</div>
+                      <div className="text-xl sm:text-3xl font-bold text-white">{mortalityRate}%</div>
+                      <div className="text-blue-100 text-[10px] sm:text-xs">Rate</div>
                     </div>
                   </div>
                 </div>
@@ -438,34 +443,35 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer - Mobile Optimized */}
         <div className="bg-white border-t border-slate-200 shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="text-sm text-slate-600">
-                    <strong>{deceasedPatients.filter(p => p.aiInterpretedDeathDiagnosis).length}</strong> AI Interpreted
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2 sm:py-4">
+            <div className="flex items-center justify-between gap-2">
+              {/* Stats - Compact on mobile */}
+              <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto scrollbar-hide flex-1">
+                <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 bg-green-500 rounded-full"></div>
+                  <span className="text-[10px] sm:text-sm text-slate-600 whitespace-nowrap">
+                    <strong>{deceasedPatients.filter(p => p.aiInterpretedDeathDiagnosis).length}</strong> <span className="hidden sm:inline">AI</span>
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                  <span className="text-sm text-slate-600">
-                    <strong>{deceasedPatients.filter(p => !p.aiInterpretedDeathDiagnosis && p.diagnosisAtDeath).length}</strong> Manual Only
+                <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 bg-yellow-500 rounded-full"></div>
+                  <span className="text-[10px] sm:text-sm text-slate-600 whitespace-nowrap">
+                    <strong>{deceasedPatients.filter(p => !p.aiInterpretedDeathDiagnosis && p.diagnosisAtDeath).length}</strong> <span className="hidden sm:inline">Manual</span>
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  <span className="text-sm text-slate-600">
-                    <strong>{deceasedPatients.filter(p => !p.diagnosisAtDeath).length}</strong> Missing Data
+                <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                  <div className="w-2 h-2 sm:w-3 sm:h-3 bg-red-500 rounded-full"></div>
+                  <span className="text-[10px] sm:text-sm text-slate-600 whitespace-nowrap">
+                    <strong>{deceasedPatients.filter(p => !p.diagnosisAtDeath).length}</strong> <span className="hidden sm:inline">Missing</span>
                   </span>
                 </div>
               </div>
 
               <button
                 onClick={onClose}
-                className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-semibold transition-colors"
+                className="px-3 py-1.5 sm:px-6 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-semibold transition-colors text-xs sm:text-base flex-shrink-0"
               >
                 Close
               </button>

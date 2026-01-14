@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence, getRedirectResult, UserCredential } from 'firebase/auth';
 import { getFirestore, initializeFirestore } from 'firebase/firestore';
 
 // Firebase configuration for NeoLink PICU/NICU Medical Records System
@@ -36,6 +36,40 @@ const auth = getAuth(app);
 const db = initializeFirestore(app, {
   ignoreUndefinedProperties: true
 });
+
+// CRITICAL FIX: Set persistence FIRST, then check redirect result
+// The order matters - persistence must be configured before getRedirectResult
+// so Firebase can properly retrieve the stored auth state from the redirect
+export const authReady: Promise<void> = (async () => {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+    console.log('✅ Auth persistence set to localStorage');
+  } catch (error) {
+    console.warn('⚠️ Failed to set auth persistence:', error);
+    // Continue anyway - Firebase will use default persistence
+  }
+})();
+
+// Check for redirect result AFTER persistence is ready
+// This ensures Firebase can find the stored redirect auth state
+export const pendingRedirectResult: Promise<UserCredential | null> = authReady
+  .then(() => {
+    console.log('🔄 Checking for pending redirect result...');
+    return getRedirectResult(auth);
+  })
+  .then((result) => {
+    if (result?.user) {
+      console.log('✅ Redirect result found:', result.user.email);
+    } else {
+      console.log('ℹ️ No pending redirect result');
+    }
+    return result;
+  })
+  .catch((error) => {
+    console.error('❌ Error getting redirect result:', error.code, error.message);
+    // Re-throw so the error can be handled by the caller
+    throw error;
+  });
 
 // Analytics loaded lazily only if needed
 let analytics: any = null;

@@ -6,7 +6,7 @@ import { Patient, Unit, UserRole, AdmissionType, BedCapacity } from '../types';
 import StatCard from './StatCard';
 import PatientList from './PatientList';
 import UnitSelection from './UnitSelection';
-import PatientDetailModal from './PatientDetailModal';
+import PatientViewPage from './PatientViewPage';
 import PatientFilters, { OutcomeFilter } from './PatientFilters';
 import CollapsiblePatientCard from './CollapsiblePatientCard';
 import TimeBasedAnalytics from './TimeBasedAnalytics';
@@ -22,6 +22,7 @@ import DateFilter, { DateFilterValue } from './DateFilter';
 import ShiftFilter, { ShiftFilterConfigs } from './ShiftFilter';
 import DeathsAnalysis from './DeathsAnalysis';
 import DeathAnalyticsPage from './DeathAnalyticsPage';
+import { MobileAnalyticsView } from './analytics';
 import PatientDetailsPage from './PatientDetailsPage';
 import ReferralInbox from './ReferralInbox';
 import AdvancedAnalytics from './AdvancedAnalytics';
@@ -113,6 +114,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   // REMOVED separate chart filter - charts now use main dateFilter for consistency
 
   const [showDeathsAnalysis, setShowDeathsAnalysis] = useState(false);
+  const [showMobileAnalytics, setShowMobileAnalytics] = useState(false);
   const [showSmartHandoff, setShowSmartHandoff] = useState(false);
   const [showAIReportGenerator, setShowAIReportGenerator] = useState(false);
 
@@ -124,6 +126,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const [patientToEdit, setPatientToEdit] = useState<Patient | null>(null);
   const [patientToView, setPatientToView] = useState<Patient | null>(null);
+  const [showPatientViewPage, setShowPatientViewPage] = useState(false);
   const [selectedPatientForAI, setSelectedPatientForAI] = useState<Patient | null>(null);
 
   // Native Android Features State
@@ -141,6 +144,19 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Chat context for AI widget
   const { updateContext } = useChatContext();
+
+  // Handle back navigation from patient view page
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (showPatientViewPage) {
+        setShowPatientViewPage(false);
+        setPatientToView(null);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showPatientViewPage]);
 
   // Pull to Refresh Handler
   const handleRefresh = async () => {
@@ -916,7 +932,9 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handleViewDetails = (patient: Patient) => {
     setPatientToView(patient);
-    setIsDetailsOpen(true);
+    setShowPatientViewPage(true);
+    // Push state to handle back button
+    window.history.pushState({ patientView: true }, '');
   };
 
   const handleStepDownDischarge = async (patient: Patient) => {
@@ -985,6 +1003,19 @@ const Dashboard: React.FC<DashboardProps> = ({
 
 
 
+  // Mobile Analytics View (swipeable cards for mobile)
+  if (showMobileAnalytics) {
+    return (
+      <MobileAnalyticsView
+        patients={patients}
+        allPatients={patients}
+        institutionName={institutionName || 'Unknown Institution'}
+        onClose={() => setShowMobileAnalytics(false)}
+      />
+    );
+  }
+
+  // Desktop Deaths Analysis Page
   if (showDeathsAnalysis) {
     return (
       <DeathAnalyticsPage
@@ -997,58 +1028,71 @@ const Dashboard: React.FC<DashboardProps> = ({
     );
   }
 
+  // Show full-page patient view instead of modal (professional layout)
+  // This must come BEFORE showPatientDetailsPage check
+  if (showPatientViewPage && patientToView) {
+    return (
+      <PatientViewPage
+        patient={patientToView}
+        onBack={() => {
+          setShowPatientViewPage(false);
+          setPatientToView(null);
+          window.history.back();
+        }}
+        onEdit={handleEditPatient}
+        canEdit={hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)}
+        userEmail={userEmail || ''}
+        userName={displayName || userEmail?.split('@')[0] || 'User'}
+        userRole={userRole}
+        onPatientUpdate={async (updatedPatient) => {
+          // Update patient in Firestore
+          if (updatedPatient.id) {
+            const patientRef = doc(db, 'patients', updatedPatient.id);
+            await updateDoc(patientRef, { ...updatedPatient });
+            // Update local state
+            setPatientToView(updatedPatient);
+          }
+        }}
+      />
+    );
+  }
+
   if (showPatientDetailsPage) {
     return (
-      <>
-        <PatientDetailsPage
-          patients={patients}
-          selectedUnit={selectedUnit}
-          onBack={() => setShowPatientDetailsPage(false)}
-          onViewDetails={handleViewDetails}
-          onEdit={handleEditPatient}
-          userRole={userRole}
-          allRoles={allRoles}
-          observationPatients={observationPatients}
-          onConvertObservationToAdmission={(observationPatient) => {
-            // Open patient form pre-filled with observation data
-            setShowPatientDetailsPage(false);
-            if (onShowAddPatient) {
-              const now = new Date().toISOString();
-              const partialPatient: Partial<Patient> = {
-                name: observationPatient.babyName,
-                motherName: observationPatient.motherName,
-                dateOfBirth: observationPatient.dateOfBirth,
-                unit: observationPatient.unit,
-                admissionType: observationPatient.admissionType || 'Inborn',
-                institutionId: observationPatient.institutionId,
-                admissionDate: now,
-                admissionDateTime: now,
-                outcome: 'In Progress',
-              };
-              onShowAddPatient(partialPatient as Patient, observationPatient.unit);
-            }
-          }}
-        />
-
-        {isDetailsOpen && patientToView && (
-          <PatientDetailModal
-            patient={patientToView}
-            onClose={() => setIsDetailsOpen(false)}
-            onEdit={handleEditPatient}
-            canEdit={hasRole(UserRole.Doctor)}
-            userEmail={userEmail || ''}
-            userName={userEmail?.split('@')[0] || 'User'}
-            userRole={userRole}
-            onPatientUpdate={async (updatedPatient) => {
-              // Update patient in Firestore
-              if (institutionId && updatedPatient.id) {
-                const patientRef = doc(db, 'institutions', institutionId, 'patients', updatedPatient.id);
-                await updateDoc(patientRef, updatedPatient as any);
-              }
-            }}
-          />
-        )}
-      </>
+      <PatientDetailsPage
+        patients={patients}
+        selectedUnit={selectedUnit}
+        onBack={() => setShowPatientDetailsPage(false)}
+        onViewDetails={handleViewDetails}
+        onEdit={handleEditPatient}
+        userRole={userRole}
+        allRoles={allRoles}
+        observationPatients={observationPatients}
+        institutionId={institutionId}
+        onPatientsDeleted={() => {
+          // Real-time listener will automatically refresh patients
+          console.log('✅ Patients deleted - real-time listener will update');
+        }}
+        onConvertObservationToAdmission={(observationPatient) => {
+          // Open patient form pre-filled with observation data
+          setShowPatientDetailsPage(false);
+          if (onShowAddPatient) {
+            const now = new Date().toISOString();
+            const partialPatient: Partial<Patient> = {
+              name: observationPatient.babyName,
+              motherName: observationPatient.motherName,
+              dateOfBirth: observationPatient.dateOfBirth,
+              unit: observationPatient.unit,
+              admissionType: observationPatient.admissionType || 'Inborn',
+              institutionId: observationPatient.institutionId,
+              admissionDate: now,
+              admissionDateTime: now,
+              outcome: 'In Progress',
+            };
+            onShowAddPatient(partialPatient as Patient, observationPatient.unit);
+          }
+        }}
+      />
     );
   }
 
@@ -1123,7 +1167,8 @@ const Dashboard: React.FC<DashboardProps> = ({
 
             {/* Desktop: Full action buttons grid */}
             <div className="hidden md:grid grid-cols-2 lg:grid-cols-4 gap-2">
-              {hasRole(UserRole.Admin) && setShowAdminPanel && (
+              {/* Admin Dashboard - Only show for Admin role users */}
+              {userRole === UserRole.Admin && setShowAdminPanel && (
                 <button
                   onClick={() => {
                     haptics.tap();
@@ -1143,9 +1188,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <button
                   onClick={() => {
                     haptics.tap();
-                    setShowDeathsAnalysis(true);
+                    // Check if mobile (screen width < 768px)
+                    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+                    if (isMobile) {
+                      setShowMobileAnalytics(true);
+                    } else {
+                      setShowDeathsAnalysis(true);
+                    }
                   }}
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-lg hover:from-rose-600 hover:to-rose-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold text-sm"
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold text-sm"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -1612,7 +1663,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               startDate={dateFilter.startDate}
               endDate={dateFilter.endDate}
             />
-            <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} availableUnits={enabledFacilities} observationPatients={observationPatients} />
+            <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} availableUnits={enabledFacilities} observationPatients={observationPatients} nicuView={nicuView} />
           </div>
 
 
@@ -1627,24 +1678,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             />
           )}
 
-          {isDetailsOpen && patientToView && (
-            <PatientDetailModal
-              patient={patientToView}
-              onClose={() => setIsDetailsOpen(false)}
-              onEdit={handleEditPatient}
-              canEdit={hasRole(UserRole.Doctor)}
-              userEmail={userEmail || ''}
-              userName={userEmail?.split('@')[0] || 'User'}
-              userRole={userRole}
-              onPatientUpdate={async (updatedPatient) => {
-                // Update patient in Firestore
-                if (institutionId && updatedPatient.id) {
-                  const patientRef = doc(db, 'institutions', institutionId, 'patients', updatedPatient.id);
-                  await updateDoc(patientRef, updatedPatient as any);
-                }
-              }}
-            />
-          )}
+          {/* Patient view is now handled by full-page PatientViewPage */}
 
 
 
@@ -1728,8 +1762,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         title="Quick Actions"
       >
         <div className="p-6 space-y-3">
-          {/* Admin Dashboard */}
-          {hasRole(UserRole.Admin) && setShowAdminPanel && (
+          {/* Admin Dashboard - Only show for Admin role users */}
+          {userRole === UserRole.Admin && setShowAdminPanel && (
             <button
               onClick={() => {
                 setShowAdminPanel(true);
@@ -1749,11 +1783,17 @@ const Dashboard: React.FC<DashboardProps> = ({
           {(hasRole(UserRole.Admin) || hasRole(UserRole.Doctor)) && (
             <button
               onClick={() => {
-                setShowDeathsAnalysis(true);
-                setShowQuickActions(false);
                 haptics.tap();
+                setShowQuickActions(false);
+                // Check if mobile (screen width < 768px)
+                const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+                if (isMobile) {
+                  setShowMobileAnalytics(true);
+                } else {
+                  setShowDeathsAnalysis(true);
+                }
               }}
-              className="w-full bg-rose-500 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-lg hover:bg-rose-600 transition-all"
+              className="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-600 transition-all"
             >
               <ChartBarIcon className="w-5 h-5" />
               Mortality Analytics

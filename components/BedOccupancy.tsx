@@ -7,11 +7,12 @@ interface BedOccupancyProps {
     bedCapacity?: BedCapacity;
     availableUnits?: Unit[];
     observationPatients?: ObservationPatient[];
+    nicuView?: 'All' | 'Inborn' | 'Outborn';
 }
 
 type TimeRange = '7days' | '30days' | '3months' | '6months' | '12months' | 'current' | 'custom';
 
-const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, availableUnits, observationPatients = [] }) => {
+const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, availableUnits, observationPatients = [], nicuView = 'All' }) => {
     const [timeRange, setTimeRange] = useState<TimeRange>('current');
     const [customStartDate, setCustomStartDate] = useState('');
     const [customEndDate, setCustomEndDate] = useState('');
@@ -467,10 +468,11 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
             {timeRange === 'current' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {/* NICU - Now split into Inborn and Outborn (including observation patients) */}
+                    {/* Show based on nicuView selection: All shows both, Inborn shows only inborn, Outborn shows only outborn */}
                     {(!availableUnits || availableUnits.includes(Unit.NICU)) && (
                         <>
-                            {renderBedGrid(TOTAL_NICU_INBORN_BEDS, [...nicuInbornPatients, ...nicuInbornObservation.map(p => ({ ...p, name: p.babyName }) as any)], `NICU Inborn (${nicuInbornObservation.length} obs)`, 'emerald')}
-                            {renderBedGrid(TOTAL_NICU_OUTBORN_BEDS, [...nicuOutbornPatients, ...nicuOutbornObservation.map(p => ({ ...p, name: p.babyName }) as any)], `NICU Outborn (${nicuOutbornObservation.length} obs)`, 'sky')}
+                            {(nicuView === 'All' || nicuView === 'Inborn') && renderBedGrid(TOTAL_NICU_INBORN_BEDS, [...nicuInbornPatients, ...nicuInbornObservation.map(p => ({ ...p, name: p.babyName }) as any)], `NICU Inborn (${nicuInbornObservation.length} obs)`, 'emerald')}
+                            {(nicuView === 'All' || nicuView === 'Outborn') && renderBedGrid(TOTAL_NICU_OUTBORN_BEDS, [...nicuOutbornPatients, ...nicuOutbornObservation.map(p => ({ ...p, name: p.babyName }) as any)], `NICU Outborn (${nicuOutbornObservation.length} obs)`, 'sky')}
                         </>
                     )}
                     {(!availableUnits || availableUnits.includes(Unit.PICU)) && renderBedGrid(TOTAL_PICU_BEDS, [...picuPatients, ...picuObservation.map(p => ({ ...p, name: p.babyName }) as any)], `PICU Occupancy (${picuObservation.length} obs)`, 'blue')}

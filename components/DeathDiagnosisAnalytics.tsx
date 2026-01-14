@@ -5,6 +5,9 @@ import { analyzeDeathDiagnosisPatterns } from '../services/geminiService';
 import MortalityChartsPanel from './MortalityChartsPanel';
 import IndividualMortalityViewer from './IndividualMortalityViewer';
 import CustomizableExportModal from './CustomizableExportModal';
+import AdvancedMortalityCharts from './analytics/cards/AdvancedMortalityCharts';
+import RiskFactorAnalysis from './analytics/cards/RiskFactorAnalysis';
+import KeyMetricsDashboard from './analytics/cards/KeyMetricsDashboard';
 
 interface DeathDiagnosisAnalyticsProps {
   patients: Patient[];
@@ -61,7 +64,10 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
     const causesMap = new Map<string, CauseOfDeath>();
 
     deceased.forEach(patient => {
-      const diagnosis = patient.aiInterpretedDeathDiagnosis || patient.diagnosisAtDeath || 'Unknown';
+      let diagnosis = patient.aiInterpretedDeathDiagnosis || patient.diagnosisAtDeath || 'Unknown';
+
+      // Remove "Primary Cause:" prefix if present
+      diagnosis = diagnosis.replace(/^(Primary\s*Cause\s*[:\-]\s*)/i, '').trim();
 
       // Simple cause extraction (first sentence or first major phrase)
       const primaryCause = diagnosis.split('.')[0].split(',')[0].trim();
@@ -276,59 +282,60 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl p-6 shadow-2xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-white/20 backdrop-blur-xl rounded-xl flex items-center justify-center">
-              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      {/* Header - Mobile Optimized */}
+      <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-2xl">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="w-10 h-10 sm:w-16 sm:h-16 bg-white/20 backdrop-blur-xl rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
+              <svg className="w-6 h-6 sm:w-10 sm:h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <div>
-              <h2 className="text-2xl font-bold text-white">Death Diagnosis Analytics</h2>
-              <p className="text-blue-100 text-sm">AI-Powered Mortality Pattern Analysis • {institutionName}</p>
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-2xl font-bold text-white">Death Diagnosis Analytics</h2>
+              <p className="text-blue-100 text-xs sm:text-sm truncate">AI-Powered Analysis • {institutionName}</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="text-4xl font-bold text-white">{deceasedPatients.length}</div>
-              <div className="text-blue-100 text-sm">Deceased Patients</div>
+          {/* Stats & Export - Always visible */}
+          <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
+            <div className="text-left sm:text-right">
+              <div className="text-2xl sm:text-4xl font-bold text-white">{deceasedPatients.length}</div>
+              <div className="text-blue-100 text-xs sm:text-sm">Deceased</div>
             </div>
             <button
               onClick={() => setShowExportModal(true)}
-              className="px-6 py-3 bg-white/20 hover:bg-white/30 backdrop-blur-xl text-white rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg border-2 border-white/30"
+              className="px-3 py-2 sm:px-6 sm:py-3 bg-white/20 hover:bg-white/30 backdrop-blur-xl text-white rounded-lg sm:rounded-xl font-bold flex items-center gap-1.5 sm:gap-2 transition-all shadow-lg border border-white/30 text-xs sm:text-base"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              Export Data
+              <span className="hidden sm:inline">Export</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Quick Stats - Mobile: 2 columns */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-white rounded-xl p-6 border-2 border-slate-200 shadow-lg"
+          className="bg-white rounded-lg sm:rounded-xl p-3 sm:p-6 border border-slate-200 shadow-lg"
         >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-sky-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
+            <div className="w-7 h-7 sm:w-10 sm:h-10 bg-sky-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 sm:w-6 sm:h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
             </div>
-            <h3 className="font-bold text-slate-700">Unit Distribution</h3>
+            <h3 className="font-bold text-slate-700 text-xs sm:text-base">Unit Distribution</h3>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1 sm:space-y-2">
             {Object.entries(unitDistribution).map(([unit, count]) => (
               <div key={unit} className="flex justify-between items-center">
-                <span className="text-sm text-slate-600">{unit}</span>
-                <span className="text-sm font-bold text-slate-900">{count}</span>
+                <span className="text-xs sm:text-sm text-slate-600">{unit}</span>
+                <span className="text-xs sm:text-sm font-bold text-slate-900">{count}</span>
               </div>
             ))}
           </div>
@@ -338,32 +345,32 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="bg-white rounded-xl p-6 border-2 border-slate-200 shadow-lg"
+          className="bg-white rounded-lg sm:rounded-xl p-3 sm:p-6 border border-slate-200 shadow-lg"
         >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
+            <div className="w-7 h-7 sm:w-10 sm:h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 sm:w-6 sm:h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h3 className="font-bold text-slate-700">Data Quality</h3>
+            <h3 className="font-bold text-slate-700 text-xs sm:text-base">Data Quality</h3>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1 sm:space-y-2">
             <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-600">AI Interpreted</span>
-              <span className="text-sm font-bold text-green-600">
+              <span className="text-xs sm:text-sm text-slate-600">AI</span>
+              <span className="text-xs sm:text-sm font-bold text-green-600">
                 {deceasedPatients.filter(p => p.aiInterpretedDeathDiagnosis).length}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-600">Manual Only</span>
-              <span className="text-sm font-bold text-slate-900">
+              <span className="text-xs sm:text-sm text-slate-600">Manual</span>
+              <span className="text-xs sm:text-sm font-bold text-slate-900">
                 {deceasedPatients.filter(p => !p.aiInterpretedDeathDiagnosis && p.diagnosisAtDeath).length}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-600">Missing Data</span>
-              <span className="text-sm font-bold text-red-600">
+              <span className="text-xs sm:text-sm text-slate-600">Missing</span>
+              <span className="text-xs sm:text-sm font-bold text-red-600">
                 {deceasedPatients.filter(p => !p.diagnosisAtDeath).length}
               </span>
             </div>
@@ -372,60 +379,63 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
       </div>
 
       {/* Advanced Mortality Analytics */}
-      <div className="bg-gradient-to-br from-sky-50 to-purple-50 rounded-2xl p-6 border-2 border-sky-200">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 bg-gradient-to-br from-sky-500 to-purple-600 rounded-xl flex items-center justify-center">
-            <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="bg-gradient-to-br from-sky-50 to-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-sky-200">
+        <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
+          <div className="w-9 h-9 sm:w-12 sm:h-12 bg-gradient-to-br from-sky-500 to-purple-600 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </div>
           <div>
-            <h3 className="text-xl font-bold text-slate-900">Advanced Mortality Analytics</h3>
-            <p className="text-slate-600 text-sm">Detailed breakdowns by clinical parameters</p>
+            <h3 className="text-base sm:text-xl font-bold text-slate-900">Advanced Analytics</h3>
+            <p className="text-slate-600 text-[10px] sm:text-sm">Clinical parameter breakdowns</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Mobile: 2 columns, Tablet: 2 columns, Desktop: 3 columns */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
           {/* Birth Weight Distribution */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl p-5 border-2 border-sky-200 shadow-lg"
+            className="bg-white rounded-lg sm:rounded-xl p-2.5 sm:p-5 border border-sky-200 shadow-lg"
           >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center justify-between mb-2 sm:mb-4">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-purple-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
                   </svg>
                 </div>
-                <h4 className="font-bold text-slate-900">Birth Weight</h4>
+                <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Birth Weight</h4>
               </div>
               <button
                 onClick={() => handleAnalyticsExport('birthWeight')}
-                className="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-semibold transition-all flex items-center gap-1"
-                title="Export complete Birth Weight analysis"
+                className="p-1 sm:px-3 sm:py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded sm:rounded-lg text-[10px] sm:text-xs font-semibold transition-all flex items-center gap-0.5 sm:gap-1"
+                title="Export"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                Export Analysis
+                <span className="hidden sm:inline">Export</span>
               </button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               {Object.entries(birthWeightDistribution)
                 .sort((a, b) => b[1] - a[1])
                 .map(([category, count]) => {
                   const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
+                  // Shorten category names for mobile
+                  const shortCategory = category.replace('Extremely Low', 'Ext. Low').replace('Moderately Low', 'Mod. Low').replace('Very Low', 'V. Low');
                   return (
-                    <div key={category} className="space-y-1">
+                    <div key={category} className="space-y-0.5 sm:space-y-1">
                       <div className="flex justify-between items-center">
-                        <span className="text-xs text-slate-600">{category}</span>
-                        <span className="text-xs font-bold text-purple-700">{count} ({percentage}%)</span>
+                        <span className="text-[9px] sm:text-xs text-slate-600 truncate mr-1">{shortCategory}</span>
+                        <span className="text-[9px] sm:text-xs font-bold text-purple-700 whitespace-nowrap">{count}</span>
                       </div>
-                      <div className="w-full bg-slate-200 rounded-full h-2">
+                      <div className="w-full bg-slate-200 rounded-full h-1.5 sm:h-2">
                         <div
-                          className="bg-gradient-to-r from-purple-500 to-purple-600 h-2 rounded-full transition-all"
+                          className="bg-gradient-to-r from-purple-500 to-purple-600 h-1.5 sm:h-2 rounded-full transition-all"
                           style={{ width: `${percentage}%` }}
                         ></div>
                       </div>
@@ -440,29 +450,29 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1 }}
-            className="bg-white rounded-xl p-5 border-2 border-sky-200 shadow-lg"
+            className="bg-white rounded-lg sm:rounded-xl p-2.5 sm:p-5 border border-sky-200 shadow-lg"
           >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center justify-between mb-2 sm:mb-4">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-blue-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
+                  <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <h4 className="font-bold text-slate-900">Duration of Stay</h4>
+                <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Duration</h4>
               </div>
               <button
                 onClick={() => handleAnalyticsExport('durationOfStay')}
-                className="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-semibold transition-all flex items-center gap-1"
-                title="Export complete Duration of Stay analysis"
+                className="p-1 sm:px-3 sm:py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded sm:rounded-lg text-[10px] sm:text-xs font-semibold transition-all flex items-center gap-0.5 sm:gap-1"
+                title="Export"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                Export Analysis
+                <span className="hidden sm:inline">Export</span>
               </button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               {Object.entries(durationOfStayDistribution)
                 .sort((a, b) => {
                   const order = ['<24 hours', '1-3 days', '3-7 days', '1-2 weeks', '2-4 weeks', '>1 month', 'Unknown'];
@@ -470,15 +480,16 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
                 })
                 .map(([category, count]) => {
                   const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
+                  const shortCategory = category.replace(' hours', 'h').replace(' days', 'd').replace(' weeks', 'w').replace(' month', 'mo');
                   return (
-                    <div key={category} className="space-y-1">
+                    <div key={category} className="space-y-0.5 sm:space-y-1">
                       <div className="flex justify-between items-center">
-                        <span className="text-xs text-slate-600">{category}</span>
-                        <span className="text-xs font-bold text-blue-700">{count} ({percentage}%)</span>
+                        <span className="text-[9px] sm:text-xs text-slate-600">{shortCategory}</span>
+                        <span className="text-[9px] sm:text-xs font-bold text-blue-700">{count}</span>
                       </div>
-                      <div className="w-full bg-slate-200 rounded-full h-2">
+                      <div className="w-full bg-slate-200 rounded-full h-1.5 sm:h-2">
                         <div
-                          className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all"
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 h-1.5 sm:h-2 rounded-full transition-all"
                           style={{ width: `${percentage}%` }}
                         ></div>
                       </div>
@@ -493,17 +504,17 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2 }}
-            className="bg-white rounded-xl p-5 border-2 border-sky-200 shadow-lg"
+            className="bg-white rounded-lg sm:rounded-xl p-2.5 sm:p-5 border border-sky-200 shadow-lg"
           >
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-4">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-emerald-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
               </div>
-              <h4 className="font-bold text-slate-900">Birth to Admission</h4>
+              <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Birth→Admit</h4>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               {Object.entries(birthToAdmissionGap)
                 .sort((a, b) => {
                   const order = ['<6 hours (Inborn)', '6-24 hours', '1-3 days', '3-7 days', '>7 days', 'Unknown'];
@@ -511,26 +522,16 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
                 })
                 .map(([category, count]) => {
                   const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
+                  const shortCat = category.replace(' hours', 'h').replace(' days', 'd').replace(' (Inborn)', '');
                   return (
-                    <div key={category} className="space-y-1 group">
+                    <div key={category} className="space-y-0.5 sm:space-y-1">
                       <div className="flex justify-between items-center">
-                        <span className="text-xs text-slate-600">{category}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-emerald-700">{count} ({percentage}%)</span>
-                          <button
-                            onClick={() => handleFilteredExport(category, 'birthToAdmission')}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-emerald-100 rounded"
-                            title="Export PDF for this category"
-                          >
-                            <svg className="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                          </button>
-                        </div>
+                        <span className="text-[9px] sm:text-xs text-slate-600">{shortCat}</span>
+                        <span className="text-[9px] sm:text-xs font-bold text-emerald-700">{count}</span>
                       </div>
-                      <div className="w-full bg-slate-200 rounded-full h-2">
+                      <div className="w-full bg-slate-200 rounded-full h-1.5 sm:h-2">
                         <div
-                          className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-2 rounded-full transition-all"
+                          className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-1.5 sm:h-2 rounded-full transition-all"
                           style={{ width: `${percentage}%` }}
                         ></div>
                       </div>
@@ -545,42 +546,31 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3 }}
-            className="bg-white rounded-xl p-5 border-2 border-sky-200 shadow-lg"
+            className="bg-white rounded-lg sm:rounded-xl p-2.5 sm:p-5 border border-sky-200 shadow-lg"
           >
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-4">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-amber-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
-              <h4 className="font-bold text-slate-900">Referral Source</h4>
+              <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Referral</h4>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               {Object.entries(referralSourceDistribution)
                 .sort((a, b) => b[1] - a[1])
                 .map(([source, count]) => {
                   const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
                   return (
-                    <div key={source} className="space-y-1 group">
+                    <div key={source} className="space-y-0.5 sm:space-y-1">
                       <div className="flex justify-between items-center">
-                        <span className="text-xs text-slate-600">{source}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-amber-700">{count} ({percentage}%)</span>
-                          <button
-                            onClick={() => handleFilteredExport(source, 'referralSource')}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-amber-100 rounded"
-                            title="Export PDF for this category"
-                          >
-                            <svg className="w-3 h-3 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                          </button>
-                        </div>
+                        <span className="text-[9px] sm:text-xs text-slate-600 truncate mr-1">{source}</span>
+                        <span className="text-[9px] sm:text-xs font-bold text-amber-700">{count}</span>
                       </div>
-                      <div className="w-full bg-slate-200 rounded-full h-2">
+                      <div className="w-full bg-slate-200 rounded-full h-1.5 sm:h-2">
                         <div
-                          className="bg-gradient-to-r from-amber-500 to-amber-600 h-2 rounded-full transition-all"
+                          className="bg-gradient-to-r from-amber-500 to-amber-600 h-1.5 sm:h-2 rounded-full transition-all"
                           style={{ width: `${percentage}%` }}
                         ></div>
                       </div>
@@ -595,39 +585,28 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.4 }}
-            className="bg-white rounded-xl p-5 border-2 border-sky-200 shadow-lg"
+            className="bg-white rounded-lg sm:rounded-xl p-2.5 sm:p-5 border border-sky-200 shadow-lg"
           >
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 bg-rose-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-4">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-rose-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h4 className="font-bold text-slate-900">Top Diagnoses</h4>
+              <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Diagnoses</h4>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               {causeStats.slice(0, 5).map((stat, index) => {
                 const percentage = ((stat.count / deceasedPatients.length) * 100).toFixed(1);
                 return (
-                  <div key={index} className="space-y-1 group">
+                  <div key={index} className="space-y-0.5 sm:space-y-1">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-600 line-clamp-1">{stat.cause}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-rose-700">{stat.count} ({percentage}%)</span>
-                        <button
-                          onClick={() => handleFilteredExport(stat.cause, 'diagnosis')}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-rose-100 rounded"
-                          title="Export PDF for this category"
-                        >
-                          <svg className="w-3 h-3 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                        </button>
-                      </div>
+                      <span className="text-[9px] sm:text-xs text-slate-600 line-clamp-1 mr-1">{stat.cause}</span>
+                      <span className="text-[9px] sm:text-xs font-bold text-rose-700">{stat.count}</span>
                     </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div className="w-full bg-slate-200 rounded-full h-1.5 sm:h-2">
                       <div
-                        className="bg-gradient-to-r from-rose-500 to-rose-600 h-2 rounded-full transition-all"
+                        className="bg-gradient-to-r from-rose-500 to-rose-600 h-1.5 sm:h-2 rounded-full transition-all"
                         style={{ width: `${percentage}%` }}
                       ></div>
                     </div>
@@ -642,17 +621,17 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.5 }}
-            className="bg-white rounded-xl p-5 border-2 border-sky-200 shadow-lg"
+            className="bg-white rounded-lg sm:rounded-xl p-2.5 sm:p-5 border border-sky-200 shadow-lg"
           >
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-4">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-indigo-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               </div>
-              <h4 className="font-bold text-slate-900">Gender Distribution</h4>
+              <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Gender</h4>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               {Object.entries(deceasedPatients.reduce((acc, p) => {
                 acc[p.gender] = (acc[p.gender] || 0) + 1;
                 return acc;
@@ -661,25 +640,14 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
                 .map(([gender, count]) => {
                   const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
                   return (
-                    <div key={gender} className="space-y-1 group">
+                    <div key={gender} className="space-y-0.5 sm:space-y-1">
                       <div className="flex justify-between items-center">
-                        <span className="text-xs text-slate-600">{gender}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-indigo-700">{count} ({percentage}%)</span>
-                          <button
-                            onClick={() => handleFilteredExport(gender, 'gender')}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-indigo-100 rounded"
-                            title="Export PDF for this category"
-                          >
-                            <svg className="w-3 h-3 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                          </button>
-                        </div>
+                        <span className="text-[9px] sm:text-xs text-slate-600">{gender}</span>
+                        <span className="text-[9px] sm:text-xs font-bold text-indigo-700">{count}</span>
                       </div>
-                      <div className="w-full bg-slate-200 rounded-full h-2">
+                      <div className="w-full bg-slate-200 rounded-full h-1.5 sm:h-2">
                         <div
-                          className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-2 rounded-full transition-all"
+                          className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-1.5 sm:h-2 rounded-full transition-all"
                           style={{ width: `${percentage}%` }}
                         ></div>
                       </div>
@@ -690,6 +658,25 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
           </motion.div>
         </div>
       </div>
+
+      {/* Key Metrics Dashboard */}
+      <KeyMetricsDashboard
+        deceasedPatients={deceasedPatients}
+        allPatients={allPatients}
+        timeRangeLabel={timeRangeLabel}
+      />
+
+      {/* Advanced Mortality Analytics - Time Patterns */}
+      <AdvancedMortalityCharts
+        deceasedPatients={deceasedPatients}
+        allPatients={allPatients}
+      />
+
+      {/* Risk Factor Analysis */}
+      <RiskFactorAnalysis
+        deceasedPatients={deceasedPatients}
+        allPatients={allPatients}
+      />
 
       {/* Advanced Charts */}
       <MortalityChartsPanel patients={deceasedPatients} />

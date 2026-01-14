@@ -103,6 +103,27 @@ export const getPrimaryPostOffice = async (pinCode: string): Promise<string | nu
 };
 
 /**
+ * Enhanced location data with all available details
+ */
+export interface EnhancedLocationData {
+  district: string;
+  state: string;
+  postOffice: string;
+  block?: string;
+  region?: string;
+  division?: string;
+  circle?: string;
+  branchType?: string;
+  deliveryStatus?: string;
+  allPostOffices: {
+    name: string;
+    branchType: string;
+    deliveryStatus: string;
+    block: string;
+  }[];
+}
+
+/**
  * Get district and state for a PIN code
  */
 export const getLocationByPinCode = async (pinCode: string): Promise<{
@@ -118,6 +139,41 @@ export const getLocationByPinCode = async (pinCode: string): Promise<{
       district: po.District,
       state: po.State,
       postOffice: po.Name
+    };
+  }
+
+  return null;
+};
+
+/**
+ * Get enhanced location data with all post offices for a PIN code
+ * Returns all available details including block, region, division
+ */
+export const getEnhancedLocationByPinCode = async (pinCode: string): Promise<EnhancedLocationData | null> => {
+  const result = await lookupPinCode(pinCode);
+
+  if (result.Status === 'Success' && result.PostOffice && result.PostOffice.length > 0) {
+    // Find Head Post Office or first delivery post office
+    const headPO = result.PostOffice.find(po => po.BranchType === 'Head Post Office');
+    const deliveryPO = result.PostOffice.find(po => po.DeliveryStatus === 'Delivery');
+    const primaryPO = headPO || deliveryPO || result.PostOffice[0];
+
+    return {
+      district: primaryPO.District,
+      state: primaryPO.State,
+      postOffice: primaryPO.Name,
+      block: primaryPO.Block || undefined,
+      region: primaryPO.Region || undefined,
+      division: primaryPO.Division || undefined,
+      circle: primaryPO.Circle || undefined,
+      branchType: primaryPO.BranchType,
+      deliveryStatus: primaryPO.DeliveryStatus,
+      allPostOffices: result.PostOffice.map(po => ({
+        name: po.Name,
+        branchType: po.BranchType,
+        deliveryStatus: po.DeliveryStatus,
+        block: po.Block
+      }))
     };
   }
 

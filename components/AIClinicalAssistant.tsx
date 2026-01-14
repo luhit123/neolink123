@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Patient } from '../types';
+import { getFormattedAge } from '../utils/ageCalculator';
 import {
   generatePatientSummary,
   getClinicalInsights,
@@ -330,7 +331,7 @@ const AIClinicalAssistant: React.FC<AIClinicalAssistantProps> = ({ patient, onCl
         {/* Patient Info Footer - Mobile */}
         <div className="bg-slate-800/50 border-t border-slate-700 p-2 sm:hidden flex-shrink-0">
           <div className="text-xs text-slate-400 text-center">
-            {patient.name} • {patient.age} {patient.ageUnit} • {patient.diagnosis}
+            {patient.name} • {getFormattedAge(patient.dateOfBirth, patient.age, patient.ageUnit)} • {patient.diagnosis}
           </div>
         </div>
       </div>

@@ -1,7 +1,6 @@
 import {
   signInWithPopup,
   signInWithRedirect,
-  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -10,30 +9,47 @@ import {
   updateProfile,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { auth, googleProvider } from '../firebaseConfig';
+import { auth, googleProvider, authReady, pendingRedirectResult } from '../firebaseConfig';
 import { saveUserProfile, getUserProfile } from './firestoreService';
 import { UserRole } from '../types';
 import { isPWAMode, isMobileDevice } from '../utils/pwaDetection';
 
 // Sign in with Google
+// IMPORTANT: We use POPUP for ALL platforms including mobile/PWA
+// Redirect flow doesn't work on iOS PWAs (opens in Safari, never returns)
 export const signInWithGoogle = async () => {
   try {
-    // Use redirect flow for mobile devices and PWA mode
-    // Popup doesn't work reliably on mobile browsers
-    if (isPWAMode() || isMobileDevice()) {
-      console.log('🔄 Using redirect flow for mobile/PWA');
-      // In mobile/PWA mode, use redirect (this doesn't return immediately)
-      await signInWithRedirect(auth, googleProvider);
-      // The page will redirect and come back - result handled in handleRedirectResult
-      return null;
-    } else {
-      console.log('🔄 Using popup flow for desktop');
-      // In desktop browser mode, use popup
+    // Wait for auth persistence to be ready
+    await authReady;
+
+    const isMobile = isMobileDevice();
+    const isPWA = isPWAMode();
+
+    console.log('🔄 Google Sign-In starting...', { isMobile, isPWA });
+
+    // ALWAYS use popup - redirect doesn't work on iOS PWA
+    // The popup will open in a new window/tab which works better
+    try {
+      console.log('🔄 Opening Google sign-in popup...');
       const result = await signInWithPopup(auth, googleProvider);
+      console.log('✅ Popup sign-in successful:', result.user.email);
       return result.user;
+    } catch (popupError: any) {
+      console.error('❌ Popup error:', popupError.code, popupError.message);
+
+      // If popup was blocked or failed on mobile, try redirect as fallback
+      // But only for non-PWA mobile browsers (redirect won't work in PWA)
+      if (popupError.code === 'auth/popup-blocked' && isMobile && !isPWA) {
+        console.log('🔄 Popup blocked, trying redirect as fallback...');
+        await signInWithRedirect(auth, googleProvider);
+        return null;
+      }
+
+      // Re-throw the error for other cases
+      throw popupError;
     }
   } catch (error: any) {
-    console.error('❌ Error signing in with Google:', error);
+    console.error('❌ Error signing in with Google:', error.code, error.message);
 
     // Handle specific error cases
     let errorMessage = 'Failed to sign in with Google';
@@ -41,11 +57,13 @@ export const signInWithGoogle = async () => {
     if (error.code === 'auth/popup-closed-by-user') {
       errorMessage = 'Sign-in was cancelled. Please try again.';
     } else if (error.code === 'auth/popup-blocked') {
-      errorMessage = 'Pop-up was blocked by your browser. Please allow pop-ups and try again.';
+      errorMessage = 'Pop-up was blocked. Please allow pop-ups for this site and try again.';
     } else if (error.code === 'auth/cancelled-popup-request') {
       errorMessage = 'Sign-in cancelled. Please try again.';
     } else if (error.code === 'auth/network-request-failed') {
       errorMessage = 'Network error. Please check your internet connection.';
+    } else if (error.code === 'auth/unauthorized-domain') {
+      errorMessage = 'This domain is not authorized. Please contact support.';
     } else if (error.message) {
       errorMessage = error.message;
     }
@@ -55,17 +73,38 @@ export const signInWithGoogle = async () => {
 };
 
 // Handle redirect result (call this on app load)
+// Uses the pendingRedirectResult that was already initiated at module load time
+// This is critical - getRedirectResult must be called after persistence is set
 export const handleRedirectResult = async () => {
   try {
-    const result = await getRedirectResult(auth);
-    if (result) {
-      // User successfully signed in via redirect
+    // Wait for auth to be ready first (persistence must be set before checking redirect)
+    await authReady;
+
+    // Use the redirect result that was already initiated after authReady
+    const result = await pendingRedirectResult;
+    if (result?.user) {
+      console.log('✅ Redirect result received:', result.user.email);
       return result.user;
     }
+    console.log('ℹ️ No redirect result to process');
     return null;
   } catch (error: any) {
-    console.error('Error handling redirect result:', error);
-    throw new Error(error.message || 'Failed to complete sign in');
+    console.error('❌ Error handling redirect result:', error.code, error.message);
+
+    // Handle specific redirect errors
+    let errorMessage = 'Failed to complete sign in';
+
+    if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+      errorMessage = 'Sign-in was cancelled. Please try again.';
+    } else if (error.code === 'auth/network-request-failed') {
+      errorMessage = 'Network error. Please check your internet connection.';
+    } else if (error.code === 'auth/internal-error') {
+      errorMessage = 'Authentication service error. Please try again.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    throw new Error(errorMessage);
   }
 };
 

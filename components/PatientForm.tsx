@@ -11,6 +11,7 @@ import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { calculateAgeFromBirthDate, calculateAgeAtDate } from '../utils/ageCalculator';
 import { interpretDeathDiagnosis } from '../services/geminiService';
+import { generateNTID, isValidNTID } from '../utils/ntidGenerator';
 
 interface PatientFormProps {
   patientToEdit?: Patient | null;
@@ -23,6 +24,7 @@ interface PatientFormProps {
   userEmail: string;
   userName?: string;
   availableUnits?: Unit[];
+  allPatients?: Patient[]; // For NTID lookup
 }
 
 const PatientForm: React.FC<PatientFormProps> = ({
@@ -35,7 +37,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
   institutionName,
   userEmail,
   userName,
-  availableUnits
+  availableUnits,
+  allPatients = []
 }) => {
   const isNurse = userRole === UserRole.Nurse;
   const isDoctor = userRole === UserRole.Doctor || userRole === UserRole.Admin;
@@ -44,21 +47,28 @@ const PatientForm: React.FC<PatientFormProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // NTID Search for readmission
+  const [ntidSearch, setNtidSearch] = useState('');
+  const [ntidSearchResult, setNtidSearchResult] = useState<Patient | null>(null);
+  const [ntidSearching, setNtidSearching] = useState(false);
+  const [ntidError, setNtidError] = useState('');
+
   // Create default patient object
   const defaultPatient: Patient = {
     id: '',
+    ntid: generateNTID(institutionName), // Auto-generate NTID for new patients
     name: '',
     age: 0,
     ageUnit: AgeUnit.Days,
-    gender: 'Male',
+    gender: '' as any, // User must select - no default
     admissionDate: new Date().toISOString(),
     admissionDateTime: new Date().toISOString(), // Default to current time
     diagnosis: '',
     progressNotes: [], // Start with empty array - doctor will add comprehensive notes
     outcome: 'In Progress',
     unit: defaultUnit || Unit.NICU,
-    admissionType: AdmissionType.Inborn,
-    category: Category.General,
+    admissionType: undefined as any, // User must select - no default
+    category: undefined as any, // User must select - no default
     institutionId,
     institutionName,
     isDraft: isNurse,
@@ -114,12 +124,6 @@ const PatientForm: React.FC<PatientFormProps> = ({
     }
   }, [defaultUnit, patientToEdit]);
 
-  // Prefill "Baby of " for NICU/SNCU if name is empty
-  useEffect(() => {
-    if ((patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && !patient.name && !patientToEdit) {
-      setPatient(prev => ({ ...prev, name: 'Baby of ' }));
-    }
-  }, [patient.unit, patientToEdit]);
 
   // Fetch admission indications based on unit type
   useEffect(() => {
@@ -211,12 +215,20 @@ const PatientForm: React.FC<PatientFormProps> = ({
         console.log('✅ Auto-calculated age:', calculatedAge.age, calculatedAge.ageUnit);
       }
 
-      // Auto-fill Mother's Name from "Baby of ..."
+      // Auto-fill Baby's Name from Mother's Name
+      if (name === 'motherName' && typeof processedValue === 'string') {
+        if (processedValue.trim()) {
+          updated.name = `Baby of ${processedValue}`;
+        } else {
+          updated.name = '';
+        }
+      }
+
+      // Also sync: If baby's name is edited manually with "Baby of ...", extract mother's name
       if (name === 'name' && typeof processedValue === 'string') {
         const babyOfPrefix = 'Baby of ';
         if (processedValue.toLowerCase().startsWith(babyOfPrefix.toLowerCase())) {
           const extractedMotherName = processedValue.slice(babyOfPrefix.length);
-          // Update even if empty string (to clear it if user backspaces to just "Baby of ")
           updated.motherName = extractedMotherName;
         }
       }
@@ -394,6 +406,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
     const updatedPatient = {
       ...patient,
       id: patient.id || Date.now().toString(),
+      // Generate NTID for new patients only
+      ntid: patient.ntid || generateNTID(institutionName),
       isDraft: saveAsDraft,
       lastUpdatedBy: userRole,
       lastUpdatedByEmail: userEmail,
@@ -449,6 +463,133 @@ const PatientForm: React.FC<PatientFormProps> = ({
     handleSubmit(e, true);
   };
 
+  // NTID Search for readmission - fill form with previous patient data
+  const handleNtidSearch = async () => {
+    if (!ntidSearch.trim()) {
+      setNtidError('Please enter an NTID');
+      return;
+    }
+
+    setNtidSearching(true);
+    setNtidError('');
+    setNtidSearchResult(null);
+
+    try {
+      // Search in local patients first
+      const foundPatient = allPatients.find(p => p.ntid?.toUpperCase() === ntidSearch.toUpperCase().trim());
+
+      if (foundPatient) {
+        setNtidSearchResult(foundPatient);
+        // Calculate current age from date of birth
+        const calculatedAge = foundPatient.dateOfBirth
+          ? calculateAgeFromBirthDate(foundPatient.dateOfBirth)
+          : { age: foundPatient.age || 0, ageUnit: foundPatient.ageUnit || AgeUnit.Days };
+        // Auto-fill form with previous patient data (birth history, demographics)
+        setPatient(prev => ({
+          ...prev,
+          // Keep new admission details
+          id: '',
+          ntid: foundPatient.ntid, // Keep same NTID for the child
+          admissionDate: new Date().toISOString(),
+          admissionDateTime: new Date().toISOString(),
+          outcome: 'In Progress',
+          progressNotes: [],
+          diagnosis: '',
+          indicationsForAdmission: [],
+          customIndication: '',
+          // Copy birth history and demographics
+          name: foundPatient.name,
+          motherName: foundPatient.motherName,
+          fatherName: foundPatient.fatherName,
+          gender: foundPatient.gender,
+          dateOfBirth: foundPatient.dateOfBirth,
+          birthWeight: foundPatient.birthWeight,
+          // Set calculated current age
+          age: calculatedAge.age,
+          ageUnit: calculatedAge.ageUnit,
+          modeOfDelivery: foundPatient.modeOfDelivery,
+          placeOfDelivery: foundPatient.placeOfDelivery,
+          placeOfDeliveryName: foundPatient.placeOfDeliveryName,
+          // Copy address
+          address: foundPatient.address,
+          village: foundPatient.village,
+          postOffice: foundPatient.postOffice,
+          pinCode: foundPatient.pinCode,
+          district: foundPatient.district,
+          state: foundPatient.state,
+          // Copy contacts
+          contactNo1: foundPatient.contactNo1,
+          contactRelation1: foundPatient.contactRelation1,
+          contactNo2: foundPatient.contactNo2,
+          contactRelation2: foundPatient.contactRelation2,
+          // Copy identifiers
+          mctsNo: foundPatient.mctsNo,
+          category: foundPatient.category,
+        }));
+        setNtidError('');
+      } else {
+        // Try Firebase search
+        const patientsRef = collection(db, 'patients');
+        const q = query(patientsRef, where('ntid', '==', ntidSearch.toUpperCase().trim()));
+        const snapshot = await getDocs(q);
+
+        if (!snapshot.empty) {
+          const foundDoc = snapshot.docs[0];
+          const foundData = { id: foundDoc.id, ...foundDoc.data() } as Patient;
+          setNtidSearchResult(foundData);
+          // Calculate current age from date of birth
+          const calculatedAge = foundData.dateOfBirth
+            ? calculateAgeFromBirthDate(foundData.dateOfBirth)
+            : { age: foundData.age || 0, ageUnit: foundData.ageUnit || AgeUnit.Days };
+          // Auto-fill form (same as above)
+          setPatient(prev => ({
+            ...prev,
+            id: '',
+            ntid: foundData.ntid,
+            admissionDate: new Date().toISOString(),
+            admissionDateTime: new Date().toISOString(),
+            outcome: 'In Progress',
+            progressNotes: [],
+            diagnosis: '',
+            indicationsForAdmission: [],
+            customIndication: '',
+            name: foundData.name,
+            motherName: foundData.motherName,
+            fatherName: foundData.fatherName,
+            gender: foundData.gender,
+            dateOfBirth: foundData.dateOfBirth,
+            birthWeight: foundData.birthWeight,
+            // Set calculated current age
+            age: calculatedAge.age,
+            ageUnit: calculatedAge.ageUnit,
+            modeOfDelivery: foundData.modeOfDelivery,
+            placeOfDelivery: foundData.placeOfDelivery,
+            placeOfDeliveryName: foundData.placeOfDeliveryName,
+            address: foundData.address,
+            village: foundData.village,
+            postOffice: foundData.postOffice,
+            pinCode: foundData.pinCode,
+            district: foundData.district,
+            state: foundData.state,
+            contactNo1: foundData.contactNo1,
+            contactRelation1: foundData.contactRelation1,
+            contactNo2: foundData.contactNo2,
+            contactRelation2: foundData.contactRelation2,
+            mctsNo: foundData.mctsNo,
+            category: foundData.category,
+          }));
+        } else {
+          setNtidError('No patient found with this NTID');
+        }
+      }
+    } catch (error) {
+      console.error('Error searching NTID:', error);
+      setNtidError('Error searching for patient');
+    } finally {
+      setNtidSearching(false);
+    }
+  };
+
   const handleSaveComplete = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -473,19 +614,19 @@ const PatientForm: React.FC<PatientFormProps> = ({
   const canEditSensitiveFields = userRole === UserRole.Admin || userRole === UserRole.Doctor;
 
   return (
-    <div className="w-full min-h-screen bg-sky-50">
+    <div className="w-full min-h-screen bg-slate-100">
       <div className="w-full mx-auto px-2 py-3 sm:px-4 sm:py-4 lg:px-8 lg:py-6 lg:max-w-7xl">
         {/* Header */}
-        <div className="bg-white rounded-lg sm:rounded-xl shadow-lg border-2 border-sky-200 p-3 sm:p-6 mb-3 sm:mb-6 sticky top-0 z-10">
+        <div className="bg-white rounded-lg sm:rounded-xl shadow-lg border-2 border-blue-300 p-3 sm:p-6 mb-3 sm:mb-6 sticky top-0 z-10">
           <div className="flex justify-between items-start">
             <div className="flex-1">
-              <h1 className="text-2xl sm:text-3xl font-bold text-sky-900 mb-2">{patientToEdit ? 'Edit Patient Record' : 'Add New Patient'}</h1>
-              {isNurse && <p className="text-sm text-sky-600">Enter basic patient information. Doctor will complete the diagnosis.</p>}
+              <h1 className="text-2xl sm:text-3xl font-bold text-blue-900 mb-2">{patientToEdit ? 'Edit Patient Record' : 'Add New Patient'}</h1>
+              {isNurse && <p className="text-sm text-blue-600">Enter basic patient information. Doctor will complete the diagnosis.</p>}
               {patient.isDraft && isDoctor && <p className="text-sm text-amber-600">⚠️ Draft record - Please complete diagnosis and notes</p>}
             </div>
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-lg text-white bg-sky-500 hover:bg-sky-600 transition-colors font-semibold flex items-center gap-2 shadow-md"
+              className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors font-semibold flex items-center gap-2 shadow-md"
             >
               <XIcon className="w-5 h-5" />
               Close
@@ -493,23 +634,84 @@ const PatientForm: React.FC<PatientFormProps> = ({
           </div>
         </div>
 
+        {/* NTID Search for Readmission - Only show for new patients */}
+        {!patientToEdit && (
+          <div className="bg-white rounded-lg sm:rounded-xl shadow-lg border-2 border-blue-300 p-3 sm:p-4 mb-3 sm:mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <h3 className="text-lg font-bold text-blue-900">Readmission Lookup (NTID)</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-3">
+              For readmissions, enter the child's NTID to auto-fill previous details (birth history, address, contacts).
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={ntidSearch}
+                  onChange={(e) => {
+                    setNtidSearch(e.target.value.toUpperCase());
+                    setNtidError('');
+                  }}
+                  placeholder="Enter NTID (e.g., GMC2025010001)"
+                  className="w-full px-4 py-2 bg-white border-2 border-blue-600 rounded-lg text-black font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+                {ntidSearching && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleNtidSearch}
+                disabled={ntidSearching || !ntidSearch.trim()}
+                className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Search
+              </button>
+            </div>
+            {ntidError && (
+              <p className="text-sm text-red-600 mt-2 font-medium">{ntidError}</p>
+            )}
+            {ntidSearchResult && (
+              <div className="mt-3 p-3 bg-green-50 border-2 border-green-400 rounded-lg">
+                <p className="text-green-800 font-bold flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Patient Found! Form auto-filled.
+                </p>
+                <p className="text-sm text-green-700 mt-1">
+                  <strong>{ntidSearchResult.name}</strong> - Last admission: {new Date(ntidSearchResult.admissionDate).toLocaleDateString()}
+                </p>
+                <p className="text-xs text-green-600 mt-1">
+                  Birth history, address, and contact details have been copied. Please update admission details for this visit.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         <form onSubmit={handleSaveComplete} className="space-y-3 sm:space-y-6">
           <div className="space-y-3 sm:space-y-6 flex-grow">
 
             {/* Admission & Birth Details Section */}
-            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-sky-200 overflow-hidden shadow-md">
+            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 overflow-hidden shadow-md">
               <button
                 type="button"
                 onClick={() => toggleSection('admissionDetails')}
-                className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-sky-100 hover:bg-sky-200 transition-colors"
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                   </svg>
-                  <h3 className="text-lg font-bold text-sky-900">Admission & Birth Details</h3>
+                  <h3 className="text-lg font-bold text-white">Admission & Birth Details</h3>
                 </div>
-                <svg className={`w-5 h-5 text-sky-600 transition-transform ${expandedSections.admissionDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-5 h-5 text-white transition-transform ${expandedSections.admissionDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
@@ -520,7 +722,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
                       <div>
-                        <label htmlFor="admissionType" className="block text-sm font-medium text-sky-700 mb-1">
+                        <label htmlFor="admissionType" className="block text-sm font-medium text-slate-700 mb-1">
                           Type of Admission <span className="text-red-400">*</span>
                         </label>
                         <select
@@ -529,7 +731,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                           value={patient.admissionType || ''}
                           onChange={handleChange}
                           required
-                          className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400"
+                          className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         >
                           <option value="">Select Admission Type</option>
                           {Object.values(AdmissionType).map(at => <option key={at} value={at}>{at}</option>)}
@@ -542,8 +744,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
                       </div>
                     )}
                     <div>
-                      <label htmlFor="admissionDateTime" className="block text-sm font-medium text-sky-700 mb-1">Date and Time of Admission <span className="text-red-400">*</span></label>
-                      <input type="datetime-local" name="admissionDateTime" id="admissionDateTime" value={patient.admissionDateTime ? patient.admissionDateTime.slice(0, 16) : (patient.admissionDate ? patient.admissionDate.slice(0, 16) : '')} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" />
+                      <label htmlFor="admissionDateTime" className="block text-sm font-medium text-slate-700 mb-1">Date and Time of Admission <span className="text-red-400">*</span></label>
+                      <input type="datetime-local" name="admissionDateTime" id="admissionDateTime" value={patient.admissionDateTime ? patient.admissionDateTime.slice(0, 16) : (patient.admissionDate ? patient.admissionDate.slice(0, 16) : '')} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                     </div>
                   </div>
 
@@ -553,15 +755,15 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
                       <div>
-                        <label htmlFor="dateOfBirth" className="block text-sm font-medium text-sky-700 mb-1">Date and Time of Birth</label>
-                        <input type="datetime-local" name="dateOfBirth" id="dateOfBirth" value={patient.dateOfBirth ? patient.dateOfBirth.slice(0, 16) : ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" />
+                        <label htmlFor="dateOfBirth" className="block text-sm font-medium text-slate-700 mb-1">Date and Time of Birth</label>
+                        <input type="datetime-local" name="dateOfBirth" id="dateOfBirth" value={patient.dateOfBirth ? patient.dateOfBirth.slice(0, 16) : ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                       </div>
                     )}
                     <div>
-                      <label htmlFor="age" className="block text-sm font-medium text-sky-700 mb-1">Current Age <span className="text-red-400">*</span></label>
+                      <label htmlFor="age" className="block text-sm font-medium text-slate-700 mb-1">Current Age <span className="text-red-400">*</span></label>
                       <div className="flex gap-2">
-                        <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" className="w-2/3 px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" />
-                        <select name="ageUnit" id="ageUnit" value={patient.ageUnit} onChange={handleChange} required className="w-1/3 px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 text-sm">
+                        <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" className="w-2/3 px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                        <select name="ageUnit" id="ageUnit" value={patient.ageUnit} onChange={handleChange} required className="w-1/3 px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
                           {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
                         </select>
                       </div>
@@ -571,13 +773,13 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) ? (
                       <div>
-                        <label htmlFor="birthWeight" className="block text-sm font-medium text-sky-700 mb-1">Birth Weight (Kg)</label>
-                        <input type="number" name="birthWeight" id="birthWeight" value={patient.birthWeight || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="e.g., 2.500" />
+                        <label htmlFor="birthWeight" className="block text-sm font-medium text-slate-700 mb-1">Birth Weight (Kg)</label>
+                        <input type="number" name="birthWeight" id="birthWeight" value={patient.birthWeight || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 2.500" />
                       </div>
                     ) : <div></div>}
                     <div>
-                      <label htmlFor="weightOnAdmission" className="block text-sm font-medium text-sky-700 mb-1">Weight on Admission (Kg)</label>
-                      <input type="number" name="weightOnAdmission" id="weightOnAdmission" value={patient.weightOnAdmission || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="e.g., 2.500" />
+                      <label htmlFor="weightOnAdmission" className="block text-sm font-medium text-slate-700 mb-1">Weight on Admission (Kg)</label>
+                      <input type="number" name="weightOnAdmission" id="weightOnAdmission" value={patient.weightOnAdmission || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 2.500" />
                     </div>
                   </div>
 
@@ -587,14 +789,14 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label htmlFor="modeOfDelivery" className="block text-sm font-medium text-sky-700 mb-1">Mode of Delivery</label>
-                        <select name="modeOfDelivery" id="modeOfDelivery" value={patient.modeOfDelivery || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400">
+                        <label htmlFor="modeOfDelivery" className="block text-sm font-medium text-slate-700 mb-1">Mode of Delivery</label>
+                        <select name="modeOfDelivery" id="modeOfDelivery" value={patient.modeOfDelivery || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                           <option value="">Select Mode</option>
                           {Object.values(ModeOfDelivery).map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label htmlFor="placeOfDelivery" className="block text-sm font-medium text-sky-700 mb-1">
+                        <label htmlFor="placeOfDelivery" className="block text-sm font-medium text-slate-700 mb-1">
                           Place of Delivery {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
                         </label>
                         <select
@@ -603,7 +805,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                           value={patient.placeOfDelivery || ''}
                           onChange={handleChange}
                           disabled={patient.admissionType === AdmissionType.Inborn}
-                          className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                          className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           <option value="">Select Place</option>
                           {Object.values(PlaceOfDelivery).map(p => <option key={p} value={p}>{p}</option>)}
@@ -614,7 +816,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
                   {(patient.placeOfDelivery === PlaceOfDelivery.PrivateHospital || patient.placeOfDelivery === PlaceOfDelivery.GovernmentHospital) && (
                     <div>
-                      <label htmlFor="placeOfDeliveryName" className="block text-sm font-medium text-sky-700 mb-1">
+                      <label htmlFor="placeOfDeliveryName" className="block text-sm font-medium text-slate-700 mb-1">
                         Hospital Name {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
                       </label>
                       <input
@@ -624,7 +826,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         value={patient.placeOfDeliveryName || ''}
                         onChange={handleChange}
                         disabled={patient.admissionType === AdmissionType.Inborn}
-                        className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
                         placeholder="Enter hospital name"
                       />
                     </div>
@@ -635,8 +837,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label htmlFor="modeOfTransport" className="block text-sm font-medium text-sky-700 mb-1">Mode of Transport</label>
-                        <select name="modeOfTransport" id="modeOfTransport" value={patient.modeOfTransport || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400">
+                        <label htmlFor="modeOfTransport" className="block text-sm font-medium text-slate-700 mb-1">Mode of Transport</label>
+                        <select name="modeOfTransport" id="modeOfTransport" value={patient.modeOfTransport || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                           <option value="">Select Mode</option>
                           {Object.values(ModeOfTransport).map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
@@ -645,12 +847,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
                       {(patient.admissionType === AdmissionType.OutbornHealthFacility || patient.admissionType === AdmissionType.OutbornCommunity) && (
                         <div className="space-y-4 md:col-span-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
                           <div>
-                            <label htmlFor="referringHospital" className="block text-sm font-medium text-sky-700 mb-1">Referred From (Hospital/Facility)</label>
-                            <input type="text" name="referringHospital" id="referringHospital" value={patient.referringHospital || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Name of referring hospital or facility" />
+                            <label htmlFor="referringHospital" className="block text-sm font-medium text-slate-700 mb-1">Referred From (Hospital/Facility)</label>
+                            <input type="text" name="referringHospital" id="referringHospital" value={patient.referringHospital || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Name of referring hospital or facility" />
                           </div>
                           <div>
-                            <label htmlFor="referringDistrict" className="block text-sm font-medium text-sky-700 mb-1">Referring District</label>
-                            <input type="text" name="referringDistrict" id="referringDistrict" value={patient.referringDistrict || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="District name" />
+                            <label htmlFor="referringDistrict" className="block text-sm font-medium text-slate-700 mb-1">Referring District</label>
+                            <input type="text" name="referringDistrict" id="referringDistrict" value={patient.referringDistrict || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="District name" />
                           </div>
                         </div>
                       )}
@@ -661,19 +863,19 @@ const PatientForm: React.FC<PatientFormProps> = ({
             </div>
 
             {/* Administrative & Demographic Information Section */}
-            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-sky-200 shadow-md overflow-hidden">
+            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
               <button
                 type="button"
                 onClick={() => toggleSection('demographics')}
-                className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-sky-100 hover:bg-sky-200 transition-colors"
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
-                  <h3 className="text-lg font-bold text-sky-900">Administrative & Demographic Information</h3>
+                  <h3 className="text-lg font-bold text-white">Administrative & Demographic Information</h3>
                 </div>
-                <svg className={`w-5 h-5 text-sky-600 transition-transform ${expandedSections.demographics ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-5 h-5 text-white transition-transform ${expandedSections.demographics ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
@@ -682,43 +884,48 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 <div className="p-2 sm:p-4 space-y-3 sm:space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label htmlFor="sncuRegNo" className="block text-sm font-medium text-sky-700 mb-1">SNCU Reg. No.</label>
-                      <input type="text" name="sncuRegNo" id="sncuRegNo" value={patient.sncuRegNo || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="e.g., SNCU/2024/001" />
+                      <label htmlFor="sncuRegNo" className="block text-sm font-medium text-slate-700 mb-1">SNCU Reg. No.</label>
+                      <input type="text" name="sncuRegNo" id="sncuRegNo" value={patient.sncuRegNo || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., SNCU/2024/001" />
                     </div>
                     <div>
-                      <label htmlFor="mctsNo" className="block text-sm font-medium text-sky-700 mb-1">MCTS No.</label>
-                      <input type="text" name="mctsNo" id="mctsNo" value={patient.mctsNo || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Mother & Child Tracking System Number" />
+                      <label htmlFor="ntid" className="block text-sm font-medium text-slate-700 mb-1">NTID (Neolink Tracking ID)</label>
+                      <div className="w-full px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-400 rounded-lg text-blue-800 font-mono font-bold text-lg tracking-wider">
+                        {patient.ntid || 'Auto-generated'}
+                      </div>
+                      <p className="text-xs text-blue-600 mt-1">Unique ID auto-generated for each patient</p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label htmlFor="name" className="block text-sm font-medium text-sky-700 mb-1">Baby's Name <span className="text-red-400">*</span></label>
-                      <input type="text" name="name" id="name" value={patient.name} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Full name of the baby" />
+                      <label htmlFor="motherName" className="block text-sm font-bold text-black mb-1">Mother's Name</label>
+                      <input type="text" name="motherName" id="motherName" value={patient.motherName || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" placeholder="Enter mother's name" />
                     </div>
                     <div>
-                      <label htmlFor="unit" className="block text-sm font-medium text-sky-700 mb-1">Unit <span className="text-red-400">*</span></label>
-                      <select name="unit" id="unit" value={patient.unit} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields}>
+                      <label htmlFor="fatherName" className="block text-sm font-bold text-black mb-1">Father's Name</label>
+                      <input type="text" name="fatherName" id="fatherName" value={patient.fatherName || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" placeholder="Father's full name" />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="name" className="block text-sm font-bold text-black mb-1">Baby's Name <span className="text-red-500">*</span></label>
+                      <input type="text" name="name" id="name" value={patient.name} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" placeholder="Auto-filled from mother's name" />
+                      <p className="text-xs text-blue-600 mt-1">Auto-fills as "Baby of [Mother's Name]"</p>
+                    </div>
+                    <div>
+                      <label htmlFor="unit" className="block text-sm font-bold text-black mb-1">Unit <span className="text-red-500">*</span></label>
+                      <select name="unit" id="unit" value={patient.unit} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields}>
                         {(availableUnits || Object.values(Unit)).map(u => <option key={u} value={u}>{u}</option>)}
                       </select>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="motherName" className="block text-sm font-medium text-sky-700 mb-1">Mother's Name</label>
-                      <input type="text" name="motherName" id="motherName" value={patient.motherName || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Baby of (Mother's Name)" />
-                    </div>
-                    <div>
-                      <label htmlFor="fatherName" className="block text-sm font-medium text-sky-700 mb-1">Father's Name</label>
-                      <input type="text" name="fatherName" id="fatherName" value={patient.fatherName || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Father's full name" />
-                    </div>
-                  </div>
-
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label htmlFor="gender" className="block text-sm font-medium text-sky-700 mb-1">Sex <span className="text-red-400">*</span></label>
-                      <select name="gender" id="gender" value={patient.gender} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400">
+                      <label htmlFor="gender" className="block text-sm font-medium text-slate-700 mb-1">Sex <span className="text-red-400">*</span></label>
+                      <select name="gender" id="gender" value={patient.gender || ''} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Select Sex</option>
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
                         <option value="Ambiguous">Ambiguous</option>
@@ -726,27 +933,27 @@ const PatientForm: React.FC<PatientFormProps> = ({
                       </select>
                     </div>
                     <div>
-                      <label htmlFor="category" className="block text-sm font-medium text-sky-700 mb-1">Category</label>
-                      <select name="category" id="category" value={patient.category || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400">
+                      <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                      <select name="category" id="category" value={patient.category || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="">Select Category</option>
                         {Object.values(Category).map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label htmlFor="doctorInCharge" className="block text-sm font-medium text-sky-700 mb-1">Doctor In Charge</label>
-                      <input type="text" name="doctorInCharge" id="doctorInCharge" value={patient.doctorInCharge || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Responsible doctor" />
+                      <label htmlFor="doctorInCharge" className="block text-sm font-medium text-slate-700 mb-1">Doctor In Charge</label>
+                      <input type="text" name="doctorInCharge" id="doctorInCharge" value={patient.doctorInCharge || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Responsible doctor" />
                     </div>
                   </div>
 
                   {/* Enhanced Address Input with PIN Code Lookup */}
-                  <div className="bg-sky-50 border-2 border-sky-300 rounded-xl p-4">
+                  <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-4">
                     <div className="flex items-center gap-2 mb-3">
-                      <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
-                      <h4 className="font-semibold text-sky-800">Address Details</h4>
-                      <span className="text-xs text-sky-600 ml-auto">📍 Auto-fill from PIN code</span>
+                      <h4 className="font-semibold text-blue-800">Address Details</h4>
+                      <span className="text-xs text-blue-600 ml-auto">📍 Auto-fill from PIN code</span>
                     </div>
                     <AddressInput
                       address={{
@@ -764,17 +971,17 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-sky-700">Contact 1</label>
+                      <label className="block text-sm font-medium text-slate-700">Contact 1</label>
                       <div className="grid grid-cols-2 gap-2">
-                        <input type="tel" name="contactNo1" id="contactNo1" value={patient.contactNo1 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Phone number" />
-                        <input type="text" name="contactRelation1" id="contactRelation1" value={patient.contactRelation1 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Relation" />
+                        <input type="tel" name="contactNo1" id="contactNo1" value={patient.contactNo1 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Phone number" />
+                        <input type="text" name="contactRelation1" id="contactRelation1" value={patient.contactRelation1 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Relation" />
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium text-sky-700">Contact 2</label>
+                      <label className="block text-sm font-medium text-slate-700">Contact 2</label>
                       <div className="grid grid-cols-2 gap-2">
-                        <input type="tel" name="contactNo2" id="contactNo2" value={patient.contactNo2 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Phone number" />
-                        <input type="text" name="contactRelation2" id="contactRelation2" value={patient.contactRelation2 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Relation" />
+                        <input type="tel" name="contactNo2" id="contactNo2" value={patient.contactNo2 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Phone number" />
+                        <input type="text" name="contactRelation2" id="contactRelation2" value={patient.contactRelation2 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Relation" />
                       </div>
                     </div>
                   </div>
@@ -782,7 +989,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   {/* Admission Type - For NICU/SNCU */}
                   {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
                     <div className="pt-4 border-t border-blue-500/30">
-                      <label htmlFor="admissionType" className="block text-sm font-medium text-sky-700 mb-1">
+                      <label htmlFor="admissionType" className="block text-sm font-medium text-slate-700 mb-1">
                         Type of Admission <span className="text-red-400">*</span>
                       </label>
                       <select
@@ -791,7 +998,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         value={patient.admissionType || ''}
                         onChange={handleChange}
                         required
-                        className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400"
+                        className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       >
                         <option value="">Select Admission Type</option>
                         {Object.values(AdmissionType).map(at => <option key={at} value={at}>{at}</option>)}
@@ -812,13 +1019,13 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
 
             {/* Clinical Information Section */}
-            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-sky-200 shadow-md overflow-hidden">
-              <div className="px-4 py-3 bg-purple-900/50">
+            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
+              <div className="px-4 py-3 bg-gradient-to-r from-teal-600 to-emerald-600">
                 <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                   </svg>
-                  <h3 className="text-lg font-bold text-sky-900">Clinical Information</h3>
+                  <h3 className="text-lg font-bold text-white">Clinical Information</h3>
                 </div>
               </div>
 
@@ -826,41 +1033,41 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 {/* Indications for Admission - Show if NICU/SNCU OR if indications are configured for the unit */}
                 {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU || admissionIndications.length > 0) && (
                   <div>
-                    <label className="block text-sm font-medium text-sky-700 mb-3">
-                      Indications for Admission <span className="text-red-400">*</span>
-                      {isNurse && <span className="text-xs text-sky-600 ml-2">(Doctor will select)</span>}
+                    <label className="block text-sm font-bold text-black mb-3">
+                      Indications for Admission <span className="text-red-500">*</span>
                     </label>
 
                     {loadingIndications ? (
-                      <div className="text-center py-4 text-sky-600">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto"></div>
-                        <p className="text-sm mt-2">Loading indications...</p>
+                      <div className="text-center py-4">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                        <p className="text-sm mt-2 text-black">Loading indications...</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto bg-sky-50 p-4 rounded-lg border-2 border-sky-200">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto bg-white p-4 rounded-lg border-2 border-blue-600">
                         {admissionIndications.length > 0 ? (
                           admissionIndications.map((indication) => (
                             <label
                               key={indication.id}
                               className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all ${(patient.indicationsForAdmission || []).includes(indication.name)
-                                ? 'bg-purple-600/30 border-2 border-purple-400'
-                                : 'bg-white border-2 border-sky-200 hover:border-sky-400'
-                                } ${isNurse ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                ? 'bg-blue-600 border-2 border-blue-700'
+                                : 'bg-white border-2 border-gray-300 hover:border-blue-600'
+                                }`}
                             >
                               <input
                                 type="checkbox"
                                 checked={(patient.indicationsForAdmission || []).includes(indication.name)}
                                 onChange={() => handleIndicationToggle(indication.name)}
-                                disabled={isNurse}
-                                className="mt-1 w-4 h-4 text-sky-600 bg-white border-sky-300 rounded focus:ring-sky-500 focus:ring-2"
+                                className="mt-1 w-5 h-5 text-blue-600 bg-white border-gray-400 rounded focus:ring-blue-600 focus:ring-2"
                               />
-                              <span className="text-sm text-sky-800 flex-1">{indication.name}</span>
+                              <span className={`text-sm font-medium flex-1 ${(patient.indicationsForAdmission || []).includes(indication.name) ? 'text-white' : 'text-black'}`}>
+                                {indication.name}
+                              </span>
                             </label>
                           ))
                         ) : (
-                          <div className="col-span-2 text-center py-8 text-sky-600">
-                            <p className="text-sm">No indications configured yet.</p>
-                            <p className="text-xs mt-1">SuperAdmin needs to add indications in Settings.</p>
+                          <div className="col-span-2 text-center py-8">
+                            <p className="text-sm text-black">No indications configured yet.</p>
+                            <p className="text-xs mt-1 text-gray-600">SuperAdmin needs to add indications in Settings.</p>
                           </div>
                         )}
                       </div>
@@ -868,7 +1075,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
                     {/* Custom Indication Field */}
                     <div className="mt-4">
-                      <label htmlFor="customIndication" className="block text-sm font-medium text-sky-700 mb-1">
+                      <label htmlFor="customIndication" className="block text-sm font-bold text-black mb-1">
                         Custom Indication / Additional Notes
                       </label>
                       <textarea
@@ -877,89 +1084,59 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         value={patient.customIndication || ''}
                         onChange={handleChange}
                         rows={3}
-                        disabled={isNurse}
-                        className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                        placeholder={isNurse ? "Doctor will add custom indications" : "Enter any other indications or additional clinical notes..."}
+                        className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                        placeholder="Enter any other indications or additional clinical notes..."
                       ></textarea>
                     </div>
 
-                    {/* Selected Indications Summary */}
-                    {(patient.indicationsForAdmission || []).length > 0 && (
-                      <div className="mt-4 p-3 bg-purple-900/30 rounded-lg border border-purple-500/40">
-                        <p className="text-xs font-medium text-purple-300 mb-2">Selected Indications ({patient.indicationsForAdmission?.length}):</p>
+                    {/* Primary Diagnosis Summary */}
+                    {((patient.indicationsForAdmission || []).length > 0 || patient.customIndication) && (
+                      <div className="mt-4 p-4 bg-blue-600 rounded-lg">
+                        <p className="text-sm font-bold text-white mb-3">Primary Diagnosis:</p>
                         <div className="flex flex-wrap gap-2">
                           {patient.indicationsForAdmission?.map((indication, idx) => (
-                            <span key={idx} className="px-2 py-1 bg-purple-600/40 text-sky-900 text-xs rounded-full border border-purple-400/30">
+                            <span key={idx} className="px-3 py-1.5 bg-white text-black text-sm font-medium rounded-full">
                               {indication}
                             </span>
                           ))}
+                          {patient.customIndication && (
+                            <span className="px-3 py-1.5 bg-white text-black text-sm font-medium rounded-full">
+                              {patient.customIndication}
+                            </span>
+                          )}
                         </div>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Primary Diagnosis - Auto-populated from indications for NICU/SNCU, manual for others */}
-                {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) ? (
-                  /* NICU/SNCU: Show auto-populated diagnosis from indications (read-only) */
-                  patient.diagnosis && (
-                    <div className="bg-gradient-to-r from-emerald-50 to-green-50 p-4 rounded-lg border-2 border-emerald-300 shadow-sm">
-                      <div className="flex items-center gap-2 mb-2">
-                        <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <label className="text-sm font-bold text-emerald-700">Primary Diagnosis (Auto-populated from indications)</label>
-                      </div>
-                      <p className="text-base text-slate-800 font-semibold leading-relaxed">{patient.diagnosis}</p>
-                    </div>
-                  )
-                ) : (
-                  /* Other units: Manual diagnosis entry */
-                  !isNurse && (
-                    <div>
-                      <label htmlFor="diagnosis" className="block text-sm font-medium text-sky-700 mb-1">
-                        Primary Diagnosis <span className="text-red-400">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        name="diagnosis"
-                        id="diagnosis"
-                        value={patient.diagnosis}
-                        onChange={handleChange}
-                        required
-                        className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400"
-                        placeholder="Enter primary diagnosis"
-                      />
-                    </div>
-                  )
-                )}
 
                 {/* For nurses - show read-only if diagnosis exists */}
                 {isNurse && patient.diagnosis && patient.unit !== Unit.NICU && patient.unit !== Unit.SNCU && (
-                  <div className="bg-sky-50 p-3 rounded-lg border-2 border-sky-200">
-                    <label className="block text-xs font-medium text-sky-600 mb-1">Primary Diagnosis (Doctor entered)</label>
-                    <p className="text-sm text-sky-700 font-medium">{patient.diagnosis}</p>
+                  <div className="bg-blue-50 p-3 rounded-lg border-2 border-blue-300">
+                    <label className="block text-xs font-medium text-blue-600 mb-1">Primary Diagnosis (Doctor entered)</label>
+                    <p className="text-sm text-slate-700 font-medium">{patient.diagnosis}</p>
                   </div>
                 )}
               </div>
             </div>
 
             {/* Patient Status Section */}
-            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-sky-200 shadow-md overflow-hidden">
-              <div className="px-4 py-3 bg-sky-100">
+            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
+              <div className="px-4 py-3 bg-blue-100">
                 <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <h3 className="text-lg font-bold text-sky-900">Patient Status</h3>
+                  <h3 className="text-lg font-bold text-blue-900">Patient Status</h3>
                 </div>
               </div>
 
               <div className="p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="outcome" className="block text-sm font-medium text-sky-700 mb-1">Current Status <span className="text-red-400">*</span></label>
-                    <select name="outcome" id="outcome" value={patient.outcome} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400">
+                    <label htmlFor="outcome" className="block text-sm font-medium text-slate-700 mb-1">Current Status <span className="text-red-400">*</span></label>
+                    <select name="outcome" id="outcome" value={patient.outcome} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                       <option value="In Progress">In Progress</option>
                       {!patient.isStepDown && (
                         <option value="Step Down">Step Down</option>
@@ -970,8 +1147,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="admissionDate" className="block text-sm font-medium text-sky-700 mb-1">Admission Date <span className="text-red-400">*</span></label>
-                    <input type="date" name="admissionDate" id="admissionDate" value={patient.admissionDate.split('T')[0]} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields} />
+                    <label htmlFor="admissionDate" className="block text-sm font-medium text-slate-700 mb-1">Admission Date <span className="text-red-400">*</span></label>
+                    <input type="date" name="admissionDate" id="admissionDate" value={patient.admissionDate.split('T')[0]} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields} />
                   </div>
                 </div>
               </div>
@@ -979,7 +1156,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
             {/* Readmit to ICU Section - Only show for Step Down patients */}
             {patient.outcome === 'Step Down' && patient.isStepDown && (
-              <div className="bg-white rounded-lg sm:rounded-xl border-2 border-sky-200 overflow-hidden shadow-md">
+              <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 overflow-hidden shadow-md">
                 <div className="px-4 py-3 bg-red-900/50">
                   <div className="flex items-center gap-3">
                     <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -991,8 +1168,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
                 <div className="p-4 space-y-3">
                   <div className="bg-red-50/10 border border-red-400/30 rounded-lg p-4">
-                    <p className="text-sm text-sky-700 mb-4">
-                      This patient is currently in <strong className="text-sky-600">Step Down</strong> status from <strong className="text-sky-600">{patient.stepDownFrom}</strong>.
+                    <p className="text-sm text-slate-700 mb-4">
+                      This patient is currently in <strong className="text-blue-600">Step Down</strong> status from <strong className="text-blue-600">{patient.stepDownFrom}</strong>.
                       If the patient requires readmission to intensive care, click the button below.
                     </p>
 
@@ -1027,21 +1204,21 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
             {/* Discharge Details Section - Only show when outcome is not In Progress */}
             {patient.outcome !== 'In Progress' && (
-              <div className="bg-white rounded-lg sm:rounded-xl border-2 border-sky-200 shadow-md overflow-hidden">
+              <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
                 <button
                   type="button"
                   onClick={() => toggleSection('dischargeDetails')}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-sky-100 hover:bg-sky-200 transition-colors"
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                     </svg>
-                    <h3 className="text-lg font-bold text-sky-900">
+                    <h3 className="text-lg font-bold text-blue-900">
                       {patient.outcome === 'Step Down' ? 'Step Down Details' : 'Discharge Details'}
                     </h3>
                   </div>
-                  <svg className={`w-5 h-5 text-sky-600 transition-transform ${expandedSections.dischargeDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className={`w-5 h-5 text-blue-600 transition-transform ${expandedSections.dischargeDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
@@ -1050,36 +1227,36 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   <div className="p-2 sm:p-4 space-y-3 sm:space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label htmlFor="dischargeDateTime" className="block text-sm font-medium text-sky-700 mb-1">
+                        <label htmlFor="dischargeDateTime" className="block text-sm font-medium text-slate-700 mb-1">
                           Date and Time of {patient.outcome === 'Step Down' ? 'Step Down' : 'Discharge'}
                         </label>
-                        <input type="datetime-local" name="dischargeDateTime" id="dischargeDateTime" value={patient.dischargeDateTime ? patient.dischargeDateTime.slice(0, 16) : (patient.releaseDate ? patient.releaseDate.slice(0, 16) : '')} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" />
+                        <input type="datetime-local" name="dischargeDateTime" id="dischargeDateTime" value={patient.dischargeDateTime ? patient.dischargeDateTime.slice(0, 16) : (patient.releaseDate ? patient.releaseDate.slice(0, 16) : '')} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                       </div>
                       <div>
-                        <label htmlFor="weightOnDischarge" className="block text-sm font-medium text-sky-700 mb-1">Weight on Discharge (Kg)</label>
-                        <input type="number" name="weightOnDischarge" id="weightOnDischarge" value={patient.weightOnDischarge || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="e.g., 3.200" />
+                        <label htmlFor="weightOnDischarge" className="block text-sm font-medium text-slate-700 mb-1">Weight on Discharge (Kg)</label>
+                        <input type="number" name="weightOnDischarge" id="weightOnDischarge" value={patient.weightOnDischarge || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 3.200" />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label htmlFor="ageOnDischarge" className="block text-sm font-medium text-sky-700 mb-1">Age on Discharge</label>
+                        <label htmlFor="ageOnDischarge" className="block text-sm font-medium text-slate-700 mb-1">Age on Discharge</label>
                         <div className="grid grid-cols-2 gap-2">
-                          <input type="number" name="ageOnDischarge" id="ageOnDischarge" value={patient.ageOnDischarge || ''} onChange={handleChange} min="0" className="px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400" placeholder="Age" />
-                          <select name="ageOnDischargeUnit" id="ageOnDischargeUnit" value={patient.ageOnDischargeUnit || AgeUnit.Days} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400">
+                          <input type="number" name="ageOnDischarge" id="ageOnDischarge" value={patient.ageOnDischarge || ''} onChange={handleChange} min="0" className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Age" />
+                          <select name="ageOnDischargeUnit" id="ageOnDischargeUnit" value={patient.ageOnDischargeUnit || AgeUnit.Days} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
                           </select>
                         </div>
                       </div>
                       <div>
-                        <label htmlFor="releaseDate" className="block text-sm font-medium text-sky-700 mb-1">Legacy Release Date</label>
+                        <label htmlFor="releaseDate" className="block text-sm font-medium text-slate-700 mb-1">Legacy Release Date</label>
                         <input
                           type="date"
                           name="releaseDate"
                           id="releaseDate"
                           value={patient.releaseDate ? patient.releaseDate.split('T')[0] : ''}
                           onChange={handleChange}
-                          className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400"
+                          className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           required={patient.outcome === 'Step Down'}
                         />
                       </div>
@@ -1090,10 +1267,10 @@ const PatientForm: React.FC<PatientFormProps> = ({
             )}
 
             {isDoctor && (
-              <div className="bg-white p-6 rounded-xl border-2 border-sky-200 shadow-md">
+              <div className="bg-white p-6 rounded-xl border-2 border-blue-300 shadow-md">
                 <div className="flex items-center justify-between mb-6">
-                  <label className="block text-xl font-bold text-sky-900 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-sky-500 flex items-center justify-center shadow-lg">
+                  <label className="block text-xl font-bold text-blue-900 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg">
                       <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
@@ -1101,11 +1278,11 @@ const PatientForm: React.FC<PatientFormProps> = ({
                     <div>
                       <div className="flex items-center gap-2">
                         Clinical Progress Notes
-                        <span className="px-2.5 py-1 bg-blue-500/30 text-blue-300 text-sm font-bold rounded-full border border-blue-400/30">
+                        <span className="px-2.5 py-1 bg-blue-600/30 text-blue-300 text-sm font-bold rounded-full border border-blue-400/30">
                           {patient.progressNotes?.length || 0}
                         </span>
                       </div>
-                      <div className="text-xs font-normal text-sky-600 mt-0.5">
+                      <div className="text-xs font-normal text-blue-600 mt-0.5">
                         Add notes at different times throughout the day
                       </div>
                     </div>
@@ -1114,7 +1291,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                     <button
                       type="button"
                       onClick={handleAddNewProgressNote}
-                      className="flex items-center gap-2 px-5 py-3 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-bold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                      className="flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
                     >
                       <PlusIcon className="w-5 h-5" />
                       Add New Note
@@ -1126,7 +1303,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 {(patient.progressNotes?.length || 0) > 0 && !showProgressNoteForm && (
                   <div className="relative">
                     {/* Timeline Line */}
-                    <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-sky-300"></div>
+                    <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-blue-300"></div>
 
                     <div className="space-y-6 mb-4">
                       {patient.progressNotes
@@ -1140,20 +1317,20 @@ const PatientForm: React.FC<PatientFormProps> = ({
                             <div key={index} className="relative flex gap-4">
                               {/* Timeline Node */}
                               <div className="flex flex-col items-center flex-shrink-0">
-                                <div className="w-12 h-12 rounded-full bg-sky-500 flex items-center justify-center shadow-lg ring-4 ring-white z-10">
+                                <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center shadow-lg ring-4 ring-white z-10">
                                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                   </svg>
                                 </div>
                                 <div className="text-center mt-2">
                                   <div className="text-xs font-bold text-blue-300">{timeStr}</div>
-                                  <div className="text-xs text-sky-600">{dateStr}</div>
+                                  <div className="text-xs text-blue-600">{dateStr}</div>
                                 </div>
                               </div>
 
                               {/* Note Card */}
                               <div className="flex-1 relative group">
-                                <div className="bg-white rounded-lg border-2 border-sky-200 p-4 shadow-md hover:shadow-lg transition-all hover:border-sky-400">
+                                <div className="bg-white rounded-lg border-2 border-blue-300 p-4 shadow-md hover:shadow-lg transition-all hover:border-blue-500">
                                   <ProgressNoteDisplay note={note} />
 
                                   {/* Hover Actions */}
@@ -1161,7 +1338,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => handleEditNote(patient.progressNotes.findIndex(n => n.date === note.date))}
-                                      className="p-2 text-sky-600 hover:text-sky-600 bg-white hover:bg-sky-100 rounded-lg transition-all shadow-md"
+                                      className="p-2 text-blue-600 hover:text-blue-600 bg-white hover:bg-blue-100 rounded-lg transition-all shadow-md"
                                       title="Edit note"
                                     >
                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1171,7 +1348,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => removeNote(patient.progressNotes.findIndex(n => n.date === note.date))}
-                                      className="p-2 text-sky-600 hover:text-red-400 bg-white hover:bg-red-100 rounded-lg transition-all shadow-md"
+                                      className="p-2 text-blue-600 hover:text-red-400 bg-white hover:bg-red-100 rounded-lg transition-all shadow-md"
                                       title="Remove note"
                                     >
                                       <TrashIcon className="w-4 h-4" />
@@ -1204,7 +1381,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 )}
 
                 {(patient.progressNotes?.length || 0) === 0 && !showProgressNoteForm && (
-                  <div className="text-center py-8 text-sky-600">
+                  <div className="text-center py-8 text-blue-600">
                     <svg className="w-16 h-16 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
@@ -1215,15 +1392,15 @@ const PatientForm: React.FC<PatientFormProps> = ({
               </div>
             )}
             {isNurse && (
-              <div className="bg-sky-50 p-4 rounded-lg border-2 border-sky-200">
-                <p className="text-sm text-sky-700">📝 Clinical progress notes will be added by the doctor.</p>
+              <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-300">
+                <p className="text-sm text-slate-700">📝 Clinical progress notes will be added by the doctor.</p>
               </div>
             )}
 
             {/* MEDICATION MANAGEMENT - Separate Section for Nurses & Doctors */}
-            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-purple-200 shadow-md overflow-hidden">
-              <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-purple-100 to-indigo-100">
-                <h3 className="text-base font-bold text-purple-800 flex items-center gap-2">
+            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-violet-300 shadow-md overflow-hidden">
+              <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-purple-600">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                   </svg>
@@ -1243,9 +1420,9 @@ const PatientForm: React.FC<PatientFormProps> = ({
             </div>
 
             {/* Patient Dates & Status Section */}
-            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-sky-200 shadow-md overflow-hidden">
-              <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-sky-100">
-            <h3 className="text-base font-bold text-sky-800 flex items-center gap-2">
+            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-amber-300 shadow-md overflow-hidden">
+              <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r from-amber-500 to-orange-500">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
@@ -1255,11 +1432,11 @@ const PatientForm: React.FC<PatientFormProps> = ({
           <div className="p-3 sm:p-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label htmlFor="admissionDate" className="block text-sm font-medium text-sky-700 mb-1">Admission Date</label>
-                <input type="date" name="admissionDate" id="admissionDate" value={patient.admissionDate.split('T')[0]} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields} />
+                <label htmlFor="admissionDate" className="block text-sm font-medium text-slate-700 mb-1">Admission Date</label>
+                <input type="date" name="admissionDate" id="admissionDate" value={patient.admissionDate.split('T')[0]} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields} />
               </div>
               <div>
-                <label htmlFor="releaseDate" className="block text-sm font-medium text-sky-700 mb-1">
+                <label htmlFor="releaseDate" className="block text-sm font-medium text-slate-700 mb-1">
                   {patient.outcome === 'Step Down' ? 'Step Down Date' : 'Date of Release'}
                 </label>
                 <input
@@ -1268,13 +1445,13 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   id="releaseDate"
                   value={patient.releaseDate ? patient.releaseDate.split('T')[0] : ''}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   required={patient.outcome === 'Step Down'}
                 />
               </div>
               <div>
-                <label htmlFor="outcome" className="block text-sm font-medium text-sky-700 mb-1">Current Status</label>
-                <select name="outcome" id="outcome" value={patient.outcome} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-sky-200 rounded-lg text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed">
+                <label htmlFor="outcome" className="block text-sm font-medium text-slate-700 mb-1">Current Status</label>
+                <select name="outcome" id="outcome" value={patient.outcome} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed">
                   <option value="In Progress">In Progress</option>
                   {!patient.isStepDown && (
                     <option value="Step Down">Step Down</option>
@@ -1347,13 +1524,13 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 </div>
 
                 {patient.aiInterpretedDeathDiagnosis && (
-                  <div className="bg-sky-50 p-4 rounded-lg border-2 border-sky-300">
+                  <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-400">
                     <div className="flex items-start gap-3">
-                      <svg className="w-6 h-6 text-sky-600 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                       </svg>
                       <div className="flex-1">
-                        <h4 className="text-sm font-bold text-sky-800 mb-2">AI-Interpreted Diagnosis</h4>
+                        <h4 className="text-sm font-bold text-blue-800 mb-2">AI-Interpreted Diagnosis</h4>
                         <p className="text-sm text-slate-700 leading-relaxed">{patient.aiInterpretedDeathDiagnosis}</p>
                       </div>
                     </div>
@@ -1366,20 +1543,20 @@ const PatientForm: React.FC<PatientFormProps> = ({
             {patient.outcome === 'Referred' && isDoctor && patientToEdit && (
               <div className="bg-orange-50 border-2 border-orange-300 p-6 rounded-xl space-y-4">
                 <div className="flex items-center gap-3 mb-4">
-                  <svg className="w-8 h-8 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                   </svg>
                   <div>
                     <h3 className="text-xl font-bold text-orange-300">Create Formal Referral</h3>
-                    <p className="text-sm text-sky-700">Generate AI-powered referral letter and notify receiving institution</p>
+                    <p className="text-sm text-slate-700">Generate AI-powered referral letter and notify receiving institution</p>
                   </div>
                 </div>
 
-                <div className="bg-sky-50 p-4 rounded-lg border-2 border-sky-200">
-                  <p className="text-sm text-sky-700 mb-3">
+                <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-300">
+                  <p className="text-sm text-slate-700 mb-3">
                     <span className="font-semibold text-orange-800">📋 Complete Referral Includes:</span>
                   </p>
-                  <ul className="text-sm text-sky-700 space-y-1 ml-4">
+                  <ul className="text-sm text-slate-700 space-y-1 ml-4">
                     <li>✓ Searchable institution dropdown</li>
                     <li>✓ Comprehensive referral details form</li>
                     <li>✓ AI-generated professional referral letter</li>
@@ -1399,7 +1576,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   Create Formal Referral
                 </button>
 
-                <p className="text-xs text-sky-600 text-center">
+                <p className="text-xs text-blue-600 text-center">
                   Click to open comprehensive referral form with AI-powered letter generation
                 </p>
               </div>
@@ -1408,12 +1585,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
             </div>
 
           {/* Action Buttons */}
-          <div className="bg-white rounded-xl shadow-lg border-2 border-sky-200 p-6 mt-6 sticky bottom-4">
+          <div className="bg-white rounded-xl shadow-lg border-2 border-blue-300 p-6 mt-6 sticky bottom-4">
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full sm:w-auto px-6 py-3 rounded-lg text-sky-800 bg-slate-700 hover:bg-slate-600 transition-colors font-semibold text-base flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-6 py-3 rounded-lg text-blue-800 bg-slate-700 hover:bg-slate-600 transition-colors font-semibold text-base flex items-center justify-center gap-2"
               >
                 <XIcon className="w-5 h-5" />
                 Cancel
@@ -1434,7 +1611,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 {isDoctor && (
                   <button
                     type="submit"
-                    className="w-full sm:w-auto px-8 py-3 rounded-lg text-white bg-sky-500 hover:bg-sky-600 transition-all font-bold text-base flex items-center justify-center gap-2 shadow-lg"
+                    className="w-full sm:w-auto px-8 py-3 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all font-bold text-base flex items-center justify-center gap-2 shadow-lg"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

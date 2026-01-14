@@ -169,6 +169,7 @@ export interface EditHistory {
 
 export interface Patient {
   id: string;
+  ntid?: string; // Neolink Tracking ID - unique ID for each child (format: ABC202501xxxx)
   name: string;
   age: number;
   ageUnit: AgeUnit;

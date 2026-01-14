@@ -11,6 +11,7 @@ import ObservationManagement from './ObservationManagement';
 import { glassmorphism } from '../theme/glassmorphism';
 import { db } from '../firebaseConfig';
 import { doc, updateDoc } from 'firebase/firestore';
+import { deleteMultiplePatients } from '../services/firestoreService';
 
 interface PatientDetailsPageProps {
   patients: Patient[];
@@ -22,6 +23,12 @@ interface PatientDetailsPageProps {
   allRoles?: UserRole[];
   observationPatients?: ObservationPatient[];
   onConvertObservationToAdmission?: (observationPatient: ObservationPatient) => void;
+  // Lazy loading props
+  isLazyLoaded?: boolean;
+  onLoadAllPatients?: () => void;
+  // Admin delete props
+  institutionId?: string;
+  onPatientsDeleted?: () => void;
 }
 
 const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
@@ -33,7 +40,11 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   userRole,
   allRoles,
   observationPatients = [],
-  onConvertObservationToAdmission
+  onConvertObservationToAdmission,
+  isLazyLoaded = true,
+  onLoadAllPatients,
+  institutionId,
+  onPatientsDeleted
 }) => {
   // Helper function to check if user has a specific role
   const hasRole = (role: UserRole) => {
@@ -50,6 +61,65 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+
+  // Admin multi-select delete state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedPatientIds, setSelectedPatientIds] = useState<Set<string>>(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const isAdmin = hasRole(UserRole.Admin);
+
+  const togglePatientSelection = (patientId: string) => {
+    setSelectedPatientIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(patientId)) {
+        newSet.delete(patientId);
+      } else {
+        newSet.add(patientId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    const allIds = new Set(filteredPatients.map(p => p.id));
+    setSelectedPatientIds(allIds);
+  };
+
+  const clearSelection = () => {
+    setSelectedPatientIds(new Set());
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!institutionId || selectedPatientIds.size === 0) return;
+
+    setIsDeleting(true);
+    try {
+      const result = await deleteMultiplePatients(institutionId, Array.from(selectedPatientIds));
+
+      if (result.failed > 0) {
+        alert(`Deleted ${result.success} patients. Failed to delete ${result.failed} patients.`);
+      } else {
+        alert(`Successfully deleted ${result.success} patients.`);
+      }
+
+      // Clear selection and exit selection mode
+      setSelectedPatientIds(new Set());
+      setSelectionMode(false);
+      setShowDeleteConfirm(false);
+
+      // Notify parent to refresh patients
+      if (onPatientsDeleted) {
+        onPatientsDeleted();
+      }
+    } catch (error) {
+      console.error('Error deleting patients:', error);
+      alert('Failed to delete patients. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Filter patients by unit, date, and NICU view
   const unitPatients = useMemo(() => {
@@ -212,7 +282,8 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
       filtered = filtered.filter(p =>
         p.name.toLowerCase().includes(query) ||
         p.diagnosis?.toLowerCase().includes(query) ||
-        p.id?.toLowerCase().includes(query)
+        p.id?.toLowerCase().includes(query) ||
+        p.ntid?.toLowerCase().includes(query)
       );
     }
 
@@ -323,9 +394,161 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
               </svg>
               <span className="font-semibold hidden sm:inline">Filters</span>
             </motion.button>
+
+            {/* Admin Delete Button */}
+            {isAdmin && institutionId && !selectionMode && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setSelectionMode(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl shadow-md transition-all duration-200 bg-red-500 hover:bg-red-600 text-white"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span className="font-semibold hidden sm:inline">Delete</span>
+              </motion.button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Selection Mode Toolbar */}
+      <AnimatePresence>
+        {selectionMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="sticky top-[72px] z-20 bg-red-500 text-white shadow-lg"
+          >
+            <div className="container mx-auto px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setSelectionMode(false);
+                      clearSelection();
+                    }}
+                    className="p-2 hover:bg-red-600 rounded-lg transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <span className="font-semibold">
+                    {selectedPatientIds.size} patient{selectedPatientIds.size !== 1 ? 's' : ''} selected
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={selectAllFiltered}
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Select All ({filteredPatients.length})
+                  </button>
+                  {selectedPatientIds.size > 0 && (
+                    <button
+                      onClick={clearSelection}
+                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={selectedPatientIds.size === 0}
+                    className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 ${
+                      selectedPatientIds.size > 0
+                        ? 'bg-white text-red-600 hover:bg-red-50'
+                        : 'bg-red-400 text-red-200 cursor-not-allowed'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete Selected
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => !isDeleting && setShowDeleteConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-red-100 rounded-full">
+                  <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">Confirm Deletion</h3>
+                  <p className="text-sm text-slate-500">This action cannot be undone</p>
+                </div>
+              </div>
+
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                <p className="text-red-800 font-medium">
+                  You are about to permanently delete <span className="font-bold">{selectedPatientIds.size}</span> patient record{selectedPatientIds.size !== 1 ? 's' : ''}.
+                </p>
+                <p className="text-red-600 text-sm mt-2">
+                  All associated data including progress notes, vitals, and clinical records will be permanently removed from the database.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <>
+                      <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete {selectedPatientIds.size} Patient{selectedPatientIds.size !== 1 ? 's' : ''}
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="container mx-auto px-4 py-4 space-y-4">
         {/* Premium Search Bar */}
@@ -345,7 +568,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
             </svg>
             <input
               type="text"
-              placeholder="Search patients by name, diagnosis, or ID..."
+              placeholder="Search patients by name, diagnosis, or NTID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-12 pr-4 py-3 bg-white border-2 border-sky-200 rounded-xl text-slate-800 placeholder-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition-all font-medium"
@@ -544,12 +767,32 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
               </div>
               <h2 className="text-xl font-bold text-white">Patient Records</h2>
             </div>
-            <div style={{ height: '600px' }} className="bg-gradient-to-br from-sky-50/50 to-blue-50/50">
+            {/* Lazy Loading Banner */}
+            {isLazyLoaded && onLoadAllPatients && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-xs text-amber-800">Showing recent {patients.length} patients for faster loading</span>
+                </div>
+                <button
+                  onClick={onLoadAllPatients}
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-lg transition-colors"
+                >
+                  Load All
+                </button>
+              </div>
+            )}
+            <div style={{ height: isLazyLoaded && onLoadAllPatients ? '560px' : '600px' }} className="bg-gradient-to-br from-sky-50/50 to-blue-50/50">
               <VirtualizedPatientList
                 patients={filteredPatients}
                 onView={onViewDetails}
                 onEdit={onEdit}
                 canEdit={canEdit}
+                selectionMode={selectionMode}
+                selectedIds={selectedPatientIds}
+                onToggleSelection={togglePatientSelection}
               />
             </div>
           </motion.div>

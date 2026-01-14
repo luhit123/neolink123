@@ -38,7 +38,9 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
     const causesMap = new Map<string, number>();
 
     patients.forEach(p => {
-      const diagnosis = p.aiInterpretedDeathDiagnosis || p.diagnosisAtDeath || 'Unknown';
+      let diagnosis = p.aiInterpretedDeathDiagnosis || p.diagnosisAtDeath || 'Unknown';
+      // Remove "Primary Cause:" prefix if present
+      diagnosis = diagnosis.replace(/^(Primary\s*Cause\s*[:\-]\s*)/i, '').trim();
       const cause = diagnosis.split('.')[0].split(',')[0].trim();
       const shortCause = cause.length > 40 ? cause.substring(0, 40) + '...' : cause;
       causesMap.set(shortCause, (causesMap.get(shortCause) || 0) + 1);
@@ -97,82 +99,82 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Top Causes - Bar Chart */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 p-6"
+        className="bg-white rounded-xl sm:rounded-2xl shadow-xl border border-slate-200 p-3 sm:p-6"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
+          <h3 className="text-sm sm:text-xl font-bold text-slate-900 flex items-center gap-1.5 sm:gap-2">
+            <svg className="w-4 h-4 sm:w-6 sm:h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
-            Top Causes of Death
+            Top Causes
           </h3>
-          <span className="text-sm text-slate-500 font-medium">
-            Top 8 diagnoses
+          <span className="text-[10px] sm:text-sm text-slate-500 font-medium">
+            Top 8
           </span>
         </div>
-        <ResponsiveContainer width="100%" height={400}>
+        <ResponsiveContainer width="100%" height={280} className="sm:!h-[400px]">
           <BarChart
             data={topCausesData}
             layout="vertical"
-            margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+            margin={{ top: 5, right: 10, left: 5, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis type="number" stroke="#64748b" />
+            <XAxis type="number" stroke="#64748b" tick={{ fontSize: 10 }} />
             <YAxis
               type="category"
               dataKey="name"
-              width={200}
+              width={100}
               stroke="#64748b"
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 9 }}
+              tickFormatter={(value) => value.length > 18 ? value.substring(0, 18) + '...' : value}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="count" fill="#ef4444" radius={[0, 8, 8, 0]} />
+            <Bar dataKey="count" fill="#ef4444" radius={[0, 4, 4, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
         {/* Time Series - Line Chart */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 p-6"
+          className="bg-white rounded-xl sm:rounded-2xl shadow-xl border border-slate-200 p-3 sm:p-6"
         >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h3 className="text-sm sm:text-xl font-bold text-slate-900 flex items-center gap-1.5 sm:gap-2">
+              <svg className="w-4 h-4 sm:w-6 sm:h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
               </svg>
-              Mortality Trends
+              Trends
             </h3>
-            <span className="text-sm text-slate-500 font-medium">
-              Last 12 months
+            <span className="text-[10px] sm:text-sm text-slate-500 font-medium">
+              12 months
             </span>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={200} className="sm:!h-[300px]">
             <LineChart
               data={timeSeriesData}
-              margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
+              margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="month" stroke="#64748b" tick={{ fontSize: 11 }} />
-              <YAxis stroke="#64748b" />
+              <XAxis dataKey="month" stroke="#64748b" tick={{ fontSize: 9 }} />
+              <YAxis stroke="#64748b" tick={{ fontSize: 9 }} />
               <Tooltip content={<CustomTooltip />} />
-              <Legend />
               <Line
                 type="monotone"
                 dataKey="deaths"
                 stroke="#8b5cf6"
-                strokeWidth={3}
-                dot={{ fill: '#8b5cf6', r: 5 }}
-                activeDot={{ r: 8 }}
+                strokeWidth={2}
+                dot={{ fill: '#8b5cf6', r: 3 }}
+                activeDot={{ r: 5 }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -183,72 +185,72 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 p-6"
+          className="bg-white rounded-xl sm:rounded-2xl shadow-xl border border-slate-200 p-3 sm:p-6"
         >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h3 className="text-sm sm:text-xl font-bold text-slate-900 flex items-center gap-1.5 sm:gap-2">
+              <svg className="w-4 h-4 sm:w-6 sm:h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
-              Unit Distribution
+              By Unit
             </h3>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={200} className="sm:!h-[300px]">
             <BarChart
               data={unitDistributionData}
-              margin={{ top: 5, right: 30, left: 0, bottom: 5 }}
+              margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 11 }} />
-              <YAxis stroke="#64748b" />
+              <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 9 }} />
+              <YAxis stroke="#64748b" tick={{ fontSize: 9 }} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="value" fill="#10b981" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </motion.div>
       </div>
 
-      {/* Summary Stats Row */}
+      {/* Summary Stats Row - Mobile: 2x2 grid */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
-        className="grid grid-cols-2 md:grid-cols-4 gap-4"
+        className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4"
       >
-        <div className="bg-gradient-to-br from-blue-50 to-sky-50 rounded-xl p-4 border-2 border-blue-200">
-          <div className="text-sm text-blue-600 font-medium mb-1">Average Age</div>
-          <div className="text-2xl font-bold text-blue-900">
+        <div className="bg-gradient-to-br from-blue-50 to-sky-50 rounded-lg sm:rounded-xl p-2.5 sm:p-4 border border-blue-200">
+          <div className="text-[10px] sm:text-sm text-blue-600 font-medium mb-0.5 sm:mb-1">Avg Age</div>
+          <div className="text-lg sm:text-2xl font-bold text-blue-900">
             {patients.length > 0
               ? (patients.reduce((sum, p) => sum + (p.age || 0), 0) / patients.length).toFixed(1)
               : '0'}
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl p-4 border-2 border-red-200">
-          <div className="text-sm text-red-600 font-medium mb-1">Male Patients</div>
-          <div className="text-2xl font-bold text-red-900">
+        <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg sm:rounded-xl p-2.5 sm:p-4 border border-red-200">
+          <div className="text-[10px] sm:text-sm text-red-600 font-medium mb-0.5 sm:mb-1">Male</div>
+          <div className="text-lg sm:text-2xl font-bold text-red-900">
             {patients.filter(p => p.gender === 'Male').length}
-            <span className="text-sm text-red-600 ml-1">
+            <span className="text-[10px] sm:text-sm text-red-600 ml-0.5 sm:ml-1">
               ({patients.length > 0 ? ((patients.filter(p => p.gender === 'Male').length / patients.length) * 100).toFixed(0) : 0}%)
             </span>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl p-4 border-2 border-purple-200">
-          <div className="text-sm text-purple-600 font-medium mb-1">Female Patients</div>
-          <div className="text-2xl font-bold text-purple-900">
+        <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg sm:rounded-xl p-2.5 sm:p-4 border border-purple-200">
+          <div className="text-[10px] sm:text-sm text-purple-600 font-medium mb-0.5 sm:mb-1">Female</div>
+          <div className="text-lg sm:text-2xl font-bold text-purple-900">
             {patients.filter(p => p.gender === 'Female').length}
-            <span className="text-sm text-purple-600 ml-1">
+            <span className="text-[10px] sm:text-sm text-purple-600 ml-0.5 sm:ml-1">
               ({patients.length > 0 ? ((patients.filter(p => p.gender === 'Female').length / patients.length) * 100).toFixed(0) : 0}%)
             </span>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border-2 border-emerald-200">
-          <div className="text-sm text-emerald-600 font-medium mb-1">AI Interpreted</div>
-          <div className="text-2xl font-bold text-emerald-900">
+        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg sm:rounded-xl p-2.5 sm:p-4 border border-emerald-200">
+          <div className="text-[10px] sm:text-sm text-emerald-600 font-medium mb-0.5 sm:mb-1">AI</div>
+          <div className="text-lg sm:text-2xl font-bold text-emerald-900">
             {patients.filter(p => p.aiInterpretedDeathDiagnosis).length}
-            <span className="text-sm text-emerald-600 ml-1">
+            <span className="text-[10px] sm:text-sm text-emerald-600 ml-0.5 sm:ml-1">
               ({patients.length > 0 ? ((patients.filter(p => p.aiInterpretedDeathDiagnosis).length / patients.length) * 100).toFixed(0) : 0}%)
             </span>
           </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { MotionConfig, motion } from 'framer-motion';
-import { auth, db } from './firebaseConfig';
+import { auth, db, authReady } from './firebaseConfig';
 import { handleRedirectResult } from './services/authService';
 import ErrorBoundary from './components/core/ErrorBoundary';
 import Login from './components/Login';
@@ -21,9 +21,12 @@ const DistrictAdminDashboard = lazy(() => import('./components/DistrictAdminDash
 const ReferralManagementPage = lazy(() => import('./components/ReferralManagementPage'));
 const PatientForm = lazy(() => import('./components/PatientForm'));
 
+// Module-level flag to ensure redirect is handled only once per page load
+let redirectHandled = false;
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [institutionUserData, setInstitutionUserData] = useState<InstitutionUser | null>(null); // Full user data with allowedDashboards
   const [loading, setLoading] = useState(true);
@@ -151,56 +154,112 @@ function App() {
   const isOnMainPage = !showSuperAdminPanel && !showAdminPanel && !showReferralManagement &&
     !showAddPatientPage && !superAdminViewingInstitution && !districtAdminViewingInstitution;
 
-  // Check for redirect result on app load (only once)
+  // Combined auth initialization effect
+  // IMPORTANT: Set up onAuthStateChanged BEFORE checking redirect result
+  // This ensures the listener is ready when Firebase updates auth state from redirect
   useEffect(() => {
-    const checkRedirect = async () => {
-      if (!redirectChecked) {
-        try {
-          const user = await handleRedirectResult();
-          if (user) {
-            console.log('✅ User signed in via redirect:', user.email);
+    let unsubscribe: (() => void) | undefined;
+    let mounted = true;
+
+    const initializeAuth = async () => {
+      try {
+        // Step 1: Wait for auth persistence to be ready
+        console.log('🔄 Waiting for auth persistence...');
+        await authReady;
+        console.log('✅ Auth persistence ready');
+
+        if (!mounted) return;
+
+        // Step 2: Set up auth state listener FIRST
+        // This listener will fire when:
+        // - User is already logged in (from localStorage)
+        // - Redirect completes and Firebase updates auth state
+        // - User logs out
+        unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+          if (!mounted) return;
+
+          try {
+            if (firebaseUser) {
+              console.log('👤 Auth state changed - user:', firebaseUser.email);
+              if (!firebaseUser.email) {
+                console.error('❌ User has no email');
+                setAccessDenied(true);
+                setAccessMessage('User account has no email address associated with it.');
+                setUser(null);
+                setUserProfile(null);
+                setLoading(false);
+                return;
+              }
+              setUser(firebaseUser);
+              await loadUserProfile(firebaseUser);
+            } else {
+              console.log('👤 Auth state changed - no user');
+              setUser(null);
+              setUserProfile(null);
+              setAccessDenied(false);
+              setLoading(false);
+            }
+          } catch (error) {
+            console.error('❌ Auth state change error:', error);
+            setUser(null);
+            setUserProfile(null);
+            setLoading(false);
           }
-        } catch (error: any) {
-          console.error('❌ Redirect result error:', error);
-        } finally {
+        });
+
+        // Step 3: Check for redirect result
+        // The auth state listener above will handle the user when redirect completes
+        // This call ensures we process any pending redirect and catch errors
+        if (!redirectHandled) {
+          redirectHandled = true;
+
+          try {
+            console.log('🔄 Checking for redirect result...');
+            const user = await handleRedirectResult();
+            if (user) {
+              console.log('✅ User signed in via redirect:', user.email);
+              // Auth state listener will handle the rest
+            } else {
+              console.log('ℹ️ No redirect result');
+            }
+          } catch (error: any) {
+            console.error('❌ Redirect result error:', error);
+            // Only show error if it's not a cancelled/closed popup
+            if (!error.message?.includes('cancelled')) {
+              setAuthError(error.message || 'Failed to complete sign in.');
+            }
+          } finally {
+            if (mounted) {
+              setRedirectChecked(true);
+              // Ensure loading is set to false if no user is logged in after redirect check
+              // Give Firebase a moment to update auth state
+              setTimeout(() => {
+                if (mounted && !auth.currentUser) {
+                  setLoading(false);
+                }
+              }, 500);
+            }
+          }
+        } else {
+          if (mounted && !redirectChecked) {
+            setRedirectChecked(true);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Auth initialization error:', error);
+        if (mounted) {
+          setLoading(false);
           setRedirectChecked(true);
         }
       }
     };
 
-    checkRedirect();
-  }, [redirectChecked]);
+    initializeAuth();
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      try {
-        if (firebaseUser) {
-          if (!firebaseUser.email) {
-            console.error('❌ User has no email');
-            setAccessDenied(true);
-            setAccessMessage('User account has no email address associated with it.');
-            setUser(null);
-            setUserProfile(null);
-            setLoading(false);
-            return;
-          }
-          setUser(firebaseUser);
-          await loadUserProfile(firebaseUser);
-        } else {
-          setUser(null);
-          setUserProfile(null);
-          setAccessDenied(false);
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error('❌ Auth state change error:', error);
-        setUser(null);
-        setUserProfile(null);
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
+    return () => {
+      mounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const loadUserProfile = async (firebaseUser: User) => {
@@ -462,8 +521,9 @@ function App() {
     }
   };
 
-  // Loading state
-  if (loading) {
+  // Loading state - wait for BOTH loading to complete AND redirect check to finish
+  // This prevents showing Login screen briefly before redirect auth is processed
+  if (loading || !redirectChecked) {
     return (
       <div className="bg-sky-100 min-h-screen flex items-center justify-center pwa-full-height">
         <motion.div
@@ -479,9 +539,9 @@ function App() {
     );
   }
 
-  // Not logged in
+  // Not logged in (only show after redirect check is complete)
   if (!user) {
-    return <Login />;
+    return <Login initialError={authError} />;
   }
 
   // Access denied

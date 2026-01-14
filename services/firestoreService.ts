@@ -261,21 +261,47 @@ export const deletePatient = async (collegeId: string, patientId: string): Promi
     // Delete progress notes first
     const notesRef = collection(db, 'colleges', collegeId, 'patients', patientId, 'progressNotes');
     const notesSnapshot = await getDocs(notesRef);
-    
+
     const batch = writeBatch(db);
     notesSnapshot.docs.forEach((doc) => {
       batch.delete(doc.ref);
     });
-    
+
     // Delete patient document
     const patientRef = doc(db, 'colleges', collegeId, 'patients', patientId);
     batch.delete(patientRef);
-    
+
     await batch.commit();
   } catch (error) {
     console.error('Error deleting patient:', error);
     throw error;
   }
+};
+
+// Delete multiple patients (for admin bulk delete)
+export const deleteMultiplePatients = async (collegeId: string, patientIds: string[]): Promise<{ success: number; failed: number }> => {
+  let success = 0;
+  let failed = 0;
+
+  // Process in batches of 10 to avoid overwhelming Firestore
+  const batchSize = 10;
+  for (let i = 0; i < patientIds.length; i += batchSize) {
+    const batchIds = patientIds.slice(i, i + batchSize);
+
+    await Promise.all(
+      batchIds.map(async (patientId) => {
+        try {
+          await deletePatient(collegeId, patientId);
+          success++;
+        } catch (error) {
+          console.error(`Error deleting patient ${patientId}:`, error);
+          failed++;
+        }
+      })
+    );
+  }
+
+  return { success, failed };
 };
 
 // Get or create user profile

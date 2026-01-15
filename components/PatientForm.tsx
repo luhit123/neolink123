@@ -1372,6 +1372,9 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         setShowProgressNoteForm(false);
                         setEditingNoteIndex(null);
                       }}
+                      onUpdatePatient={(updatedPatient) => {
+                        setPatient(updatedPatient);
+                      }}
                       existingNote={editingNoteIndex !== null ? patient.progressNotes?.[editingNoteIndex] : undefined}
                       lastNote={(patient.progressNotes?.length || 0) > 0 ? patient.progressNotes?.[patient.progressNotes.length - 1] : undefined}
                       userEmail={userEmail}

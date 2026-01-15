@@ -3,7 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ProgressNote, Patient } from '../../types';
 import { GoogleGenAI } from '@google/genai';
 import { audioRecorder } from '../../utils/audioRecorder';
-import { transcribeWithMedAsr, isMedAsrConfigured } from '../../services/medAsrService';
+import {
+  transcribeWithDeepgram,
+  isDeepgramConfigured,
+  startLiveTranscription,
+  stopLiveTranscription
+} from '../../services/deepgramService';
 import {
   Mic, Square, FileText, RefreshCw, X, Plus, Edit3,
   Volume2, Pause, Play, Trash2, Save, Wand2, Stethoscope, Radio
@@ -13,6 +18,7 @@ interface VoiceClinicalNoteProps {
   patient?: Patient;
   onSave: (note: ProgressNote) => void;
   onCancel: () => void;
+  onUpdatePatient?: (patient: Patient) => void; // Callback to update patient data (e.g., medications)
   existingNote?: ProgressNote;
   userEmail?: string;
   userName?: string;
@@ -29,7 +35,8 @@ interface RecordingSession {
  * VoiceClinicalNote - World-Class Voice Clinical Documentation
  *
  * State-of-the-art features:
- * - RunPod MedASR for medical speech-to-text (serverless)
+ * - Deepgram Nova-3 for medical speech-to-text (latest model)
+ * - Real-time streaming transcription
  * - Audio waveform visualization
  * - Multiple recording sessions with append mode
  * - Editable formatted note
@@ -40,6 +47,7 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
   patient,
   onSave,
   onCancel,
+  onUpdatePatient,
   existingNote,
   userEmail,
   userName
@@ -75,19 +83,21 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const finalTranscriptRef = useRef<string>(''); // Accumulate final results
+  const interimTranscriptRef = useRef<string>(''); // Track interim results
 
-  // Initialize Gemini AI and check MedASR
+  // Initialize Gemini AI and check Deepgram
   useEffect(() => {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (apiKey) {
       aiRef.current = new GoogleGenAI({ apiKey });
     }
 
-    // Check MedASR configuration
-    if (!isMedAsrConfigured()) {
-      console.warn('MedASR not configured. Check RunPod API key and endpoint ID.');
+    // Check Deepgram configuration
+    if (!isDeepgramConfigured()) {
+      console.warn('Deepgram not configured. Check Deepgram API key.');
     } else {
-      console.log('MedASR configured and ready');
+      console.log('Deepgram configured and ready');
     }
 
     return () => {
@@ -169,21 +179,59 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     return `Day ${diffDays} of Admission`;
   };
 
-  // Start recording
+  // Start recording with live transcription
   const startRecording = async () => {
     setError('');
     setLiveTranscript('');
     setRecordingTime(0);
     setTranscriptionStatus('');
+    finalTranscriptRef.current = '';
+    interimTranscriptRef.current = '';
 
-    // Check MedASR configuration
-    if (!isMedAsrConfigured()) {
-      setError('MedASR not configured. Please check RunPod API settings.');
+    // Check Deepgram configuration
+    if (!isDeepgramConfigured()) {
+      setError('Deepgram not configured. Please check Deepgram API key in settings.');
       return;
     }
 
     try {
-      // Start audio recording
+      console.log('🎤 Starting recording with Deepgram Nova-3 live streaming...');
+
+      // Start live transcription with Deepgram streaming
+      await startLiveTranscription(
+        (transcript: string, isFinal: boolean) => {
+          console.log(`📝 Transcript ${isFinal ? 'FINAL' : 'interim'}:`, transcript);
+
+          if (isFinal) {
+            // Final result - add to accumulated final text
+            finalTranscriptRef.current = finalTranscriptRef.current
+              ? `${finalTranscriptRef.current} ${transcript}`
+              : transcript;
+            interimTranscriptRef.current = ''; // Clear interim
+
+            // Update display with final text only
+            setLiveTranscript(finalTranscriptRef.current);
+            console.log('✅ Final accumulated:', finalTranscriptRef.current);
+          } else {
+            // Interim result - temporary text
+            interimTranscriptRef.current = transcript;
+
+            // Display: final + interim (with separator)
+            const displayText = finalTranscriptRef.current
+              ? `${finalTranscriptRef.current} ${transcript}`
+              : transcript;
+            setLiveTranscript(displayText);
+          }
+        },
+        (error: string) => {
+          console.error('❌ Live transcription error:', error);
+          setError(`Transcription error: ${error}`);
+        }
+      );
+
+      console.log('✅ Live transcription started successfully');
+
+      // Start audio recording (for backup)
       await audioRecorder.start({
         onError: (err) => {
           setError(err);
@@ -191,19 +239,21 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
         }
       });
 
-      // Get media stream for visualization
+      // Get media stream for visualization (separate from streaming)
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       await startAudioVisualization(stream);
 
       setIsRecording(true);
       setIsPaused(false);
+      setTranscriptionStatus('🎤 Listening...');
 
       timerRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
 
     } catch (err) {
+      console.error('❌ Failed to start recording:', err);
       setError((err as Error).message);
     }
   };
@@ -224,8 +274,10 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     setIsPaused(false);
   };
 
-  // Stop recording and transcribe with MedASR
+  // Stop recording and transcribe with Deepgram
   const stopRecording = async () => {
+    console.log('🛑 Stopping recording...');
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
@@ -236,57 +288,57 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
     }
 
+    // Stop live transcription
+    stopLiveTranscription();
+
     setIsRecording(false);
     setIsPaused(false);
+    setTranscriptionStatus('');
 
     const currentDuration = recordingTime;
+    // Use the final accumulated transcript from ref
+    const finalTranscript = finalTranscriptRef.current.trim();
+
+    console.log('📝 Final transcript from Deepgram:', finalTranscript);
+    console.log('⏱️ Recording duration:', currentDuration, 'seconds');
 
     try {
-      const audioBlob = await audioRecorder.stop();
+      // Stop audio recorder
+      await audioRecorder.stop();
 
-      if (!audioBlob || audioBlob.size < 1000) {
-        setError('Recording too short. Please speak for at least 3 seconds.');
+      if (!finalTranscript || finalTranscript.length < 3) {
+        console.warn('⚠️ No speech detected or recording too short');
+        setError('No speech detected. Please speak clearly and try again.');
+        setLiveTranscript('');
+        finalTranscriptRef.current = '';
+        interimTranscriptRef.current = '';
         return;
       }
 
-      // Transcribe with RunPod MedASR
-      setIsProcessing(true);
-      setProcessingStep('transcribing');
+      // Create new session with the live transcript
+      const newSession: RecordingSession = {
+        id: Date.now().toString(),
+        transcript: finalTranscript,
+        duration: currentDuration,
+        timestamp: new Date()
+      };
 
-      const audioBase64 = await audioRecorder.blobToBase64(audioBlob);
+      setSessions(prev => [...prev, newSession]);
 
-      const finalTranscript = await transcribeWithMedAsr(audioBase64, (status) => {
-        setTranscriptionStatus(status);
-      });
+      // Update combined transcript
+      setCombinedTranscript(prev =>
+        prev ? `${prev} ${finalTranscript}` : finalTranscript
+      );
 
-      setIsProcessing(false);
-      setProcessingStep('');
-      setTranscriptionStatus('');
-
-      if (finalTranscript && finalTranscript.trim()) {
-        // Create new session
-        const newSession: RecordingSession = {
-          id: Date.now().toString(),
-          transcript: finalTranscript.trim(),
-          duration: currentDuration,
-          timestamp: new Date()
-        };
-
-        setSessions(prev => [...prev, newSession]);
-
-        // Update combined transcript
-        setCombinedTranscript(prev =>
-          prev ? `${prev} ${finalTranscript.trim()}` : finalTranscript.trim()
-        );
-
-        setLiveTranscript(finalTranscript.trim());
-      } else {
-        setError('No speech detected. Please try again.');
-      }
-
+      setLiveTranscript('');
       setRecordingTime(0);
+      finalTranscriptRef.current = '';
+      interimTranscriptRef.current = '';
+
+      console.log('✅ Recording session saved:', newSession);
 
     } catch (err) {
+      console.error('❌ Error stopping recording:', err);
       setError((err as Error).message);
       setIsProcessing(false);
       setProcessingStep('');
@@ -330,107 +382,328 @@ ${dayInfo ? `- ${dayInfo}` : ''}
 
 GENERATE THIS EXACT FORMAT:
 
-================================================================================
-                          CLINICAL PROGRESS NOTE
-================================================================================
+CLINICAL PROGRESS NOTE
+
 Date: ${date}                                              Time: ${time}
 ${dayInfo || ''}
---------------------------------------------------------------------------------
 
 VITALS
---------------------------------------------------------------------------------
 Temp:           HR:             RR:             SpO2:
 BP:             CRT:            Weight:
---------------------------------------------------------------------------------
 
 SYSTEMIC EXAMINATION
---------------------------------------------------------------------------------
-CNS   : [findings]
-CVS   : [findings]
-CHEST : [findings]
-P/A   : [findings]
---------------------------------------------------------------------------------
+CNS   :
+CVS   :
+CHEST :
+P/A   :
 
 OTHER FINDINGS
---------------------------------------------------------------------------------
-[any additional findings - skin, jaundice, access, urine output, etc.]
---------------------------------------------------------------------------------
+
 
 TREATMENT
---------------------------------------------------------------------------------
-[Structure as applicable:]
 
 Respiratory Support:
-[CPAP/Ventilator/O2/Room air with parameters]
 
 Inotropic Support:
-[Dopamine/Dobutamine/Adrenaline/Noradrenaline with doses in mcg/kg/min]
 
 Medications:
-[Antibiotics and other drugs with doses]
 
 IV Fluids:
-[Type and rate]
 
 Feeds:
-[Type, volume, frequency]
-
-[If nothing mentioned: "Continue current treatment"]
---------------------------------------------------------------------------------
 
 IMPRESSION
---------------------------------------------------------------------------------
-[Clinical status summary]
---------------------------------------------------------------------------------
 
-PLAN
---------------------------------------------------------------------------------
-[Management plan items]
---------------------------------------------------------------------------------
 
-ADVICE
---------------------------------------------------------------------------------
-[Any advice/counseling points]
---------------------------------------------------------------------------------
+PLAN AND ADVICE
+
 
                                                     Dr. ${userName || '_____________'}
-================================================================================
 
-EXTRACTION RULES:
-1. VITALS: Extract ALL numbers - temp (37.5, 38), HR (140, 160), RR (48, 60), SpO2 (95%, 98%), BP (70/40), CRT (2 sec, <3 sec)
-   - "vitals normal/stable" = Temp: 36.8C  HR: 140/min  RR: 48/min  SpO2: 98%
+STATE-OF-THE-ART DOCUMENTATION RULES:
 
-2. CNS: Look for - alert, active, tone (normal/hypo/hyper), fontanelle (flat/bulging), reflexes
-   - "CNS normal" = Alert, active, normal tone, AF flat, reflexes present
+GOLDEN RULE: Only write what is SAID. If a specific finding is mentioned, write ONLY that finding.
+If a system is "normal" or not mentioned, write concise standard normal findings.
 
-3. CVS: Look for - S1 S2, murmur, perfusion, pulses, CRT
-   - "CVS normal" = S1S2 heard, no murmur, well perfused, pulses palpable
+1. VITALS - BE PRECISE:
+   If specific numbers mentioned → Write EXACTLY those numbers
+   Example: "Temp 38, HR 150" → Temp: 38°C  HR: 150/min
 
-4. CHEST: Look for - air entry (AE), breath sounds, retractions, added sounds
-   - "Chest clear" = B/L AE equal, no added sounds, no retractions
+   If "vitals stable/normal" → Write age-appropriate normals:
+   - Neonate: Temp: 37°C, HR: 140/min, RR: 48/min, SpO2: 98%
+   - Infant: Temp: 37°C, HR: 120/min, RR: 35/min, SpO2: 98%
+   - Toddler: Temp: 37°C, HR: 100/min, RR: 25/min, SpO2: 99%
 
-5. P/A: Look for - soft/distended, bowel sounds, organomegaly, feeds
-   - "Abdomen normal" = Soft, non-distended, BS present, no organomegaly
+2. CNS - BRAIN/NEUROLOGICAL ONLY:
+   Specific finding mentioned → Write ONLY that finding:
+   - "Baby has seizures" → CNS: Seizure activity noted
+   - "Fontanelle bulging" → CNS: AF bulging
+   - "Tone decreased" → CNS: Hypotonia
+   - "Lethargy" → CNS: Lethargic
+   - "Irritable" → CNS: Irritable
 
-6. RESPIRATORY SUPPORT - ALWAYS under TREATMENT:
-   - CPAP: "CPAP PEEP 5 FiO2 50" → CPAP with PEEP 5 cmH2O, FiO2 50%
-   - Ventilator: Include Mode, PIP, PEEP, FiO2, Rate
-   - O2: "2 liters" → O2 @ 2 L/min
-   - Room air: Mention if stated
+   If "CNS normal" or not mentioned → Write:
+   CNS: Alert and active
+   OR
+   CNS: WNL
 
-7. INOTROPES - ALWAYS under TREATMENT:
-   - Dopamine/Dobutamine: dose in mcg/kg/min
-   - Adrenaline/Noradrenaline: dose in mcg/kg/min
+3. CVS - HEART/CARDIAC ONLY:
+   Specific finding mentioned → Write ONLY that finding:
+   - "Murmur present" → CVS: Murmur heard
+   - "Tachycardia" → CVS: Tachycardia
+   - "CRT delayed" → CVS: CRT >3 sec
 
-8. Empty sections: Leave blank or write "Not documented"
+   DO NOT write extremity findings (cold/clammy) here - those go in OTHER FINDINGS
 
-CRITICAL RULES:
-- Extract EVERY piece of clinical information
-- RESPIRATORY SUPPORT goes under TREATMENT, never in OTHER FINDINGS
-- INOTROPES go under TREATMENT
-- NO emojis, NO assumptions beyond what is stated
-- Preserve exact values mentioned
-- If "all normal" or "vitals stable" - fill standard normal values`;
+   If "CVS normal" or not mentioned → Write:
+   CVS: S1S2+, no murmur
+
+4. CHEST - CONCISE & SMART:
+   Specific finding mentioned → Write ONLY that finding:
+   - "Subcostal retractions present" → CHEST: Subcostal retractions present
+   - "Grunting" → CHEST: Expiratory grunting
+   - "Decreased air entry left" → CHEST: Decreased AE left side
+   - "Bilateral crackles" → CHEST: B/L crackles
+
+   If "Chest clear/normal" or not mentioned → Write standard normal:
+   CHEST: B/L AE equal, no retractions
+
+5. P/A (PER ABDOMEN) - CONCISE & SMART:
+   Specific finding mentioned → Write ONLY that finding:
+   - "Abdomen distended" → P/A: Distended
+   - "Vomiting" → P/A: Vomiting noted
+   - "Tender" → P/A: Tender on palpation
+
+   If "Abdomen normal/soft" or not mentioned → Write standard normal:
+   P/A: Soft, BS+
+
+MEDICAL ABBREVIATIONS TO USE:
+- AE = Air Entry
+- B/L = Bilateral
+- BS = Bowel Sounds
+- AF = Anterior Fontanelle
+- S1S2+ = Heart sounds present
+- CRT = Capillary Refill Time
+- RR = Respiratory Rate
+- HR = Heart Rate
+- SpO2 = Oxygen Saturation
+- P/A = Per Abdomen
+
+6. OTHER FINDINGS - For Non-System Specific:
+   Use for findings that don't fit CNS/CVS/CHEST/P/A:
+   - Extremities: "Cold extremities", "Clammy", "Mottled", "Edema"
+   - Skin: "Jaundice", "Rash", "Cyanosis", "Petechiae"
+   - Access: "PIV in situ", "UVC in place", "UAC in situ"
+   - Urine: "Adequate urine output", "Oliguria", "Anuria"
+   - Perfusion: "Poor perfusion", "Mottling" (if mentioned as extremity finding)
+
+   Be concise: "Jaundice present" NOT "Jaundice is present in the baby"
+
+   If nothing specific mentioned, leave blank or write nothing
+
+7. MEDICATIONS - Professional Format:
+   Remove action words, use proper prefixes:
+   - "started vancomycin 15mg/kg" → "Inj Vancomycin 15mg/kg IV"
+   - "given ampicillin" → "Inj Ampicillin [dose]"
+   - "oral phenobarbitone 20mg" → "Syp Phenobarbitone 20mg PO"
+   - "paracetamol IV" → "Inj Paracetamol [dose]"
+
+   Format: Inj/Tab/Syp/Cap [Drug] [dose] [route] [frequency]
+
+8. RESPIRATORY SUPPORT - Under TREATMENT Only:
+   - "On CPAP" → TREATMENT: CPAP with PEEP X cmH2O, FiO2 X%
+   - "Ventilator" → TREATMENT: Ventilator mode [SIMV/AC], PIP X, PEEP X, FiO2 X%, Rate X
+   - "O2 via nasal cannula" → TREATMENT: O2 @ X L/min via nasal cannula
+   - NEVER write respiratory support in OTHER FINDINGS
+
+9. INOTROPES - Under TREATMENT Only:
+   - "On dopamine" → TREATMENT: Dopamine @ X mcg/kg/min
+   - "Adrenaline" → TREATMENT: Adrenaline @ X mcg/kg/min
+   Always include dose if mentioned
+
+10. BE SMART, BE CONCISE:
+    - Don't write verbose sentences
+    - Use medical abbreviations
+    - Be precise and professional
+    - If not mentioned, use standard concise normals
+    - If mentioned, write ONLY what's said
+
+11. IMPRESSION - STATE-OF-THE-ART CLINICAL SYNTHESIS:
+    The IMPRESSION is the MOST IMPORTANT section - it synthesizes all findings into a clear diagnosis.
+
+    GOLDEN RULES FOR IMPRESSIVE IMPRESSIONS:
+
+    a) START WITH PRIMARY DIAGNOSIS:
+       - Lead with the main diagnosis or chief problem
+       - Use proper medical terminology
+       - Be specific and definitive
+
+    b) ADD SEVERITY/STATUS:
+       - Include severity: mild/moderate/severe
+       - Include trend: improving/worsening/stable
+       - Include treatment response if mentioned
+
+    c) LIST COMPLICATIONS/CONCERNS:
+       - List secondary diagnoses or complications
+       - Numbered or bulleted format for clarity
+       - Each on a new line for readability
+
+    d) BE CONCISE BUT COMPLETE:
+       - No unnecessary words
+       - Include all significant problems
+       - Prioritize by clinical importance
+
+    STRUCTURE:
+    Primary Diagnosis (severity/status)
+    1. Complication/concern #1
+    2. Complication/concern #2
+    3. Additional problems
+
+    EXAMPLES OF STELLAR IMPRESSIONS:
+
+    Example A - Respiratory Distress Syndrome:
+    IMPRESSION:
+    Respiratory Distress Syndrome (moderate, improving on CPAP)
+    1. Prematurity (32 weeks GA)
+    2. Rule out early onset sepsis - on antibiotics
+    3. Hyperbilirubinemia - under phototherapy
+
+    Example B - Neonatal Sepsis:
+    IMPRESSION:
+    Early Onset Neonatal Sepsis (culture positive - E.coli, improving)
+    1. Respiratory distress - resolved
+    2. Metabolic acidosis - corrected
+    3. Thrombocytopenia - recovering
+
+    Example C - Meconium Aspiration:
+    IMPRESSION:
+    Meconium Aspiration Syndrome (severe, on mechanical ventilation)
+    1. Persistent Pulmonary Hypertension
+    2. Acute Kidney Injury - oliguria present
+    3. Perinatal asphyxia
+
+    Example D - Seizures:
+    IMPRESSION:
+    Neonatal Seizures (controlled on phenobarbitone)
+    1. Hypoxic Ischemic Encephalopathy - Grade II
+    2. Metabolic derangements - corrected
+
+    Example E - Simple stable case:
+    IMPRESSION:
+    Transient Tachypnea of Newborn (resolved)
+    Clinically stable
+
+    WHAT MAKES AN IMPRESSION AWESOME:
+    ✓ Clear primary diagnosis at the top
+    ✓ Clinical status/severity included
+    ✓ Complications listed systematically
+    ✓ Easy to understand at a glance
+    ✓ No vague terms like "sick baby" or "unwell"
+    ✓ Proper medical terminology
+    ✓ Prioritized by importance
+    ✓ Treatment response if mentioned
+
+    AVOID IN IMPRESSION:
+    ✗ Vague statements: "Baby is sick", "Not doing well"
+    ✗ Too much detail: Save details for examination
+    ✗ Repeating vitals: Already documented above
+    ✗ Long paragraphs: Use structured list
+    ✗ Uncertainty without reason: Instead of "? Sepsis", write "Rule out sepsis"
+
+CRITICAL RULES FOR STATE-OF-THE-ART DOCUMENTATION:
+
+✓ BE LITERAL: If a specific finding is mentioned → Write ONLY that finding, nothing more
+✓ BE SMART: If "normal" or not mentioned → Write concise standard normal findings
+✓ USE ABBREVIATIONS: AE, B/L, BS, S1S2+, CRT, WNL (professional & concise)
+✓ BE CONCISE: "Soft, BS+" not "Soft, non-distended, bowel sounds present, no organomegaly"
+✓ DON'T ADD: If user says "subcostal retractions", write ONLY that, don't add other findings
+✓ DON'T REPEAT: Don't write "normal" - use specific abbreviated findings
+✓ NO PLACEHOLDERS: Remove all [brackets], template text, "any advice/counseling", etc.
+✓ CLEAN SECTIONS: If section empty, leave blank - don't write placeholder text
+✓ CNS NORMAL: Just "Alert and active" or "WNL" - NO fontanelle in normal
+✓ EXTREMITIES: Cold/clammy extremities → OTHER FINDINGS, NOT CVS
+✓ SYSTEM-SPECIFIC: CVS = heart only, CHEST = lungs only, CNS = brain only
+✓ MEDICATIONS: Inj/Tab/Syp format, remove "started/given"
+✓ NO EMOJIS, NO MARKDOWN, CLEAN PROFESSIONAL DOCUMENTATION
+
+PERFECT EXAMPLES:
+
+Example 1 - Mixed findings:
+Voice: "Subcostal retractions present, other systems normal, vitals stable"
+CORRECT:
+VITALS: Temp: 37°C  HR: 140/min  RR: 48/min  SpO2: 98%
+CNS   : Alert and active
+CVS   : S1S2+, no murmur
+CHEST : Subcostal retractions present
+P/A   : Soft, BS+
+
+Example 2 - All normal:
+Voice: "Baby is stable, all systems normal"
+CORRECT:
+VITALS: Temp: 37°C  HR: 140/min  RR: 48/min  SpO2: 98%
+CNS   : WNL
+CVS   : S1S2+, no murmur
+CHEST : B/L AE equal, no retractions
+P/A   : Soft, BS+
+
+Example 3 - Cold extremities (goes to OTHER FINDINGS):
+Voice: "Cold and clammy extremities, jaundice present, CVS normal"
+CORRECT:
+CVS: S1S2+, no murmur
+OTHER FINDINGS: Cold and clammy extremities, jaundice present
+
+Example 4 - Specific findings with empty sections:
+Voice: "Baby has seizures, abdomen distended, started phenobarbitone"
+CORRECT:
+CNS: Seizure activity noted
+CVS: S1S2+, no murmur
+CHEST: B/L AE equal, no retractions
+P/A: Distended
+OTHER FINDINGS:
+(leave blank if nothing to write)
+TREATMENT
+Medications: Inj Phenobarbitone [dose]
+
+Example 5 - Clean sections, no placeholders:
+Voice: "Respiratory distress with grunting, on CPAP PEEP 5 FiO2 40"
+CORRECT:
+CHEST: Expiratory grunting, tachypnea
+TREATMENT
+Respiratory Support: CPAP with PEEP 5 cmH2O, FiO2 40%
+
+Example 6 - Complete Note with IMPRESSION and PLAN AND ADVICE:
+Voice: "Baby has respiratory distress, grunting present, on CPAP PEEP 5, SpO2 92%, continue surfactant, chest X-ray needed"
+CORRECT:
+VITALS: SpO2: 92%
+CNS: Alert and active
+CVS: S1S2+, no murmur
+CHEST: Expiratory grunting, subcostal retractions
+P/A: Soft, BS+
+
+TREATMENT
+Respiratory Support: CPAP with PEEP 5 cmH2O
+Medications: Inj Surfactant (given)
+
+IMPRESSION:
+Respiratory Distress Syndrome (moderate, on CPAP)
+1. Prematurity
+2. Rule out pneumonia
+
+PLAN AND ADVICE:
+- Continue CPAP, wean as tolerated
+- Chest X-ray to assess lung fields
+- Monitor SpO2 closely
+- If worsening, consider intubation
+- Counsel parents regarding progress
+
+REMEMBER:
+- NO placeholder text like "[any findings]" or "any advice/counseling"
+- Empty sections stay empty - don't fill with template text
+- CNS normal = "Alert and active" or "WNL" (NOT "AF flat")
+- Cold/clammy extremities = OTHER FINDINGS (NOT CVS)
+- System-specific only (CVS = heart, CHEST = lungs, CNS = brain)
+- IMPRESSION must be concise, structured, and state primary diagnosis clearly
+- PLAN AND ADVICE should be actionable bullet points`;
 
     try {
       const response = await aiRef.current!.models.generateContent({
@@ -464,12 +737,177 @@ CRITICAL RULES:
     setCombinedTranscript(remaining.map(s => s.transcript).join(' '));
   };
 
+  // Parse medications from clinical note text
+  const parseMedications = (noteText: string) => {
+    const medications: Array<{ name: string; dose: string; route?: string; frequency?: string; startDate?: string; isActive?: boolean; addedBy?: string; addedAt?: string }> = [];
+
+    // Find the Medications section in the note
+    const medicationsMatch = noteText.match(/Medications?:\s*([\s\S]*?)(?=\n\n|IV Fluids:|Feeds:|IMPRESSION|PLAN|$)/i);
+
+    if (medicationsMatch && medicationsMatch[1]) {
+      const medicationsText = medicationsMatch[1].trim();
+
+      // Split by lines and parse each medication
+      const lines = medicationsText.split('\n').filter(line => line.trim());
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine || trimmedLine.toLowerCase().includes('continue current')) continue;
+
+        // Remove bullet points or dashes
+        const cleanLine = trimmedLine.replace(/^[-•*]\s*/, '');
+
+        // Match patterns like:
+        // "Inj Vancomycin 15mg/kg IV q12h"
+        // "Tab Phenobarbitone 20mg PO BD"
+        // "Inj Ampicillin 100mg/kg/dose IV"
+        // Key: Use greedy match for name, then look for dose pattern
+
+        // Pattern: Optional prefix (Inj/Tab/Syp) + Name (greedy until dose or route) + Optional dose + Optional route + Optional frequency
+        const medicationRegex = /^(?:Inj\.?|Tab\.?|Syp\.?|Cap\.?|Susp\.?)?\s*([A-Za-z][A-Za-z\s\-]+?)(?:\s+(\d+(?:\.\d+)?(?:\s*(?:mg|mcg|g|ml|units?))?(?:\s*\/\s*kg)?(?:\s*\/\s*dose)?(?:\s*\/\s*day)?))?\s*(?:(IV|PO|IM|SC|PR|Oral|Topical|Intravenous|Per\s*Oral))?\s*(?:(q\d+h|BD|TDS|TID|QID|OD|PRN|STAT|Once|Twice|Thrice|daily|twice\s+daily|thrice\s+daily))?/i;
+
+        const match = cleanLine.match(medicationRegex);
+
+        if (match) {
+          let [, name, dose, route, frequency] = match;
+
+          // Clean up the name - remove trailing spaces and common stop words
+          name = name.trim().replace(/\s+(at|with|for|in|on|to|and|or|the)$/i, '');
+
+          // Only add if we have a meaningful name (more than 2 characters)
+          if (name && name.length > 2) {
+            medications.push({
+              name: name,
+              dose: dose?.trim() || 'As per protocol',
+              route: route?.trim(),
+              frequency: frequency?.trim(),
+              startDate: new Date().toISOString(),
+              isActive: true,
+              addedBy: userName || userEmail || 'Clinical Note',
+              addedAt: new Date().toISOString()
+            });
+          }
+        } else {
+          // Fallback: Try to extract medication name more intelligently
+          // Look for pattern: "Prefix DrugName" or just "DrugName"
+          const fallbackMatch = cleanLine.match(/^(?:Inj\.?|Tab\.?|Syp\.?|Cap\.?|Susp\.?)?\s*([A-Za-z][A-Za-z\s\-]+?)(?:\s+\d|\s+IV|\s+PO|\s+IM|$)/i);
+
+          if (fallbackMatch && fallbackMatch[1]) {
+            const simpleName = fallbackMatch[1].trim();
+            // Only add if name is reasonable length (3-40 characters)
+            if (simpleName.length >= 3 && simpleName.length <= 40) {
+              medications.push({
+                name: simpleName,
+                dose: 'As prescribed',
+                route: undefined,
+                frequency: undefined,
+                startDate: new Date().toISOString(),
+                isActive: true,
+                addedBy: userName || userEmail || 'Clinical Note',
+                addedAt: new Date().toISOString()
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return medications;
+  };
+
+  // Parse vitals from clinical note text
+  const parseVitals = (noteText: string) => {
+    const vitals: any = {};
+
+    const vitalsMatch = noteText.match(/VITALS\s*-+\s*([\s\S]*?)(?=-{4,}|SYSTEMIC|$)/i);
+
+    if (vitalsMatch && vitalsMatch[1]) {
+      const vitalsText = vitalsMatch[1];
+
+      // Extract temperature
+      const tempMatch = vitalsText.match(/Temp(?:erature)?:\s*(\d+\.?\d*)/i);
+      if (tempMatch) vitals.temperature = tempMatch[1];
+
+      // Extract HR
+      const hrMatch = vitalsText.match(/HR:\s*(\d+)/i);
+      if (hrMatch) vitals.hr = hrMatch[1];
+
+      // Extract RR
+      const rrMatch = vitalsText.match(/RR:\s*(\d+)/i);
+      if (rrMatch) vitals.rr = rrMatch[1];
+
+      // Extract SpO2
+      const spo2Match = vitalsText.match(/SpO2:\s*(\d+)/i);
+      if (spo2Match) vitals.spo2 = spo2Match[1];
+
+      // Extract BP
+      const bpMatch = vitalsText.match(/BP:\s*(\d+\/\d+)/i);
+      if (bpMatch) vitals.bp = bpMatch[1];
+
+      // Extract CRT
+      const crtMatch = vitalsText.match(/CRT:\s*([\d<>]+\s*sec)/i);
+      if (crtMatch) vitals.crt = crtMatch[1];
+
+      // Extract Weight
+      const weightMatch = vitalsText.match(/Weight:\s*(\d+\.?\d*)/i);
+      if (weightMatch) vitals.weight = weightMatch[1];
+    }
+
+    return vitals;
+  };
+
+  // Parse examination from clinical note text
+  const parseExamination = (noteText: string) => {
+    const examination: any = {};
+
+    const examMatch = noteText.match(/SYSTEMIC EXAMINATION\s*-+\s*([\s\S]*?)(?=-{4,}|OTHER FINDINGS|$)/i);
+
+    if (examMatch && examMatch[1]) {
+      const examText = examMatch[1];
+
+      // Extract CNS
+      const cnsMatch = examText.match(/CNS\s*:\s*([^\n]+)/i);
+      if (cnsMatch) examination.cns = cnsMatch[1].trim();
+
+      // Extract CVS
+      const cvsMatch = examText.match(/CVS\s*:\s*([^\n]+)/i);
+      if (cvsMatch) examination.cvs = cvsMatch[1].trim();
+
+      // Extract CHEST
+      const chestMatch = examText.match(/CHEST\s*:\s*([^\n]+)/i);
+      if (chestMatch) examination.chest = chestMatch[1].trim();
+
+      // Extract P/A (Per Abdomen)
+      const paMatch = examText.match(/P\/A\s*:\s*([^\n]+)/i);
+      if (paMatch) examination.perAbdomen = paMatch[1].trim();
+    }
+
+    // Extract other findings
+    const otherMatch = noteText.match(/OTHER FINDINGS\s*-+\s*([\s\S]*?)(?=-{4,}|TREATMENT|$)/i);
+    if (otherMatch && otherMatch[1]) {
+      const otherText = otherMatch[1].trim();
+      if (otherText && !otherText.toLowerCase().includes('not documented')) {
+        examination.otherFindings = otherText;
+      }
+    }
+
+    return examination;
+  };
+
   // Save note
   const handleSave = async () => {
+    // Prevent double save
+    if (isSaving) return;
+
     const noteToSave = isEditing ? editableNote : formattedNote;
     if (!noteToSave) return;
 
     setIsSaving(true);
+
+    // Parse structured data from the clinical note
+    const medications = parseMedications(noteToSave);
+    const vitals = parseVitals(noteToSave);
+    const examination = parseExamination(noteToSave);
 
     const progressNote: ProgressNote = {
       id: existingNote?.id || Date.now().toString(),
@@ -477,15 +915,51 @@ CRITICAL RULES:
       note: noteToSave,
       authorEmail: userEmail || '',
       authorName: userName || userEmail || '',
-      vitals: {},
-      examination: {}
+      date: new Date().toISOString(),
+      addedBy: userName || userEmail || '',
+      vitals: vitals,
+      examination: examination,
+      medications: medications.length > 0 ? medications : undefined
     };
+
+    // Auto-add medications to patient's medication management
+    if (medications.length > 0 && patient && onUpdatePatient) {
+      const existingMedications = patient.medications || [];
+      const newMedications: Medication[] = [];
+
+      // Check each parsed medication
+      for (const newMed of medications) {
+        // Check if medication already exists and is active
+        const existingMed = existingMedications.find(
+          (med) =>
+            med.name.toLowerCase() === newMed.name.toLowerCase() &&
+            med.isActive !== false
+        );
+
+        if (!existingMed) {
+          // Add new medication if it doesn't exist or is not active
+          newMedications.push(newMed);
+        }
+      }
+
+      // Merge new medications with existing ones
+      if (newMedications.length > 0) {
+        const updatedPatient = {
+          ...patient,
+          medications: [...existingMedications, ...newMedications]
+        };
+        onUpdatePatient(updatedPatient);
+      }
+    }
 
     try {
       await onSave(progressNote);
+      // Close after successful save
+      setTimeout(() => {
+        onCancel();
+      }, 500);
     } catch (err) {
       setError('Failed to save note');
-    } finally {
       setIsSaving(false);
     }
   };

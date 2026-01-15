@@ -259,6 +259,9 @@ export interface Patient {
   // Edit tracking
   editHistory?: EditHistory[]; // Track all edits
   lastEditedAt?: string; // ISO string of last edit
+
+  // Medications - Master medication list for the patient
+  medications?: Medication[]; // All medications for this patient (active + stopped)
 }
 
 export interface MonthlyAdmission {

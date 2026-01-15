@@ -51,26 +51,55 @@ const AI_DISCLAIMER = "\n\n⚠️ AI-Generated Content: This information is gene
 // ============================================================================
 
 export const generatePatientSummary = async (patient: Patient): Promise<string> => {
-  const cacheKey = `summary-${patient.id}-${patient.progressNotes.length}`;
+  // Version 2.0 - Updated format with patient particulars and clean formatting
+  const cacheKey = `summary-v2.0-${patient.id}-${patient.progressNotes.length}`;
   const cached = getCachedResult(cacheKey);
   if (cached) return cached;
 
-  const notes = patient.progressNotes.map(n => `- ${new Date(n.date).toLocaleString()}: ${n.note}`).join('\n');
+  const notes = patient.progressNotes.map(n => `${new Date(n.date).toLocaleString()}: ${n.note || 'Vitals and examination recorded'}`).join('\n');
 
-  const prompt = `
-    You are a medical professional specializing in intensive care.
-    Generate a concise clinical summary for a patient handoff based on the following details.
-    The summary should be in clear, professional language, highlighting the most critical information.
-    Format the output as a single paragraph.
+  // Calculate current age if DOB is available
+  const currentAge = patient.dateOfBirth
+    ? `${Math.floor((Date.now() - new Date(patient.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24))} days`
+    : `${patient.age} ${patient.ageUnit}`;
 
-    Patient Unit: ${patient.unit}
-    Patient Age: ${patient.age} ${patient.ageUnit}
-    Gender: ${patient.gender}
-    Primary Diagnosis: ${patient.diagnosis}
-    Clinical Notes:
-    ${notes || 'No notes available.'}
-    Current Status: ${patient.outcome}
-  `;
+  const prompt = `Generate a clinical summary with the following EXACT format. Follow these rules strictly:
+
+CRITICAL RULES:
+- NO bullet points (•)
+- NO dashes (-)
+- NO asterisks (*)
+- NO dots at line starts
+- NO bars (|, =, _)
+- ONLY use section headings and paragraph text
+- Keep it simple and clean
+
+OUTPUT THIS EXACT STRUCTURE:
+
+PATIENT PARTICULARS
+Name: ${patient.name}
+Age: ${currentAge}
+Gender: ${patient.gender}
+Birth Weight: ${patient.birthWeight ? `${patient.birthWeight} kg` : 'Not recorded'}
+Admission Weight: ${patient.weightOnAdmission ? `${patient.weightOnAdmission} kg` : 'Not recorded'}
+Admission Date: ${new Date(patient.admissionDate).toLocaleDateString()}
+Indication for Admission: ${patient.indicationsForAdmission?.join(', ') || patient.customIndication || patient.diagnosis}
+Unit: ${patient.unit}
+
+DIAGNOSIS
+${patient.diagnosis}
+
+CLINICAL SUMMARY
+Based on these notes: ${notes || 'No detailed clinical notes available'}
+Write 2-3 sentences describing the patient's hospital course and key clinical events in paragraph format.
+
+CURRENT STATUS
+Write 2-3 sentences describing current clinical condition and stability in paragraph format.
+
+ADVICE
+Write 2-4 sentences with management recommendations and follow-up plan in paragraph format. Include monitoring parameters and key actions needed.
+
+REMEMBER: Use ONLY the section headings shown above followed by paragraph text. NO symbols, NO bullets, NO dashes, NO dots except in sentences.`;
 
   try {
     const response = await ai.models.generateContent({

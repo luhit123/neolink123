@@ -486,6 +486,12 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
                 <ProgressNoteForm
                   onSave={handleSaveNote}
                   onCancel={() => setShowNoteForm(false)}
+                  onUpdatePatient={(updatedPatient) => {
+                    setLocalPatient(updatedPatient);
+                    if (onPatientUpdate) {
+                      onPatientUpdate(updatedPatient);
+                    }
+                  }}
                   lastNote={localPatient.progressNotes?.length > 0 ? localPatient.progressNotes[localPatient.progressNotes.length - 1] : undefined}
                   userEmail={userEmail}
                   userName={userName || userEmail}

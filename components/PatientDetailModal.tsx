@@ -369,7 +369,12 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
                             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                             .map((note, index) => (
                                 <div key={index} className="transform transition-all hover:scale-[1.01]">
-                                    <ProgressNoteDisplay note={note} />
+                                    <ProgressNoteDisplay
+                                        note={note}
+                                        patient={localPatient}
+                                        noteIndex={index}
+                                        totalNotes={(localPatient.progressNotes || []).length}
+                                    />
                                 </div>
                             ))
                     ) : (
@@ -496,19 +501,30 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
                     )}
 
                     {summary && (
-                        <div className="bg-white rounded-2xl border-2 border-violet-200 shadow-sm overflow-hidden">
-                            <div className="bg-violet-100 px-4 py-2 flex items-center justify-between">
-                                <span className="text-xs font-bold text-violet-700 uppercase tracking-wider">Summary Result</span>
+                        <div className="bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 rounded-2xl border-2 border-sky-300 shadow-lg overflow-hidden">
+                            <div className="bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-500 px-4 py-3 flex items-center justify-between shadow-md">
+                                <span className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                    <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                    </div>
+                                    Clinical Summary
+                                </span>
                                 <button
                                     onClick={handleCopyToClipboard}
-                                    className="flex items-center gap-2 px-3 py-1.5 text-violet-700 hover:bg-violet-200 rounded-lg transition-all duration-200 active:scale-95"
+                                    className="flex items-center gap-2 px-4 py-2 bg-white/90 hover:bg-white text-sky-700 rounded-lg transition-all duration-200 active:scale-95 shadow-md font-bold"
                                 >
                                     <ClipboardDocumentListIcon className="w-4 h-4" />
-                                    <span className="text-xs font-bold">{copied ? 'Copied!' : 'Copy'}</span>
+                                    <span className="text-xs">{copied ? 'Copied!' : 'Copy'}</span>
                                 </button>
                             </div>
-                            <div className="p-4">
-                                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{summary}</p>
+                            <div className="p-6">
+                                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-5 border-2 border-sky-200 shadow-sm">
+                                    <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-line font-['system-ui']" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                                        {summary.replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/^-\s/gm, '').replace(/^\*\s/gm, '').replace(/`/g, '').replace(/_{3,}/g, '').replace(/={3,}/g, '').replace(/\|/g, '')}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -551,6 +567,12 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
               <ProgressNoteForm
                 onSave={handleSaveProgressNote}
                 onCancel={() => setShowQuickNote(false)}
+                onUpdatePatient={(updatedPatient) => {
+                  setLocalPatient(updatedPatient);
+                  if (onPatientUpdate) {
+                    onPatientUpdate(updatedPatient);
+                  }
+                }}
                 lastNote={localPatient.progressNotes && localPatient.progressNotes.length > 0
                   ? localPatient.progressNotes[localPatient.progressNotes.length - 1]
                   : undefined}

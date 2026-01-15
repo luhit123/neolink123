@@ -101,7 +101,19 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [loading, setLoading] = useState(true);
   const [bedCapacity, setBedCapacity] = useState<BedCapacity | undefined>(undefined);
   const [enabledFacilities, setEnabledFacilities] = useState<Unit[]>([Unit.NICU, Unit.PICU, Unit.SNCU]); // Default to all
-  const [selectedUnit, setSelectedUnit] = useState<Unit>(Unit.NICU);
+
+  // Initialize selectedUnit from localStorage or default to NICU
+  const [selectedUnit, setSelectedUnit] = useState<Unit>(() => {
+    try {
+      const savedUnit = localStorage.getItem('selectedUnit');
+      if (savedUnit && Object.values(Unit).includes(savedUnit as Unit)) {
+        return savedUnit as Unit;
+      }
+    } catch (error) {
+      console.warn('Failed to read selectedUnit from localStorage:', error);
+    }
+    return Unit.NICU;
+  });
   const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('All');
   const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'Today' });
   const [shiftFilter, setShiftFilter] = useState<ShiftFilterConfigs>({
@@ -329,7 +341,14 @@ const Dashboard: React.FC<DashboardProps> = ({
 
           // Ensure selected unit is valid
           if (!facilitiesToEnable.includes(selectedUnit)) {
-            setSelectedUnit(facilitiesToEnable[0] || Unit.NICU);
+            const newUnit = facilitiesToEnable[0] || Unit.NICU;
+            setSelectedUnit(newUnit);
+            // Save to localStorage
+            try {
+              localStorage.setItem('selectedUnit', newUnit);
+            } catch (error) {
+              console.warn('Failed to save selectedUnit to localStorage:', error);
+            }
           }
           console.log('✅ Loaded facilities:', facilitiesToEnable);
         } else {
@@ -999,6 +1018,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleSelectUnit = (unit: Unit) => {
     setSelectedUnit(unit);
     setNicuView('All'); // Reset nicu view when switching main unit
+
+    // Save selected unit to localStorage for persistence
+    try {
+      localStorage.setItem('selectedUnit', unit);
+    } catch (error) {
+      console.warn('Failed to save selectedUnit to localStorage:', error);
+    }
   };
 
 

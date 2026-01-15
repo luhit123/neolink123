@@ -5,6 +5,7 @@ import VoiceClinicalNote from './clinical/VoiceClinicalNote';
 interface ProgressNoteFormProps {
     onSave: (note: ProgressNote) => void;
     onCancel: () => void;
+    onUpdatePatient?: (patient: Patient) => void; // Callback to update patient data
     existingNote?: ProgressNote;
     lastNote?: ProgressNote;
     userEmail?: string;
@@ -27,6 +28,7 @@ interface ProgressNoteFormProps {
 const ProgressNoteFormEnhanced: React.FC<ProgressNoteFormProps> = ({
     onSave,
     onCancel,
+    onUpdatePatient,
     existingNote,
     userEmail,
     userName,
@@ -37,6 +39,7 @@ const ProgressNoteFormEnhanced: React.FC<ProgressNoteFormProps> = ({
             patient={patient}
             onSave={onSave}
             onCancel={onCancel}
+            onUpdatePatient={onUpdatePatient}
             existingNote={existingNote}
             userEmail={userEmail}
             userName={userName}

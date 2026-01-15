@@ -155,9 +155,13 @@ export interface ProgressNote {
   // Medications
   medications?: Medication[];
 
+  // ICD-10 Codes
+  icd10Codes?: string; // Formatted ICD-10 codes string
+
   // Legacy support
   addedBy?: string; // User name who added the note
   addedByEmail?: string; // User email for documentation
+  timestamp?: string; // Timestamp for sorting
 }
 
 export interface EditHistory {

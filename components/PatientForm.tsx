@@ -1376,6 +1376,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                       lastNote={(patient.progressNotes?.length || 0) > 0 ? patient.progressNotes?.[patient.progressNotes.length - 1] : undefined}
                       userEmail={userEmail}
                       userName={userName || userEmail}
+                      patient={patient}
                     />
                   </div>
                 )}

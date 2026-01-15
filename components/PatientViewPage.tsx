@@ -361,14 +361,19 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
             )}
 
             {(localPatient.progressNotes || []).length > 0 ? (
-              <div className="space-y-2">
-                {(localPatient.progressNotes || [])
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                  .map((note, index) => (
-                    <div key={index} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                      <ProgressNoteDisplay note={note} />
-                    </div>
-                  ))}
+              <div className="space-y-4">
+                {(() => {
+                  const sortedNotes = (localPatient.progressNotes || [])
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                  return sortedNotes.map((note, index) => (
+                    <ProgressNoteDisplay
+                      key={index}
+                      note={note}
+                      noteIndex={index}
+                      totalNotes={sortedNotes.length}
+                    />
+                  ));
+                })()}
               </div>
             ) : (
               <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
@@ -484,6 +489,7 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
                   lastNote={localPatient.progressNotes?.length > 0 ? localPatient.progressNotes[localPatient.progressNotes.length - 1] : undefined}
                   userEmail={userEmail}
                   userName={userName || userEmail}
+                  patient={localPatient}
                 />
               </div>
             </div>

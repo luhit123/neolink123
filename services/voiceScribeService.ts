@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
-import { voiceInput } from '../utils/voiceInput';
+import { audioRecorder } from '../utils/audioRecorder';
 import { ProgressNote, VitalSigns, ClinicalExamination, Medication } from '../types';
+import { PatientContext } from '../types/medgemma';
 
 /**
  * Structured clinical data extracted from voice
@@ -10,33 +11,82 @@ export interface StructuredClinicalData {
   examination?: Partial<ClinicalExamination>;
   medications?: Medication[];
   note?: string;
+  transcript?: string;
   suggestedDiagnosis?: string[];
   confidence?: number;
 }
 
 /**
- * VoiceScribeService - AI-powered voice-to-structured-note conversion
+ * Normal vital ranges by age group for NICU/PICU
+ */
+const NORMAL_VITAL_RANGES = {
+  preterm: {
+    temperature: '36.5-37.2',
+    hr: '140-170',
+    rr: '45-65',
+    bp: '50-60/30-40',
+    spo2: '90-96',
+    crt: '<2-3'
+  },
+  newborn: {
+    temperature: '36.5-37.5',
+    hr: '120-160',
+    rr: '40-60',
+    bp: '60-70/35-45',
+    spo2: '95-100',
+    crt: '<2'
+  },
+  infant: {
+    temperature: '36.5-37.5',
+    hr: '100-150',
+    rr: '30-50',
+    bp: '70-90/40-60',
+    spo2: '95-100',
+    crt: '<2'
+  },
+  toddler: {
+    temperature: '36.5-37.5',
+    hr: '90-130',
+    rr: '24-40',
+    bp: '80-100/50-65',
+    spo2: '95-100',
+    crt: '<2'
+  },
+  child: {
+    temperature: '36.5-37.5',
+    hr: '70-110',
+    rr: '18-30',
+    bp: '90-110/60-75',
+    spo2: '95-100',
+    crt: '<2'
+  }
+};
+
+/**
+ * Normal examination findings templates
+ */
+const NORMAL_EXAMINATION = {
+  cns: 'Alert, active, good cry, normal tone, normal reflexes, anterior fontanelle soft and flat, no seizures',
+  cvs: 'S1S2 heard, no murmur, regular rhythm, CRT <2 seconds, peripheral pulses well felt, warm peripheries, no cyanosis',
+  chest: 'Bilateral equal air entry, no added sounds, no retractions, no grunting, no nasal flaring, normal respiratory effort',
+  perAbdomen: 'Soft, non-distended, non-tender, bowel sounds present, no organomegaly, umbilicus healthy, tolerating feeds well',
+  otherFindings: 'Pink, well perfused, no rash, no edema, activity appropriate for age'
+};
+
+/**
+ * VoiceScribeService - Smart Clinical Voice Documentation
  *
- * This service enables hands-free clinical documentation by:
- * 1. Continuously recording voice input with Web Speech API
- * 2. Real-time transcription with interim results
- * 3. AI-powered structuring using Gemini 2.5-flash
- * 4. Extraction of vitals, examination findings, medications, and clinical notes
- *
- * Usage:
- * ```typescript
- * const scribe = new VoiceScribeService();
- * scribe.startScribe(
- *   (data) => console.log('Structured data:', data),
- *   (error) => console.error('Error:', error)
- * );
- * ```
+ * Understands medical shorthand:
+ * - "All systems normal" → Expands to full normal exam
+ * - "Vitals normal except HR 150" → Normal vitals with specific override
+ * - "Baby stable" → Appropriate normal documentation
  */
 export class VoiceScribeService {
-  private transcript: string = '';
-  private isListening: boolean = false;
   private ai: GoogleGenAI;
-  private processingTimeout?: NodeJS.Timeout;
+  private patientContext?: PatientContext;
+  private isRecording: boolean = false;
+  private onUpdateCallback?: (data: Partial<ProgressNote> & { rawTranscript?: string }) => void;
+  private onErrorCallback?: (error: string) => void;
 
   constructor() {
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -46,292 +96,280 @@ export class VoiceScribeService {
     this.ai = new GoogleGenAI({ apiKey });
   }
 
-  /**
-   * Start voice scribe with continuous listening
-   * @param onUpdate - Callback for real-time updates with structured data
-   * @param onError - Callback for errors
-   * @param language - Language code (default: 'en-US')
-   */
+  isSupported(): boolean {
+    return audioRecorder.isSupported();
+  }
+
   async startScribe(
     onUpdate: (data: Partial<ProgressNote> & { rawTranscript?: string }) => void,
     onError: (error: string) => void,
-    language: string = 'en-US'
+    patientContext?: PatientContext
   ): Promise<void> {
-    if (!voiceInput.isSupported()) {
-      onError('Voice recognition is not supported in your browser');
+    if (!this.isSupported()) {
+      onError('Audio recording is not supported in this browser');
       return;
     }
 
-    this.transcript = '';
-    this.isListening = true;
+    if (this.isRecording) {
+      return;
+    }
 
-    voiceInput.start(
-      (result) => {
-        if (result.isFinal) {
-          // Final result - add to transcript and process with AI
-          this.transcript += result.transcript + ' ';
+    this.onUpdateCallback = onUpdate;
+    this.onErrorCallback = onError;
+    this.patientContext = patientContext;
+    this.isRecording = true;
 
-          // Debounced AI processing (wait 1s after final result)
-          if (this.processingTimeout) {
-            clearTimeout(this.processingTimeout);
-          }
-          this.processingTimeout = setTimeout(() => {
-            this.processTranscriptWithAI(onUpdate, onError);
-          }, 1000);
-        } else {
-          // Interim result - show real-time transcript
-          onUpdate({
-            note: this.transcript + result.transcript,
-            rawTranscript: this.transcript + result.transcript,
-          });
-        }
-      },
-      onError,
-      {
-        continuous: true,
-        interimResults: true,
-        lang: language,
+    onUpdate({
+      rawTranscript: '🎙️ Recording... Speak your clinical findings.',
+      note: ''
+    });
+
+    await audioRecorder.start({
+      onError: (error) => {
+        this.isRecording = false;
+        onError(error);
       }
-    );
+    });
+  }
+
+  async stop(): Promise<void> {
+    if (!this.isRecording) {
+      return;
+    }
+
+    this.isRecording = false;
+
+    this.onUpdateCallback?.({
+      rawTranscript: '⏳ Processing with Gemini AI...',
+      note: ''
+    });
+
+    try {
+      const audioBlob = await audioRecorder.stop();
+
+      if (!audioBlob || audioBlob.size < 1000) {
+        this.onErrorCallback?.('Recording too short. Please speak for at least 3-5 seconds.');
+        return;
+      }
+
+      const audioBase64 = await audioRecorder.blobToBase64(audioBlob);
+      await this.processAudioWithSmartClinicalAI(audioBase64, audioBlob.type);
+
+    } catch (error) {
+      this.onErrorCallback?.(`Failed to process: ${(error as Error).message}`);
+    }
   }
 
   /**
-   * Process transcript with AI to extract structured clinical data
+   * Smart Clinical AI Processing
+   * Understands medical shorthand and expands to proper documentation
    */
-  private async processTranscriptWithAI(
-    onUpdate: (data: Partial<ProgressNote> & { rawTranscript?: string }) => void,
-    onError: (error: string) => void
-  ): Promise<void> {
-    if (!this.transcript.trim()) {
-      return;
-    }
-
+  private async processAudioWithSmartClinicalAI(audioBase64: string, mimeType: string): Promise<void> {
     try {
-      const prompt = `
-You are an expert medical scribe AI specializing in NICU/PICU documentation.
+      // Determine age group for normal values
+      const ageGroup = this.getAgeGroup();
+      const normalVitals = NORMAL_VITAL_RANGES[ageGroup];
 
-Extract clinical information from this voice transcript and structure it into standardized medical documentation format.
+      const prompt = `You are an expert NICU/PICU medical scribe AI that understands clinical shorthand.
 
-TRANSCRIPT:
-"${this.transcript}"
+=== PATIENT CONTEXT ===
+${this.patientContext ? `
+- Age: ${this.patientContext.age} ${this.patientContext.ageUnit || 'days'}
+- Age Group: ${ageGroup}
+- Gender: ${this.patientContext.gender || 'Unknown'}
+- Unit: ${this.patientContext.unit || 'NICU'}
+- Diagnosis: ${this.patientContext.diagnosis || 'Not specified'}
+- Weight: ${this.patientContext.weight || 'Unknown'} kg
+` : 'No patient context provided'}
 
-INSTRUCTIONS:
-1. Extract vital signs (temperature, heart rate, respiratory rate, BP, SpO2, CRT, weight)
-2. Extract examination findings organized by system (CNS, CVS, Chest, Per Abdomen, Other)
-3. Extract medications with proper dosing (name, dose, route, frequency)
-4. Generate a structured clinical note in SOAP format if possible
-5. Suggest possible diagnoses based on the clinical presentation
-6. Provide a confidence score (0-1) for the extraction quality
+=== NORMAL REFERENCE VALUES FOR ${ageGroup.toUpperCase()} ===
+- Temperature: ${normalVitals.temperature}°C
+- Heart Rate: ${normalVitals.hr} bpm
+- Respiratory Rate: ${normalVitals.rr}/min
+- Blood Pressure: ${normalVitals.bp} mmHg
+- SpO2: ${normalVitals.spo2}%
+- CRT: ${normalVitals.crt} seconds
 
-Return ONLY valid JSON (no markdown, no code blocks):
+=== NORMAL EXAMINATION FINDINGS ===
+- CNS: ${NORMAL_EXAMINATION.cns}
+- CVS: ${NORMAL_EXAMINATION.cvs}
+- Chest: ${NORMAL_EXAMINATION.chest}
+- Abdomen: ${NORMAL_EXAMINATION.perAbdomen}
+- Other: ${NORMAL_EXAMINATION.otherFindings}
+
+=== YOUR TASK ===
+Listen to the audio and INTELLIGENTLY interpret clinical shorthand:
+
+1. **"All vitals normal"** or **"vitals stable"** → Generate appropriate normal vitals for age group (pick mid-range values)
+2. **"Vitals normal except HR 150"** → Normal vitals but use HR=150
+3. **"Other vitals normal, temperature 38"** → Use temp=38, generate normal for others
+4. **"All systems normal"** or **"systemic examination normal"** → Fill ALL examination fields with normal findings
+5. **"CNS CVS Chest Abdomen - all normal"** → Normal findings for all systems
+6. **"Baby stable"** or **"clinically stable"** → Normal vitals AND normal examination
+7. **Specific findings override normal** → If they mention specific abnormalities, use those
+
+=== INTERPRETATION RULES ===
+- When "normal" is mentioned, USE the normal reference values above
+- Pick realistic mid-range values (e.g., for HR 120-160, use 140)
+- Any specifically mentioned value OVERRIDES the normal
+- Understand Indian English medical terminology
+- "All WNL" = Within Normal Limits = Normal
+- "NAD" = No Abnormality Detected = Normal
+- "Unremarkable" = Normal
+
+=== OUTPUT FORMAT ===
+Return ONLY valid JSON:
 {
+  "transcript": "Exact transcription of what was spoken",
+  "interpretation": "How you interpreted the shorthand (e.g., 'Expanded all systems normal')",
   "vitals": {
-    "temperature": "37.2",
-    "hr": "145",
-    "rr": "45",
-    "bp": "85/50",
-    "spo2": "96",
+    "temperature": "37.0",
+    "hr": "140",
+    "rr": "48",
+    "bp": "65/40",
+    "spo2": "97",
     "crt": "<2",
-    "weight": "2.8"
+    "weight": ""
   },
   "examination": {
-    "cns": "Alert, active movements, good tone",
-    "cvs": "S1S2 normal, no murmur, good perfusion",
-    "chest": "Bilateral air entry equal, mild retractions",
-    "perAbdomen": "Soft, non-tender, no distension",
-    "otherFindings": "Pink, well perfused"
+    "cns": "Alert, active, good cry, normal tone, normal reflexes, anterior fontanelle soft and flat",
+    "cvs": "S1S2 heard, no murmur, regular rhythm, CRT <2s, peripheral pulses well felt, warm peripheries",
+    "chest": "Bilateral equal air entry, no added sounds, no retractions, no grunting, normal effort",
+    "perAbdomen": "Soft, non-distended, bowel sounds present, no organomegaly, tolerating feeds",
+    "otherFindings": "Pink, well perfused, no rash, activity appropriate for age"
   },
-  "medications": [
-    {
-      "name": "Ampicillin",
-      "dose": "50mg/kg",
-      "route": "IV",
-      "frequency": "BD"
-    }
-  ],
-  "note": "Structured clinical note in SOAP format or narrative format",
-  "suggestedDiagnosis": ["Neonatal Sepsis", "Respiratory Distress"],
-  "confidence": 0.92
-}
-
-MEDICAL CONTEXT:
-- This is a NICU/PICU setting
-- Use standard medical abbreviations
-- Be precise with vital sign units
-- Common medication routes: IV, PO, IM, SC, Topical, Inhalation
-- Common frequencies: STAT, OD, BD, TID, QID, Q4H, Q6H, Q8H, PRN
-- Leave fields empty if not mentioned in transcript
-- If transcript is unclear or insufficient, set confidence <0.5
-
-IMPORTANT:
-- Return ONLY the JSON object
-- No markdown formatting
-- No code blocks
-- No explanatory text
-- Valid JSON syntax only
-      `;
-
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-      });
-
-      let responseText = response.text.trim();
-
-      // Remove markdown code blocks if present
-      responseText = responseText.replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
-
-      const structured: StructuredClinicalData = JSON.parse(responseText);
-
-      // Build ProgressNote from structured data
-      const progressNote: Partial<ProgressNote> & { rawTranscript?: string; confidence?: number } = {
-        vitals: structured.vitals && Object.keys(structured.vitals).length > 0 ? (structured.vitals as VitalSigns) : undefined,
-        examination:
-          structured.examination && Object.keys(structured.examination).length > 0
-            ? (structured.examination as ClinicalExamination)
-            : undefined,
-        medications: structured.medications && structured.medications.length > 0 ? structured.medications : undefined,
-        note: structured.note || this.transcript,
-        rawTranscript: this.transcript,
-        confidence: structured.confidence,
-      };
-
-      onUpdate(progressNote);
-    } catch (error) {
-      console.error('AI processing error:', error);
-
-      // Fallback: return raw transcript
-      onUpdate({
-        note: this.transcript,
-        rawTranscript: this.transcript,
-        confidence: 0,
-      });
-
-      onError(`AI processing failed. Raw transcript preserved: ${(error as Error).message}`);
-    }
-  }
-
-  /**
-   * Stop voice scribe
-   */
-  stop(): void {
-    voiceInput.stop();
-    this.isListening = false;
-
-    if (this.processingTimeout) {
-      clearTimeout(this.processingTimeout);
-    }
-  }
-
-  /**
-   * Get current listening status
-   */
-  getIsListening(): boolean {
-    return this.isListening;
-  }
-
-  /**
-   * Get current transcript
-   */
-  getCurrentTranscript(): string {
-    return this.transcript;
-  }
-
-  /**
-   * Clear transcript (useful for starting fresh)
-   */
-  clearTranscript(): void {
-    this.transcript = '';
-  }
-
-  /**
-   * Manually process current transcript (useful for testing)
-   */
-  async manualProcess(
-    onUpdate: (data: Partial<ProgressNote> & { rawTranscript?: string }) => void,
-    onError: (error: string) => void
-  ): Promise<void> {
-    await this.processTranscriptWithAI(onUpdate, onError);
-  }
-
-  /**
-   * Enhanced: Process with patient context for better accuracy
-   */
-  async processWithContext(
-    patientAge: number,
-    patientUnit: string,
-    onUpdate: (data: Partial<ProgressNote> & { rawTranscript?: string }) => void,
-    onError: (error: string) => void
-  ): Promise<void> {
-    if (!this.transcript.trim()) {
-      return;
-    }
-
-    try {
-      const contextualPrompt = `
-You are an expert medical scribe AI specializing in ${patientUnit} documentation.
-
-PATIENT CONTEXT:
-- Age: ${patientAge} days/months old
-- Unit: ${patientUnit}
-
-TRANSCRIPT:
-"${this.transcript}"
-
-Extract and structure clinical information appropriate for a ${patientAge}-day-old patient in ${patientUnit}.
-
-Return ONLY valid JSON (no markdown):
-{
-  "vitals": {...},
-  "examination": {...},
-  "medications": [...],
-  "note": "...",
-  "suggestedDiagnosis": [...],
+  "medications": [],
+  "note": "Clinical summary in proper format",
   "confidence": 0.95
 }
-      `;
+
+=== EXAMPLES ===
+
+Example 1: "Baby stable, all vitals normal, all systems normal"
+→ Generate ALL normal vitals (mid-range for age) and ALL normal examination findings
+
+Example 2: "Vitals - temperature 38.2, other vitals normal. Systemic examination - all WNL"
+→ Temp=38.2, other vitals normal for age, all examination normal
+
+Example 3: "HR 160, RR 55, saturation 94 on room air, other vitals normal. Baby active, chest has mild retractions, rest of exam normal"
+→ Use mentioned vitals, normal for unmentioned. Chest shows retractions, other systems normal.
+
+Example 4: "Baby irritable, temperature 38, heart rate 170, examination shows bulging fontanelle"
+→ Use mentioned abnormal values, interpret CNS as abnormal with bulging fontanelle
+
+IMPORTANT: Return ONLY the JSON object. No markdown, no explanations.`;
 
       const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: contextualPrompt,
+        model: 'gemini-2.0-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: mimeType.includes('webm') ? 'audio/webm' : mimeType,
+                  data: audioBase64
+                }
+              },
+              { text: prompt }
+            ]
+          }
+        ]
       });
 
       let responseText = response.text.trim();
-      responseText = responseText.replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
+      console.log('📝 Gemini response:', responseText);
 
-      const structured: StructuredClinicalData = JSON.parse(responseText);
+      // Clean response
+      responseText = responseText.replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        responseText = jsonMatch[0];
+      }
+
+      const structured: StructuredClinicalData & { interpretation?: string } = JSON.parse(responseText);
+
+      // Log interpretation for debugging
+      if ((structured as any).interpretation) {
+        console.log('🧠 AI Interpretation:', (structured as any).interpretation);
+      }
 
       const progressNote: Partial<ProgressNote> & { rawTranscript?: string; confidence?: number } = {
-        vitals: structured.vitals && Object.keys(structured.vitals).length > 0 ? (structured.vitals as VitalSigns) : undefined,
-        examination:
-          structured.examination && Object.keys(structured.examination).length > 0
-            ? (structured.examination as ClinicalExamination)
-            : undefined,
-        medications: structured.medications && structured.medications.length > 0 ? structured.medications : undefined,
-        note: structured.note || this.transcript,
-        rawTranscript: this.transcript,
-        confidence: structured.confidence,
+        vitals: structured.vitals && Object.values(structured.vitals).some(v => v)
+          ? (structured.vitals as VitalSigns)
+          : undefined,
+        examination: structured.examination && Object.values(structured.examination).some(v => v)
+          ? (structured.examination as ClinicalExamination)
+          : undefined,
+        medications: structured.medications && structured.medications.length > 0
+          ? structured.medications
+          : undefined,
+        note: structured.note || '',
+        rawTranscript: structured.transcript || 'Audio processed',
+        confidence: structured.confidence || 0.8,
       };
 
-      onUpdate(progressNote);
-    } catch (error) {
-      console.error('AI processing error:', error);
-      onUpdate({
-        note: this.transcript,
-        rawTranscript: this.transcript,
-        confidence: 0,
-      });
-      onError(`AI processing failed: ${(error as Error).message}`);
+      this.onUpdateCallback?.(progressNote);
+
+    } catch (error: any) {
+      console.error('❌ Processing error:', error);
+      this.onErrorCallback?.(`AI processing failed: ${error.message}`);
     }
   }
+
+  /**
+   * Determine age group based on patient context
+   */
+  private getAgeGroup(): keyof typeof NORMAL_VITAL_RANGES {
+    if (!this.patientContext) return 'newborn';
+
+    const age = this.patientContext.age;
+    const unit = this.patientContext.ageUnit || 'days';
+
+    // Convert to days for comparison
+    let ageInDays = age;
+    if (unit === 'weeks') ageInDays = age * 7;
+    else if (unit === 'months') ageInDays = age * 30;
+    else if (unit === 'years') ageInDays = age * 365;
+
+    // Check diagnosis for preterm indicators
+    const diagnosis = (this.patientContext.diagnosis || '').toLowerCase();
+    if (diagnosis.includes('preterm') || diagnosis.includes('premature') || diagnosis.includes('vlbw') || diagnosis.includes('elbw')) {
+      return 'preterm';
+    }
+
+    // Age-based classification
+    if (ageInDays <= 28) return 'newborn';
+    if (ageInDays <= 365) return 'infant';
+    if (ageInDays <= 365 * 3) return 'toddler';
+    return 'child';
+  }
+
+  getIsListening(): boolean {
+    return this.isRecording;
+  }
+
+  abort(): void {
+    audioRecorder.abort();
+    this.isRecording = false;
+  }
+
+  setPatientContext(context: PatientContext): void {
+    this.patientContext = context;
+  }
+
+  getCurrentTranscript(): string {
+    return '';
+  }
+
+  clearTranscript(): void {}
+
+  async manualProcess(): Promise<void> {}
 }
 
-// Singleton instance
+// Singleton
 let voiceScribeInstance: VoiceScribeService | null = null;
 
-/**
- * Get singleton instance of VoiceScribeService
- */
 export const getVoiceScribeService = (): VoiceScribeService => {
   if (!voiceScribeInstance) {
     voiceScribeInstance = new VoiceScribeService();

@@ -5,38 +5,58 @@ interface ProgressNoteDisplayProps {
     note: ProgressNote;
 }
 
-const ProgressNoteDisplay: React.FC<ProgressNoteDisplayProps> = ({ note }) => {
+interface ExtendedProgressNoteDisplayProps extends ProgressNoteDisplayProps {
+    noteIndex?: number;
+    totalNotes?: number;
+}
+
+const ProgressNoteDisplay: React.FC<ExtendedProgressNoteDisplayProps> = ({ note, noteIndex, totalNotes }) => {
     const hasVitals = note.vitals && Object.values(note.vitals).some(v => v);
     const hasExamination = note.examination && Object.values(note.examination).some(v => v);
     const hasMedications = note.medications && note.medications.length > 0;
 
     return (
-        <div className="bg-white p-3 sm:p-4 rounded-lg border border-slate-200 shadow-sm space-y-3">
-            {/* Date and Author */}
-            <div className="flex justify-between items-start border-b border-slate-100 pb-2">
-                <div>
-                    <p className="text-sm font-semibold text-slate-800">
-                        {new Date(note.date).toLocaleDateString('en-US', {
-                            weekday: 'long',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                        })}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                        {new Date(note.date).toLocaleTimeString('en-US', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                        })}
-                    </p>
-                </div>
-                {note.addedBy && (
-                    <div className="text-right">
-                        <p className="text-[10px] uppercase tracking-wide text-slate-400">Added by</p>
-                        <p className="text-sm font-medium text-slate-700">{note.addedBy}</p>
+        <div className="bg-white rounded-xl overflow-hidden border-l-4 border-l-blue-600 shadow-md">
+            {/* Header Bar - Medical Blue Theme */}
+            <div className="bg-gradient-to-r from-blue-700 to-blue-600 px-4 py-3">
+                <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        {/* Note Number Badge */}
+                        {noteIndex !== undefined && totalNotes !== undefined && (
+                            <div className="bg-white/20 backdrop-blur-sm px-2.5 py-1 rounded-lg">
+                                <span className="text-white font-bold text-sm">
+                                    #{totalNotes - noteIndex}
+                                </span>
+                            </div>
+                        )}
+                        <div>
+                            <p className="text-white font-semibold text-sm">
+                                {new Date(note.date).toLocaleDateString('en-US', {
+                                    weekday: 'short',
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                })}
+                            </p>
+                            <p className="text-blue-100 text-xs">
+                                {new Date(note.date).toLocaleTimeString('en-US', {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                })}
+                            </p>
+                        </div>
                     </div>
-                )}
+                    {note.addedBy && (
+                        <div className="text-right">
+                            <p className="text-blue-200 text-[10px] uppercase tracking-wide">Documented by</p>
+                            <p className="text-white font-medium text-sm">{note.addedBy}</p>
+                        </div>
+                    )}
+                </div>
             </div>
+
+            {/* Content Area */}
+            <div className="p-4 space-y-3">
 
             {/* Vital Signs */}
             {hasVitals && (
@@ -181,6 +201,7 @@ const ProgressNoteDisplay: React.FC<ProgressNoteDisplayProps> = ({ note }) => {
                     <p className="whitespace-pre-wrap leading-relaxed">{note.note}</p>
                 </div>
             )}
+            </div>
         </div>
     );
 };

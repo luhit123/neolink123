@@ -556,6 +556,7 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
                   : undefined}
                 userEmail={userEmail}
                 userName={userName || userEmail}
+                patient={localPatient}
               />
             </div>
           </div>

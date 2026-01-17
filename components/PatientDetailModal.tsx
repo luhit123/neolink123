@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Patient, ProgressNote } from '../types';
 import { XIcon, WandIcon, ClipboardDocumentListIcon } from './common/Icons';
-import ProgressNoteDisplay from './ProgressNoteDisplay';
+import ClinicalNotesNavigator from './ClinicalNotesNavigator';
 import { generatePatientSummary } from '../services/geminiService';
 import ProgressNoteForm from './ProgressNoteFormEnhanced';
 import MedicationManagement from './MedicationManagement';
@@ -348,7 +348,7 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
                 </div>
             </div>
 
-            {/* Clinical Progress Notes Card */}
+            {/* Clinical Progress Notes */}
             <div className="bg-white rounded-3xl shadow-lg border-2 border-sky-200 overflow-hidden">
                 <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-5 py-3">
                     <div className="flex items-center justify-between">
@@ -363,28 +363,12 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
                         </span>
                     </div>
                 </div>
-                <div className="p-2 md:p-4 space-y-3">
-                    {(localPatient.progressNotes || []).length > 0 ? (
-                        (localPatient.progressNotes || [])
-                            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                            .map((note, index) => (
-                                <div key={index} className="transform transition-all hover:scale-[1.01]">
-                                    <ProgressNoteDisplay
-                                        note={note}
-                                        patient={localPatient}
-                                        noteIndex={index}
-                                        totalNotes={(localPatient.progressNotes || []).length}
-                                    />
-                                </div>
-                            ))
-                    ) : (
-                        <div className="text-slate-400 text-center py-12 bg-gradient-to-br from-slate-50 to-sky-50 rounded-2xl border-2 border-dashed border-sky-200">
-                            <svg className="w-16 h-16 mx-auto mb-3 opacity-30 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <p className="text-base font-semibold text-slate-500">No progress notes yet</p>
-                        </div>
-                    )}
+                <div className="p-2 md:p-4">
+                    <ClinicalNotesNavigator
+                        notes={localPatient.progressNotes || []}
+                        patient={localPatient}
+                        canEdit={canEdit}
+                    />
                 </div>
             </div>
 

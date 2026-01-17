@@ -99,6 +99,8 @@ export interface Medication {
   addedAt?: string; // ISO date when added
   stoppedBy?: string; // Name of person who stopped
   stoppedAt?: string; // ISO date when stopped
+  lastUpdatedBy?: string; // Name of person who last updated
+  lastUpdatedAt?: string; // ISO date when last updated
 }
 
 // Medication Database - Managed by SuperAdmin

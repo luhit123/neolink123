@@ -81,12 +81,12 @@ const SimplePatientRow: React.FC<SimplePatientRowProps> = ({
 
       {/* Patient Name & Diagnosis */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <h3 className="text-base font-semibold text-slate-900 truncate">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="text-base font-semibold text-slate-900 break-words leading-tight">
             {patient.name}
           </h3>
           {patient.ntid && (
-            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-mono font-bold rounded">
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-mono font-bold rounded whitespace-nowrap">
               {patient.ntid}
             </span>
           )}
@@ -94,7 +94,7 @@ const SimplePatientRow: React.FC<SimplePatientRowProps> = ({
         <p className="text-sm text-sky-600">
           {getFormattedAge(patient.dateOfBirth, patient.age, patient.ageUnit)} • {patient.gender}
         </p>
-        <p className="text-xs text-slate-700 font-medium mt-1 truncate">
+        <p className="text-xs text-slate-700 font-medium mt-1 line-clamp-2">
           {getPrimaryDiagnosis()}
         </p>
       </div>

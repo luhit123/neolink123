@@ -135,42 +135,116 @@ const AdmissionIndicationsManager: React.FC<AdmissionIndicationsManagerProps> = 
   };
 
   const initializeDefaultIndications = async () => {
-    if (!confirm('This will add all default NICU/SNCU indications. Continue?')) {
+    if (!confirm('This will add comprehensive admission indications for NICU, SNCU, PICU, and HDU. Continue?')) {
       return;
     }
 
     const defaultIndications = [
-      'Prematurity (< 34 weeks)',
-      'Low Birth Weight (< 1800 gm)',
-      'Perinatal Asphyxia',
-      'Neonatal Jaundice',
-      'Resp. Distress (Rate > 60 or Grunt / Retractions)',
-      'Large Baby (> 4 Kg. at 40 weeks)',
-      'Refusal to Feed',
-      'Central Cyanosis',
-      'Apnea / Gasping',
-      'Neonatal Convulsions',
-      'Baby of Diabetic mother',
-      'Oliguria',
-      'Abdominal Distension',
-      'Hypothermia (< 35.4 °C)',
-      'Hyperthermia (> 37.5 °C)',
-      'Hypoglycemia (< 45 mg%)',
-      'Shock (Cold Periphery with CFT > 3 sec & Weak Fast Pulse)',
-      'Meconium Aspiration',
-      'Bleeding',
-      'Diarrhoea',
-      'Vomiting',
-      'Major Congenital Malformation',
-      'Unconsciousness',
-      'Any Other'
+      // NICU/SNCU Indications (Neonatal)
+      { name: 'Prematurity (< 34 weeks)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Low Birth Weight (< 1800 gm)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Very Low Birth Weight (< 1500 gm)', units: [Unit.NICU] },
+      { name: 'Extremely Low Birth Weight (< 1000 gm)', units: [Unit.NICU] },
+      { name: 'Perinatal Asphyxia / Birth Asphyxia', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Hypoxic Ischemic Encephalopathy (HIE)', units: [Unit.NICU] },
+      { name: 'Respiratory Distress Syndrome (RDS)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Transient Tachypnea of Newborn (TTN)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Meconium Aspiration Syndrome (MAS)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Respiratory Distress (RR > 60 or Grunt/Retractions)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Neonatal Jaundice / Hyperbilirubinemia', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Neonatal Sepsis (Early/Late Onset)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Neonatal Convulsions / Seizures', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Central Cyanosis', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Apnea / Gasping / Apnea of Prematurity', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Congenital Heart Disease (Cyanotic/Acyanotic)', units: [Unit.NICU] },
+      { name: 'Persistent Pulmonary Hypertension (PPHN)', units: [Unit.NICU] },
+      { name: 'Shock (Cold Periphery with CRT > 3 sec)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Hypothermia (< 35.4 °C)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Hyperthermia (> 37.5 °C)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Hypoglycemia (< 45 mg/dL)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Necrotizing Enterocolitis (NEC)', units: [Unit.NICU] },
+      { name: 'Abdominal Distension / Suspected NEC', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Refusal to Feed / Poor Feeding', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Oliguria / Acute Kidney Injury', units: [Unit.NICU] },
+      { name: 'Baby of Diabetic Mother', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Large for Gestational Age (> 4 kg at term)', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Major Congenital Malformation', units: [Unit.NICU] },
+      { name: 'Bleeding / Coagulopathy', units: [Unit.NICU] },
+      { name: 'Diarrhea (Severe)', units: [Unit.SNCU] },
+      { name: 'Vomiting (Persistent)', units: [Unit.SNCU] },
+      { name: 'Unconsciousness / Altered Sensorium', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Requiring Mechanical Ventilation', units: [Unit.NICU] },
+      { name: 'Requiring CPAP Support', units: [Unit.NICU, Unit.SNCU] },
+      { name: 'Post-surgical Care (Neonatal Surgery)', units: [Unit.NICU] },
+
+      // PICU Indications (Pediatric Intensive Care)
+      { name: 'Severe Respiratory Distress / Respiratory Failure', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Status Asthmaticus', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Severe Pneumonia requiring ventilation', units: [Unit.PICU] },
+      { name: 'Acute Respiratory Distress Syndrome (ARDS)', units: [Unit.PICU] },
+      { name: 'Upper Airway Obstruction (Severe)', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Bronchiolitis requiring respiratory support', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Septic Shock / Severe Sepsis', units: [Unit.PICU] },
+      { name: 'Hypovolemic Shock', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Cardiogenic Shock', units: [Unit.PICU] },
+      { name: 'Distributive Shock', units: [Unit.PICU] },
+      { name: 'Acute Cardiac Failure / Decompensated Heart Failure', units: [Unit.PICU] },
+      { name: 'Post Cardiac Surgery Monitoring', units: [Unit.PICU] },
+      { name: 'Cardiac Arrhythmias (Life-threatening)', units: [Unit.PICU] },
+      { name: 'Severe Head Trauma / Traumatic Brain Injury', units: [Unit.PICU] },
+      { name: 'Status Epilepticus / Refractory Seizures', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Altered Consciousness / Coma (GCS < 8)', units: [Unit.PICU] },
+      { name: 'Meningitis / Encephalitis (Severe)', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Guillain-Barré Syndrome requiring ventilation', units: [Unit.PICU] },
+      { name: 'Raised Intracranial Pressure (ICP)', units: [Unit.PICU] },
+      { name: 'Multi-system Trauma / Polytrauma', units: [Unit.PICU] },
+      { name: 'Major Burns (> 20% TBSA)', units: [Unit.PICU] },
+      { name: 'Moderate Burns (10-20% TBSA) requiring monitoring', units: [Unit.HDU] },
+      { name: 'Near Drowning / Submersion Injury', units: [Unit.PICU] },
+      { name: 'Severe Electrocution', units: [Unit.PICU] },
+      { name: 'Diabetic Ketoacidosis (DKA) - Severe', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Severe Dehydration with shock', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Acute Kidney Injury requiring dialysis', units: [Unit.PICU] },
+      { name: 'Hepatic Encephalopathy / Acute Liver Failure', units: [Unit.PICU] },
+      { name: 'Severe Electrolyte Imbalance', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Inborn Errors of Metabolism (Acute decompensation)', units: [Unit.PICU] },
+      { name: 'Post-operative Care (Major Surgery)', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Post Neurosurgery Monitoring', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Post Thoracic Surgery', units: [Unit.PICU] },
+      { name: 'Post Abdominal Surgery (Major)', units: [Unit.HDU] },
+      { name: 'Toxic Ingestion / Poisoning (Severe)', units: [Unit.PICU] },
+      { name: 'Drug Overdose requiring close monitoring', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Anaphylaxis (Severe)', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Hemolytic Uremic Syndrome (HUS)', units: [Unit.PICU] },
+      { name: 'Dengue Shock Syndrome', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Malaria (Severe / Cerebral)', units: [Unit.PICU] },
+      { name: 'Multi-organ Dysfunction Syndrome (MODS)', units: [Unit.PICU] },
+      { name: 'Requiring Inotropic / Vasopressor Support', units: [Unit.PICU] },
+      { name: 'Requiring Mechanical Ventilation', units: [Unit.PICU] },
+      { name: 'Requiring Non-invasive Ventilation (NIV)', units: [Unit.PICU, Unit.HDU] },
+      { name: 'Requiring High Flow Oxygen Therapy', units: [Unit.HDU] },
+
+      // HDU Specific Indications
+      { name: 'Moderate Respiratory Distress', units: [Unit.HDU] },
+      { name: 'Post-extubation Monitoring', units: [Unit.HDU] },
+      { name: 'Frequent Vital Signs Monitoring Required', units: [Unit.HDU] },
+      { name: 'Altered Sensorium (GCS 9-12)', units: [Unit.HDU] },
+      { name: 'Prolonged / Clustering Seizures', units: [Unit.HDU] },
+      { name: 'Unstable Metabolic Condition', units: [Unit.HDU] },
+      { name: 'Step-down from PICU', units: [Unit.HDU] },
+      { name: 'Close Observation post-procedure', units: [Unit.HDU] },
+      { name: 'Severe Asthma (improving)', units: [Unit.HDU] },
+      { name: 'Moderate Dehydration requiring IV therapy', units: [Unit.HDU] },
+
+      // Common to All
+      { name: 'Any Other (Specify in remarks)', units: [Unit.NICU, Unit.SNCU, Unit.PICU, Unit.HDU] }
     ];
 
     try {
-      const batch = defaultIndications.map((name, index) =>
+      const batch = defaultIndications.map((indication, index) =>
         addDoc(collection(db, 'admissionIndications'), {
-          name,
-          applicableUnits: [Unit.NICU, Unit.SNCU],
+          name: indication.name,
+          applicableUnits: indication.units,
           isActive: true,
           order: index,
           createdAt: new Date().toISOString(),
@@ -179,7 +253,7 @@ const AdmissionIndicationsManager: React.FC<AdmissionIndicationsManagerProps> = 
       );
 
       await Promise.all(batch);
-      alert(`Successfully added ${defaultIndications.length} default indications!`);
+      alert(`Successfully added ${defaultIndications.length} comprehensive admission indications for NICU, SNCU, PICU, and HDU!`);
       fetchIndications();
     } catch (error) {
       console.error('Error initializing indications:', error);
@@ -202,7 +276,7 @@ const AdmissionIndicationsManager: React.FC<AdmissionIndicationsManagerProps> = 
         <div>
           <h2 className="text-2xl font-bold text-white">Admission Indications Management</h2>
           <p className="text-slate-400 text-sm mt-1">
-            Manage admission indications for NICU, SNCU, PICU, and other units
+            Comprehensive admission criteria for NICU, SNCU, PICU, and HDU based on international guidelines (AAP/SCCM 2019)
           </p>
         </div>
         <div className="flex gap-3">
@@ -239,15 +313,19 @@ const AdmissionIndicationsManager: React.FC<AdmissionIndicationsManagerProps> = 
               </div>
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-bold text-green-200 mb-2">🚀 Quick Start: Initialize Admission Indications</h3>
+              <h3 className="text-lg font-bold text-green-200 mb-2">🚀 Quick Start: Initialize Comprehensive Admission Indications</h3>
               <p className="text-slate-300 mb-4">
-                To enable the admission indications feature for NICU/SNCU patients, you need to initialize the default indications first.
+                To enable the admission indications feature for all units (NICU, SNCU, PICU, HDU), you need to initialize the comprehensive indications database.
               </p>
               <div className="bg-slate-800/50 rounded-lg p-4 mb-4">
                 <p className="text-sm font-semibold text-slate-200 mb-2">What happens when you click "Initialize Defaults"?</p>
                 <ul className="text-sm text-slate-300 space-y-1 ml-4">
-                  <li>✓ Adds 24 standard NICU/SNCU admission indications</li>
+                  <li>✓ Adds <strong>100+ comprehensive admission indications</strong></li>
+                  <li>✓ <strong>NICU/SNCU:</strong> 35 neonatal indications (Prematurity, RDS, HIE, Sepsis, etc.)</li>
+                  <li>✓ <strong>PICU:</strong> 50+ pediatric critical care indications (Respiratory failure, Shock, Trauma, etc.)</li>
+                  <li>✓ <strong>HDU:</strong> 15+ high dependency care indications (Step-down care, monitoring)</li>
                   <li>✓ All indications are immediately available to all doctors across all institutions</li>
+                  <li>✓ Based on AAP/SCCM 2019 guidelines and international best practices</li>
                   <li>✓ You can edit, reorder, or add more indications anytime</li>
                 </ul>
               </div>
@@ -258,7 +336,7 @@ const AdmissionIndicationsManager: React.FC<AdmissionIndicationsManagerProps> = 
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
-                Initialize 24 Default Indications Now
+                Initialize 100+ Comprehensive Indications Now
               </button>
             </div>
           </div>

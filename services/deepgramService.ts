@@ -24,6 +24,10 @@ export const isDeepgramConfigured = (): boolean => {
  */
 let liveConnection: WebSocket | null = null;
 let mediaRecorder: MediaRecorder | null = null;
+let audioChunkBuffer: Blob[] = []; // Buffer to hold audio chunks while WebSocket connects
+let isWebSocketReady = false; // Track WebSocket ready state
+let connectionRetryCount = 0;
+const MAX_RETRY_COUNT = 3;
 
 /**
  * Get Deepgram API key from environment
@@ -207,111 +211,134 @@ export const testDeepgramConnection = async (): Promise<boolean> => {
 };
 
 /**
+ * Send buffered audio chunks once WebSocket is ready
+ */
+const flushAudioBuffer = () => {
+  if (liveConnection?.readyState === WebSocket.OPEN && audioChunkBuffer.length > 0) {
+    console.log(`📤 Flushing ${audioChunkBuffer.length} buffered audio chunks...`);
+    audioChunkBuffer.forEach((chunk, index) => {
+      liveConnection!.send(chunk);
+      if (index === 0 || (index + 1) % 5 === 0) {
+        console.log(`📤 Sent buffered chunk ${index + 1}/${audioChunkBuffer.length}`);
+      }
+    });
+    audioChunkBuffer = [];
+  }
+};
+
+/**
  * Start live streaming transcription
  * @param onTranscript - Callback for real-time transcript updates
  * @param onError - Callback for errors
- * @returns Promise<void>
+ * @param onReady - Callback when WebSocket is ready (optional)
+ * @returns Promise with the MediaStream (for visualization)
  */
 export const startLiveTranscription = async (
   onTranscript: (text: string, isFinal: boolean) => void,
-  onError?: (error: string) => void
-): Promise<void> => {
-  try {
-    const apiKey = getDeepgramApiKey();
+  onError?: (error: string) => void,
+  onReady?: () => void
+): Promise<MediaStream> => {
+  const apiKey = getDeepgramApiKey();
 
-    // Build WebSocket URL for live streaming
-    const params = new URLSearchParams({
-      model: 'nova-3', // Latest Nova-3 model with superior accuracy
-      punctuate: 'true',
-      interim_results: 'true', // Get interim results for real-time display
-      smart_format: 'true',
-      language: 'en-US'
-      // encoding and sample_rate not needed for WebM/Opus
-    });
+  // Reset state
+  audioChunkBuffer = [];
+  isWebSocketReady = false;
+  connectionRetryCount = 0;
 
-    const wsUrl = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+  // Get microphone FIRST
+  console.log('🎤 Requesting microphone access...');
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    }
+  });
+  console.log('✅ Microphone access granted');
 
-    // Create WebSocket connection
-    liveConnection = new WebSocket(wsUrl, ['token', apiKey]);
+  // Build WebSocket URL for live streaming
+  const params = new URLSearchParams({
+    model: 'nova-2', // Use nova-2 for better compatibility
+    punctuate: 'true',
+    interim_results: 'true',
+    smart_format: 'true',
+    language: 'en-US'
+  });
 
-    // Wait for WebSocket to open before starting audio streaming
-    await new Promise<void>((resolve, reject) => {
-      liveConnection!.onopen = () => {
-        console.log('✅ Deepgram WebSocket connection opened successfully');
-        console.log('🎤 Ready to stream audio...');
-        resolve();
-      };
+  const wsUrl = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+  console.log('🔌 Connecting to Deepgram WebSocket...');
 
-      liveConnection!.onerror = (error) => {
-        console.error('Deepgram WebSocket error:', error);
-        reject(new Error('Failed to connect to Deepgram'));
-      };
+  // Create WebSocket connection with API key in subprotocol
+  liveConnection = new WebSocket(wsUrl, ['token', apiKey]);
 
-      // Timeout after 10 seconds
-      setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000);
-    });
+  // Set up all handlers before waiting
+  liveConnection.onmessage = (message) => {
+    try {
+      const data = JSON.parse(message.data);
+      const transcript = data?.channel?.alternatives?.[0]?.transcript;
+      const isFinal = data?.is_final || false;
 
-    // Set up message handlers after connection is open
-    liveConnection.onmessage = (message) => {
-      try {
-        const data = JSON.parse(message.data);
-        const transcript = data?.channel?.alternatives?.[0]?.transcript;
-        const isFinal = data?.is_final || false;
-
-        if (transcript && transcript.trim()) {
-          onTranscript(transcript, isFinal);
-        }
-      } catch (err) {
-        console.error('Error parsing Deepgram message:', err);
+      if (transcript && transcript.trim()) {
+        console.log(`📝 Transcript (${isFinal ? 'final' : 'interim'}): ${transcript}`);
+        onTranscript(transcript, isFinal);
       }
+    } catch (err) {
+      console.error('Error parsing Deepgram message:', err);
+    }
+  };
+
+  liveConnection.onerror = (error) => {
+    console.error('❌ Deepgram WebSocket error:', error);
+    isWebSocketReady = false;
+    onError?.('Connection error occurred');
+  };
+
+  liveConnection.onclose = (event) => {
+    console.log(`🔌 WebSocket closed: code=${event.code}, reason=${event.reason}`);
+    isWebSocketReady = false;
+    liveConnection = null;
+  };
+
+  // Wait for WebSocket to open
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('WebSocket connection timeout'));
+    }, 10000);
+
+    liveConnection!.onopen = () => {
+      clearTimeout(timeout);
+      isWebSocketReady = true;
+      console.log('✅ Deepgram WebSocket connected!');
+      flushAudioBuffer();
+      onReady?.();
+      resolve();
     };
 
-    liveConnection.onerror = (error) => {
-      console.error('Deepgram WebSocket error:', error);
-      onError?.('Connection error occurred');
+    // Also handle error during connection
+    const originalOnError = liveConnection!.onerror;
+    liveConnection!.onerror = (error) => {
+      clearTimeout(timeout);
+      originalOnError?.(error as Event);
+      reject(new Error('WebSocket connection failed'));
     };
+  });
 
-    liveConnection.onclose = () => {
-      console.log('🎤 Deepgram live connection closed');
-      liveConnection = null;
-    };
+  // Create MediaRecorder AFTER WebSocket is ready
+  mediaRecorder = new MediaRecorder(stream, {
+    mimeType: 'audio/webm;codecs=opus'
+  });
 
-    // Get user media and start streaming
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
-    });
+  mediaRecorder.ondataavailable = (event) => {
+    if (event.data.size > 0 && liveConnection?.readyState === WebSocket.OPEN) {
+      liveConnection.send(event.data);
+    }
+  };
 
-    // Create MediaRecorder to capture audio
-    mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm;codecs=opus'
-    });
+  // Start streaming audio
+  mediaRecorder.start(250);
+  console.log('🎙️ Recording started - streaming to Deepgram');
 
-    let chunkCount = 0;
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0 && liveConnection?.readyState === WebSocket.OPEN) {
-        chunkCount++;
-        if (chunkCount === 1 || chunkCount % 10 === 0) {
-          console.log(`📤 Sending audio chunk #${chunkCount} (${event.data.size} bytes)`);
-        }
-        liveConnection.send(event.data);
-      } else if (event.data.size > 0) {
-        console.warn('⚠️ WebSocket not ready, cannot send audio data');
-      }
-    };
-
-    // Start recording with small time slices for real-time streaming
-    mediaRecorder.start(250); // Send data every 250ms
-    console.log('🎙️ MediaRecorder started, streaming audio chunks every 250ms');
-
-  } catch (error: any) {
-    console.error('❌ Failed to start live transcription:', error);
-    onError?.(`Failed to start: ${error.message}`);
-    throw error;
-  }
+  return stream;
 };
 
 /**
@@ -319,6 +346,11 @@ export const startLiveTranscription = async (
  */
 export const stopLiveTranscription = (): void => {
   try {
+    // Clear state
+    isWebSocketReady = false;
+    audioChunkBuffer = [];
+    connectionRetryCount = 0;
+
     // Stop media recorder
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
@@ -329,9 +361,15 @@ export const stopLiveTranscription = (): void => {
     }
 
     // Close WebSocket connection
-    if (liveConnection && liveConnection.readyState === WebSocket.OPEN) {
-      // Send close message
-      liveConnection.send(JSON.stringify({ type: 'CloseStream' }));
+    if (liveConnection) {
+      if (liveConnection.readyState === WebSocket.OPEN) {
+        // Send close message
+        try {
+          liveConnection.send(JSON.stringify({ type: 'CloseStream' }));
+        } catch (e) {
+          // Ignore send errors on close
+        }
+      }
       liveConnection.close();
       liveConnection = null;
     }
@@ -339,7 +377,19 @@ export const stopLiveTranscription = (): void => {
     console.log('🎤 Live transcription stopped');
   } catch (error) {
     console.error('Error stopping live transcription:', error);
+    // Force cleanup
+    liveConnection = null;
+    mediaRecorder = null;
+    isWebSocketReady = false;
+    audioChunkBuffer = [];
   }
+};
+
+/**
+ * Check if live transcription WebSocket is ready
+ */
+export const isLiveTranscriptionReady = (): boolean => {
+  return isWebSocketReady && liveConnection?.readyState === WebSocket.OPEN;
 };
 
 export default {
@@ -348,5 +398,6 @@ export default {
   isConfigured: isDeepgramConfigured,
   testConnection: testDeepgramConnection,
   startLive: startLiveTranscription,
-  stopLive: stopLiveTranscription
+  stopLive: stopLiveTranscription,
+  isLiveReady: isLiveTranscriptionReady
 };

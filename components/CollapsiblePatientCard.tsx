@@ -94,31 +94,35 @@ const CollapsiblePatientCard: React.FC<CollapsiblePatientCardProps> = ({ patient
         <div className="flex items-start justify-between gap-2 sm:gap-4 relative z-10">
           {/* Left: Patient Info */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-start gap-2 sm:gap-3 mb-3 flex-wrap">
-              <div className="bg-gradient-to-br from-sky-400 to-blue-600 p-2 sm:p-3 rounded-xl sm:rounded-2xl shadow-md">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
+            {/* Mobile: Name + Icon on top row, badge below */}
+            <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 mb-3">
+              <div className="flex items-start gap-2 sm:gap-3 w-full">
+                <div className="bg-gradient-to-br from-sky-400 to-blue-600 p-2 sm:p-3 rounded-xl sm:rounded-2xl shadow-md flex-shrink-0">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-base sm:text-xl md:text-2xl font-bold text-slate-900 break-words flex-1 min-w-0 leading-tight">{patient.name}</h3>
+                {/* View Patient Details Icon - Material FAB Style */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onView(patient);
+                  }}
+                  className="flex-shrink-0 p-2 sm:p-3 bg-gradient-to-br from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white rounded-xl sm:rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center group active:scale-95 min-h-[40px] min-w-[40px] sm:min-h-[48px] sm:min-w-[48px]"
+                  title="View Full Details"
+                  aria-label="View patient details"
+                >
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </button>
               </div>
-              <h3 className="text-base sm:text-xl md:text-2xl font-bold text-slate-900 break-words flex-1 leading-tight">{patient.name}</h3>
-              <span className={`px-2 sm:px-4 py-1 sm:py-2 rounded-full text-[10px] sm:text-xs md:text-sm font-bold border-2 shadow-sm whitespace-nowrap ${getOutcomeColor(patient.outcome)}`}>
+              {/* Outcome badge on separate line on mobile */}
+              <span className={`px-2 sm:px-4 py-1 sm:py-2 rounded-full text-[10px] sm:text-xs md:text-sm font-bold border-2 shadow-sm whitespace-nowrap self-start ml-0 sm:ml-0 ${getOutcomeColor(patient.outcome)}`}>
                 {patient.outcome}
               </span>
-              {/* View Patient Details Icon - Material FAB Style */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onView(patient);
-                }}
-                className="ml-auto p-2 sm:p-3 bg-gradient-to-br from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white rounded-xl sm:rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl flex items-center justify-center group active:scale-95 min-h-[40px] min-w-[40px] sm:min-h-[48px] sm:min-w-[48px]"
-                title="View Full Details"
-                aria-label="View patient details"
-              >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-              </button>
             </div>
 
             <div className="flex flex-wrap gap-2 sm:gap-3 text-xs sm:text-sm md:text-base ml-0 sm:ml-1 md:ml-3">

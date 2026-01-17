@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Patient, ProgressNote } from '../types';
 import { generatePatientSummary } from '../services/geminiService';
-import ProgressNoteDisplay from './ProgressNoteDisplay';
+import ClinicalNotesNavigator from './ClinicalNotesNavigator';
 import ProgressNoteForm from './ProgressNoteFormEnhanced';
 import MedicationManagement from './MedicationManagement';
 import { getFormattedAge } from '../utils/ageCalculator';
@@ -34,9 +34,19 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Ref to track latest patient state (avoids race conditions)
+  const latestPatientRef = useRef(localPatient);
+
   useEffect(() => {
     setLocalPatient(patient);
+    latestPatientRef.current = patient;
   }, [patient]);
+
+  // Helper to update patient state AND ref synchronously
+  const updatePatientState = (newPatient: Patient) => {
+    latestPatientRef.current = newPatient; // Update ref immediately (sync)
+    setLocalPatient(newPatient); // Schedule state update (async)
+  };
 
   const handleGenerateSummary = async () => {
     setIsLoadingSummary(true);
@@ -51,16 +61,20 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
   };
 
   const handleSaveNote = (note: ProgressNote) => {
-    const updatedNotes = [...(localPatient.progressNotes || []), note];
-    const updatedPatient = { ...localPatient, progressNotes: updatedNotes };
-    setLocalPatient(updatedPatient);
+    // Use ref to get the LATEST patient state (including any medications just added)
+    const currentPatient = latestPatientRef.current;
+    const updatedNotes = [...(currentPatient.progressNotes || []), note];
+    const updatedPatient = { ...currentPatient, progressNotes: updatedNotes };
+    updatePatientState(updatedPatient);
     onPatientUpdate?.(updatedPatient);
     setShowNoteForm(false);
   };
 
   const handleUpdateMedications = (medications: any[]) => {
-    const updatedPatient = { ...localPatient, medications };
-    setLocalPatient(updatedPatient);
+    // Use ref to get the LATEST patient state
+    const currentPatient = latestPatientRef.current;
+    const updatedPatient = { ...currentPatient, medications };
+    updatePatientState(updatedPatient);
     onPatientUpdate?.(updatedPatient);
   };
 
@@ -347,45 +361,12 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
 
         {/* Notes Tab */}
         {activeTab === 'notes' && (
-          <div className="space-y-3">
-            {canEdit && (
-              <button
-                onClick={() => setShowNoteForm(true)}
-                className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add Progress Note
-              </button>
-            )}
-
-            {(localPatient.progressNotes || []).length > 0 ? (
-              <div className="space-y-4">
-                {(() => {
-                  const sortedNotes = (localPatient.progressNotes || [])
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                  return sortedNotes.map((note, index) => (
-                    <ProgressNoteDisplay
-                      key={index}
-                      note={note}
-                      noteIndex={index}
-                      totalNotes={sortedNotes.length}
-                    />
-                  ));
-                })()}
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl border border-slate-200 p-6 text-center">
-                <div className="w-12 h-12 mx-auto bg-blue-100 rounded-xl flex items-center justify-center mb-3">
-                  <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <p className="text-slate-600 font-medium">No progress notes yet</p>
-              </div>
-            )}
-          </div>
+          <ClinicalNotesNavigator
+            notes={localPatient.progressNotes || []}
+            patient={localPatient}
+            canEdit={canEdit}
+            onAddNote={() => setShowNoteForm(true)}
+          />
         )}
 
         {/* Meds Tab */}
@@ -474,9 +455,13 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 overflow-y-auto">
           <div className="min-h-full flex items-start sm:items-center justify-center p-4">
             <div className="bg-white w-full sm:max-w-2xl rounded-2xl shadow-2xl flex flex-col my-4">
-              <div className="px-4 py-3 bg-blue-500 text-white flex items-center justify-between flex-shrink-0 rounded-t-2xl">
-                <h3 className="font-bold">Add Progress Note</h3>
-                <button onClick={() => setShowNoteForm(false)} className="p-1 hover:bg-white/20 rounded">
+              <div className="px-4 py-3 bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white flex items-center justify-between flex-shrink-0 rounded-t-2xl">
+                <h3 className="font-bold flex items-center gap-2">
+                  <span className="text-xl">🎙️</span>
+                  <span>Add Note</span>
+                  <span className="text-lg">✨</span>
+                </h3>
+                <button onClick={() => setShowNoteForm(false)} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -487,7 +472,8 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
                   onSave={handleSaveNote}
                   onCancel={() => setShowNoteForm(false)}
                   onUpdatePatient={(updatedPatient) => {
-                    setLocalPatient(updatedPatient);
+                    // Use updatePatientState to sync ref immediately (prevents race condition)
+                    updatePatientState(updatedPatient);
                     if (onPatientUpdate) {
                       onPatientUpdate(updatedPatient);
                     }

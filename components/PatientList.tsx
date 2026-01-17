@@ -145,8 +145,8 @@ const PatientList: React.FC<PatientListProps> = ({ patients, userRole, onEdit, o
                   : 'bg-gray-100 text-gray-800 border border-gray-300 hover:bg-gray-200'
               }`}
             >
-              <span>{patient.name.length > 15 ? patient.name.slice(0, 15) + '...' : patient.name}</span>
-              {patient.ntid && <span className="ml-1 opacity-70 font-mono">({patient.ntid.slice(-4)})</span>}
+              <span className="break-words">{patient.name}</span>
+              {patient.ntid && <span className="ml-1 opacity-70 font-mono whitespace-nowrap">({patient.ntid.slice(-4)})</span>}
             </button>
           ))}
           {filteredPatients.length > 20 && (
@@ -185,7 +185,7 @@ const PatientList: React.FC<PatientListProps> = ({ patients, userRole, onEdit, o
                 </td>
                 <td className="px-3 sm:px-4 py-3 font-bold text-black">
                   <div className="flex flex-col">
-                    <span className="truncate max-w-[150px] sm:max-w-none">{patient.name}</span>
+                    <span className="break-words leading-tight">{patient.name}</span>
                     {patient.isDraft && <span className="mt-1 text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded inline-block w-fit">DRAFT</span>}
                   </div>
                 </td>

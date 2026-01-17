@@ -1,18 +1,23 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ProgressNote, Patient } from '../../types';
 import { GoogleGenAI } from '@google/genai';
 import { audioRecorder } from '../../utils/audioRecorder';
 import {
-  transcribeWithDeepgram,
   isDeepgramConfigured,
   startLiveTranscription,
   stopLiveTranscription
 } from '../../services/deepgramService';
 import {
   Mic, Square, FileText, RefreshCw, X, Plus, Edit3,
-  Volume2, Pause, Play, Trash2, Save, Wand2, Stethoscope, Radio
+  Volume2, Pause, Play, Trash2, Save, Wand2, Stethoscope, Radio, Loader2
 } from 'lucide-react';
+import { extractMedicationsFromNote } from '../../services/medicationExtractionService';
+import { reconcileMedications, getMedicationsAfterReconciliation } from '../../services/medicationReconciliationService';
+import { showToast } from '../../utils/toast';
+import { db } from '../../firebaseConfig';
+import { doc, updateDoc } from 'firebase/firestore';
+import { calculateAgeFromBirthDate } from '../../utils/ageCalculator';
 
 interface VoiceClinicalNoteProps {
   patient?: Patient;
@@ -22,6 +27,8 @@ interface VoiceClinicalNoteProps {
   existingNote?: ProgressNote;
   userEmail?: string;
   userName?: string;
+  autoStart?: boolean; // Auto-start recording on mount
+  onBackgroundSave?: (patientId: string, note: ProgressNote) => void; // For background processing
 }
 
 interface RecordingSession {
@@ -50,10 +57,13 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
   onUpdatePatient,
   existingNote,
   userEmail,
-  userName
+  userName,
+  autoStart = true, // Default to auto-start
+  onBackgroundSave
 }) => {
   // Core states
   const [isRecording, setIsRecording] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState<'transcribing' | 'formatting' | 'enhancing' | ''>('');
@@ -83,8 +93,8 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const finalTranscriptRef = useRef<string>(''); // Accumulate final results
-  const interimTranscriptRef = useRef<string>(''); // Track interim results
+  const finalTranscriptRef = useRef<string>('');
+  const autoStartedRef = useRef(false);
 
   // Initialize Gemini AI and check Deepgram
   useEffect(() => {
@@ -110,7 +120,17 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     };
   }, []);
 
-  // Audio visualization
+  // Auto-start recording on mount - Start immediately but show connecting status
+  useEffect(() => {
+    if (autoStart && !existingNote && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      console.log('🚀 Auto-starting recording...');
+      // Just call startRecording - it will handle the UI states properly
+      startRecording();
+    }
+  }, [autoStart, existingNote]);
+
+  // Simple audio visualization (no silence detection)
   const startAudioVisualization = async (stream: MediaStream) => {
     try {
       audioContextRef.current = new AudioContext();
@@ -125,11 +145,9 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
 
       const updateLevels = () => {
         if (!analyserRef.current) return;
-
         analyserRef.current.getByteFrequencyData(dataArray);
         const levels = Array.from(dataArray).map(v => v / 255);
         setAudioLevels(levels);
-
         animationFrameRef.current = requestAnimationFrame(updateLevels);
       };
 
@@ -144,6 +162,31 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
       cancelAnimationFrame(animationFrameRef.current);
     }
     setAudioLevels(new Array(32).fill(0));
+  };
+
+  // Play beep sound to indicate ready to record
+  const playBeepSound = () => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      oscillator.frequency.value = 800; // 800 Hz beep
+      oscillator.type = 'sine';
+
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.2);
+
+      console.log('🔔 Beep sound played - ready to record!');
+    } catch (error) {
+      console.error('Failed to play beep sound:', error);
+    }
   };
 
   // Format time display
@@ -179,82 +222,85 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     return `Day ${diffDays} of Admission`;
   };
 
-  // Start recording with live transcription
+  // Calculate current age dynamically from DOB
+  const getCurrentAge = useMemo(() => {
+    if (patient?.dateOfBirth) {
+      const { age, ageUnit } = calculateAgeFromBirthDate(patient.dateOfBirth);
+      return `${age} ${ageUnit}`;
+    }
+    // Fallback to stored age if no DOB
+    return `${patient?.age || 0} ${patient?.ageUnit || 'days'}`;
+  }, [patient?.dateOfBirth, patient?.age, patient?.ageUnit]);
+
+  // Calculate Day of Life (DOL) for neonates
+  const getDayOfLife = (): string => {
+    if (!patient?.dateOfBirth) return '';
+    const birthDate = new Date(patient.dateOfBirth);
+    const now = new Date();
+    const diffMs = now.getTime() - birthDate.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1; // Day 1 is birth day
+    return `DOL ${diffDays}`;
+  };
+
+  // Start recording with real-time Deepgram transcription
   const startRecording = async () => {
+    if (isRecording || isInitializing) return;
+
     setError('');
     setLiveTranscript('');
     setRecordingTime(0);
-    setTranscriptionStatus('');
+    setIsInitializing(true);
     finalTranscriptRef.current = '';
-    interimTranscriptRef.current = '';
 
-    // Check Deepgram configuration
     if (!isDeepgramConfigured()) {
-      setError('Deepgram not configured. Please check Deepgram API key in settings.');
+      setError('Deepgram not configured.');
+      setIsInitializing(false);
       return;
     }
 
     try {
-      console.log('🎤 Starting recording with Deepgram Nova-3 live streaming...');
-
-      // Start live transcription with Deepgram streaming
-      await startLiveTranscription(
+      // Start Deepgram live transcription - returns the stream for visualization
+      const stream = await startLiveTranscription(
+        // onTranscript callback
         (transcript: string, isFinal: boolean) => {
-          console.log(`📝 Transcript ${isFinal ? 'FINAL' : 'interim'}:`, transcript);
-
           if (isFinal) {
-            // Final result - add to accumulated final text
             finalTranscriptRef.current = finalTranscriptRef.current
               ? `${finalTranscriptRef.current} ${transcript}`
               : transcript;
-            interimTranscriptRef.current = ''; // Clear interim
-
-            // Update display with final text only
             setLiveTranscript(finalTranscriptRef.current);
-            console.log('✅ Final accumulated:', finalTranscriptRef.current);
           } else {
-            // Interim result - temporary text
-            interimTranscriptRef.current = transcript;
-
-            // Display: final + interim (with separator)
-            const displayText = finalTranscriptRef.current
-              ? `${finalTranscriptRef.current} ${transcript}`
-              : transcript;
-            setLiveTranscript(displayText);
+            setLiveTranscript(
+              finalTranscriptRef.current
+                ? `${finalTranscriptRef.current} ${transcript}`
+                : transcript
+            );
           }
         },
+        // onError callback
         (error: string) => {
-          console.error('❌ Live transcription error:', error);
-          setError(`Transcription error: ${error}`);
+          console.error('Transcription error:', error);
+          setError(error);
         }
       );
 
-      console.log('✅ Live transcription started successfully');
-
-      // Start audio recording (for backup)
-      await audioRecorder.start({
-        onError: (err) => {
-          setError(err);
-          setIsRecording(false);
-        }
-      });
-
-      // Get media stream for visualization (separate from streaming)
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Use the same stream for visualization
       mediaStreamRef.current = stream;
-      await startAudioVisualization(stream);
+      startAudioVisualization(stream);
 
+      // Ready!
+      setIsInitializing(false);
       setIsRecording(true);
-      setIsPaused(false);
-      setTranscriptionStatus('🎤 Listening...');
+      playBeepSound();
 
+      // Start timer
       timerRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
 
     } catch (err) {
-      console.error('❌ Failed to start recording:', err);
-      setError((err as Error).message);
+      console.error('Failed to start:', err);
+      setError('Could not start recording: ' + (err as Error).message);
+      setIsInitializing(false);
     }
   };
 
@@ -274,75 +320,352 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     setIsPaused(false);
   };
 
-  // Stop recording and transcribe with Deepgram
-  const stopRecording = async () => {
-    console.log('🛑 Stopping recording...');
+  // Stop, Generate, and Save - ALL IN ONE
+  const stopAndSaveNote = async () => {
+    console.log('🛑 Stop → Generate → Save');
 
+    // 1. STOP RECORDING
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
-
     stopAudioVisualization();
+    setIsRecording(false);
 
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-    }
-
-    // Stop live transcription
+    // Wait for final transcripts
+    await new Promise(resolve => setTimeout(resolve, 300));
     stopLiveTranscription();
 
-    setIsRecording(false);
-    setIsPaused(false);
-    setTranscriptionStatus('');
+    const transcript = finalTranscriptRef.current.trim();
+    console.log('📝 Transcript:', transcript);
 
-    const currentDuration = recordingTime;
-    // Use the final accumulated transcript from ref
-    const finalTranscript = finalTranscriptRef.current.trim();
+    if (!transcript || transcript.length < 3) {
+      setError('No speech detected. Please speak clearly and try again.');
+      finalTranscriptRef.current = '';
+      return;
+    }
 
-    console.log('📝 Final transcript from Deepgram:', finalTranscript);
-    console.log('⏱️ Recording duration:', currentDuration, 'seconds');
+    // 2. GENERATE NOTE using the full prompt
+    setIsProcessing(true);
+    setProcessingStep('formatting');
+
+    const { date, time } = getCurrentDateTime();
+    const dayInfo = getDayOfAdmission();
+    const dolInfo = getDayOfLife();
+
+    const prompt = `You are an elite NICU/PICU intensivist creating world-class clinical documentation.
+
+PATIENT: ${patient?.name || 'N/A'} | ${getCurrentAge} | ${dolInfo ? dolInfo + ' | ' : ''}${patient?.unit || 'NICU'} | Dx: ${patient?.diagnosis || 'N/A'}
+DATE: ${date} | TIME: ${time}${dayInfo ? ' | ' + dayInfo : ''}
+
+VOICE DICTATION:
+"${transcript}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    CLINICAL PROGRESS NOTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Date: ${date}                                        Time: ${time}
+${dayInfo || ''}${dolInfo ? '                                             ' + dolInfo : ''}
+
+┌─ SUBJECTIVE ─────────────────────────────────────────────────┐
+│                                                              │
+│ CHIEF CONCERN: [Context-aware - identify the TYPE]:         │
+│   • Disease/Condition update (e.g., "RDS Day 3 - weaning")  │
+│   • Investigation review (e.g., "CXR review - improving")   │
+│   • Procedure (e.g., "Post UVC insertion")                  │
+│   • Counselling (e.g., "Discharge counselling")             │
+│   • Routine follow-up (e.g., "Routine Day 5 assessment")    │
+│                                                              │
+│ HISTORY: [What happened BEFORE this note - timeline]:       │
+│   • Birth/Admission details if relevant                     │
+│   • Course since last review                                │
+│   • Events/changes in last 24h                              │
+│   • Previous interventions and response                     │
+│                                                              │
+│ FEEDING: [Type, volume, frequency, tolerance]               │
+│ OUTPUT: [Urine, stool - adequacy]                           │
+│ PARENTS: [Concerns, counselling done]                       │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ OBJECTIVE ──────────────────────────────────────────────────┐
+│                                                              │
+│ VITALS                                                       │
+│ T:      HR:      RR:      SpO2:      BP:      CRT:      Wt:  │
+│                                                              │
+│ RESPIRATORY SUPPORT: [ONLY if mentioned - with STATUS]:     │
+│   Status: Continuing / Newly started / Changed / Weaning    │
+│   Mode: [CPAP/HFNC/Ventilator/Room air/O2]                  │
+│   Settings: [FiO2, PEEP, PIP, etc. if mentioned]            │
+│                                                              │
+│ OTHER SUPPORT: [ONLY if mentioned - IV lines, feeds, etc.]  │
+│                                                              │
+│ EXAMINATION                                                  │
+│ General  :                                                   │
+│ CNS      :                                                   │
+│ CVS      :                                                   │
+│ Resp     :                                                   │
+│ Abdomen  :                                                   │
+│ Skin     :                                                   │
+│ Access   : [Lines, tubes if mentioned]                       │
+│                                                              │
+│ INVESTIGATIONS [Only if mentioned]                           │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ ASSESSMENT ─────────────────────────────────────────────────┐
+│                                                              │
+│ PRIMARY DIAGNOSIS:                                           │
+│ [Diagnosis] - [Severity: mild/moderate/severe], [Status]     │
+│                                                              │
+│ SECONDARY DIAGNOSES:                                         │
+│ 1.                                                           │
+│ 2.                                                           │
+│ 3.                                                           │
+│                                                              │
+│ ══════════════════════════════════════════════════════════   │
+│ CLINICAL IMPRESSION:                                         │
+│ [Synthesize: What is the overall clinical picture? How is    │
+│  the patient trending? What are the key concerns? What is    │
+│  the prognosis for the next 24-48 hours?]                    │
+│ ══════════════════════════════════════════════════════════   │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ PLAN ───────────────────────────────────────────────────────┐
+│                                                              │
+│ [Write plan naturally - exactly as dictated]                 │
+│ [Group logically: Respiratory → Medications → Fluids/Feeds   │
+│  → Monitoring → Investigations → Follow-up]                  │
+│                                                              │
+│ Medications: Inj/Tab/Syp [Drug] [Dose] [Route] [Frequency]   │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+                                           Dr. ${userName || '_______________'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INTELLIGENCE GUIDELINES:
+
+1. CHIEF CONCERN - Be CONTEXT-AWARE:
+   Analyze the dictation and identify what TYPE of note this is:
+   → Disease update: "RDS Day 3 - on CPAP, weaning FiO2"
+   → Investigation: "Blood culture review - no growth at 48h"
+   → Procedure: "Post surfactant administration"
+   → Counselling: "Pre-discharge counselling with parents"
+   → Routine: "Routine morning rounds - DOL 5"
+
+2. HISTORY - Tell the STORY:
+   → What is the background? (Birth weight, GA, mode of delivery)
+   → What happened since admission/last note?
+   → What interventions were done and how did baby respond?
+   → Any significant events in the last 24 hours?
+
+3. CLINICAL IMPRESSION - This is CRITICAL:
+   Write 1-2 sentences that capture:
+   → Overall trajectory (improving/stable/worsening)
+   → Key clinical concerns right now
+   → Expected course in next 24-48 hours
+
+4. RESPIRATORY/OTHER SUPPORT - UNDERSTAND THE CONTEXT:
+   ★ ALWAYS clarify the STATUS of any support mentioned:
+     → "on CPAP" / "CPAP continuing" → Status: Continuing on CPAP
+     → "started on CPAP" / "put on CPAP" / "intubated" → Status: Newly started
+     → "CPAP to HFNC" / "weaning" / "stepped down" → Status: Changed/Weaning
+     → "extubated" / "off CPAP" / "room air" → Status: Support removed
+   ★ DO NOT include respiratory support section if NOT mentioned
+   ★ Same logic for: Ventilator, HFNC, O2 therapy, IV fluids, TPN, phototherapy, etc.
+   ★ Examples:
+     → User says "baby on CPAP" → Write: "CPAP (Continuing) - [settings if mentioned]"
+     → User says "started CPAP today" → Write: "CPAP (Newly initiated) - [settings]"
+     → User says "weaning CPAP" → Write: "CPAP (Weaning) - FiO2 reduced from X to Y"
+
+5. INTELLIGENT DEFAULTS - SYSTEM-FOCUSED EXAMINATION:
+   ★ If user focuses on ONE SYSTEM (e.g., respiratory), assume OTHER systems are NORMAL:
+     → User mentions only respiratory → Other systems: "WNL"
+     → User mentions only CNS → CVS, Resp, Abdomen: assume normal
+   ★ If user says "vitals stable" or doesn't mention vitals:
+     → Neonate defaults: T:37°C HR:140/min RR:45/min SpO2:98% CRT:<2s
+   ★ If user says "exam normal" without specifics:
+     → General: Active | CNS: Normal tone | CVS: S1S2+ | Resp: B/L AE+ | Abd: Soft, BS+
+
+6. PRONUNCIATION CORRECTION - ALL MEDICAL TERMS:
+   Voice transcription often has errors. INTELLIGENTLY DECODE based on context:
+
+   MEDICATIONS:
+   → "Vanco mice in" / "Vanko my sin" → Vancomycin
+   → "Amp a sill in" / "Ampi cillin" → Ampicillin
+   → "Jenta mice in" / "Genta my sin" → Gentamicin
+   → "Phenol barb a tone" / "Pheno barbi tone" → Phenobarbitone
+   → "Dopa mean" / "Doppa meen" → Dopamine
+   → "Cafe in" / "Caff een" → Caffeine
+   → "Amino fill in" → Aminophylline
+   → "Metro nida zole" → Metronidazole
+   → "Cef o tax eem" / "Cefo taxime" → Cefotaxime
+   → "Amika sin" → Amikacin
+   → "Mero pen em" → Meropenem
+   → "Pip taz" / "Piper a cillin" → Piperacillin-Tazobactam
+   → "Surface tent" / "Sir fac tant" → Surfactant
+   → "Leve tiara set am" → Levetiracetam
+   → "Midazz o lam" → Midazolam
+
+   DIAGNOSES:
+   → "RD yes" / "R D S" → RDS (Respiratory Distress Syndrome)
+   → "Neck" / "N E C" → NEC (Necrotizing Enterocolitis)
+   → "PD A" / "Pee dee ay" → PDA (Patent Ductus Arteriosus)
+   → "High E" / "H I E" → HIE (Hypoxic Ischemic Encephalopathy)
+   → "Sepsis" / "Sep sis" → Sepsis
+   → "Neo natal" / "Neonatal" → Neonatal
+   → "Hyper bili" / "Jaundice" → Hyperbilirubinemia
+   → "Meck onium" / "Meconium" → Meconium Aspiration
+
+   PROCEDURES/EQUIPMENT:
+   → "See pap" / "C pap" → CPAP
+   → "High flow" / "HF NC" → HFNC
+   → "You vee see" / "UVC" → Umbilical Venous Catheter
+   → "You ay see" / "UAC" → Umbilical Arterial Catheter
+   → "Lumber puncture" / "LP" → Lumbar Puncture
+   → "Photo therapy" → Phototherapy
+   → "Exchange transfusion" → Exchange Transfusion
+
+   EXAMINATION FINDINGS:
+   → "Crep it ations" / "Creps" → Crepitations
+   → "Ron kai" / "Rhonchi" → Rhonchi
+   → "Bi lateral" → Bilateral
+   → "Hepato megaly" → Hepatomegaly
+   → "Tachy cardia" → Tachycardia
+   → "Brady cardia" → Bradycardia
+   → "Hypo tonia" → Hypotonia
+
+7. CONTEXT-BASED VALIDATION:
+   ★ Only include items RELEVANT to the condition:
+     → Sepsis → Antibiotics expected | RDS → Caffeine, Surfactant expected
+     → Seizures → Anticonvulsants expected | HIE → Phenobarbitone expected
+   ★ IF UNCLEAR: Write "Unable to appreciate" - DO NOT GUESS randomly
+   ★ NEVER invent things not mentioned or implied by the dictation
+
+8. ABBREVIATIONS:
+   B/L=Bilateral | AE=Air Entry | BS=Bowel Sounds | S1S2+=Heart sounds normal
+   CRT=Capillary Refill | GA=Gestational Age | DOL=Day of Life | EBM=Expressed Breast Milk
+   TPN=Total Parenteral Nutrition | WNL=Within Normal Limits | NAD=No Abnormality Detected
+
+CRITICAL RULES:
+✓ One line per finding - be concise
+✓ Use medical abbreviations
+✓ Numbers with units (37°C, 140/min, 2.5kg)
+✓ NO markdown formatting (no **, ##, *)
+✓ CLINICAL IMPRESSION is mandatory - synthesize the case
+✓ Plan should mirror what was dictated
+✓ If a system is NOT mentioned, write "WNL" or skip it - DO NOT fabricate findings
+✓ Respiratory support: MUST indicate status (Continuing/New/Changed/Weaning)
+✓ All medical terms must be spelled correctly - use context to decode pronunciation errors`;
 
     try {
-      // Stop audio recorder
-      await audioRecorder.stop();
+      console.log('🤖 Generating SOAP note...');
+      const response = await aiRef.current!.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: prompt
+      });
 
-      if (!finalTranscript || finalTranscript.length < 3) {
-        console.warn('⚠️ No speech detected or recording too short');
-        setError('No speech detected. Please speak clearly and try again.');
-        setLiveTranscript('');
-        finalTranscriptRef.current = '';
-        interimTranscriptRef.current = '';
+      let noteText = response.text.trim().replace(/```/g, '').replace(/\*\*/g, '');
+
+      if (!noteText || noteText.length < 10) {
+        setError('Failed to generate note. Please try again.');
+        setIsProcessing(false);
         return;
       }
 
-      // Create new session with the live transcript
-      const newSession: RecordingSession = {
+      console.log('✅ Note generated, length:', noteText.length);
+
+      // 3. EXTRACT & RECONCILE MEDICATIONS
+      setProcessingStep('enhancing');
+
+      let medicationsForNote: any[] = [];
+
+      if (patient && onUpdatePatient) {
+        try {
+          const extractionResult = await extractMedicationsFromNote(
+            noteText,
+            {
+              age: patient.age,
+              ageUnit: patient.ageUnit,
+              unit: patient.unit,
+              diagnosis: patient.diagnosis,
+              currentMedications: patient.medications || []
+            }
+          );
+
+          console.log('🔬 Medication Extraction:', extractionResult.totalFound, 'found');
+
+          medicationsForNote = extractionResult.medications.map(em => ({
+            name: em.name,
+            dose: em.dose,
+            route: em.route,
+            frequency: em.frequency,
+            startDate: new Date().toISOString(),
+            isActive: true,
+            addedBy: userName || userEmail || 'Clinical Note',
+            addedAt: new Date().toISOString()
+          }));
+
+          const reconciliationResult = await reconcileMedications(
+            extractionResult.medications,
+            patient.medications || [],
+            extractionResult.stoppedMedications,
+            { addedBy: userName || userEmail || 'System', addedAt: new Date().toISOString() }
+          );
+
+          const hasChanges = reconciliationResult.added.length > 0 ||
+            reconciliationResult.updated.length > 0 ||
+            reconciliationResult.stopped.length > 0;
+
+          if (hasChanges) {
+            const allMedications = getMedicationsAfterReconciliation(reconciliationResult);
+            const updatedPatient = { ...patient, medications: allMedications };
+
+            const patientRef = doc(db, 'patients', patient.id);
+            await updateDoc(patientRef, { medications: allMedications });
+            onUpdatePatient(updatedPatient);
+
+            const messages: string[] = [];
+            if (reconciliationResult.added.length > 0) messages.push(`${reconciliationResult.added.length} added`);
+            if (reconciliationResult.updated.length > 0) messages.push(`${reconciliationResult.updated.length} updated`);
+            if (reconciliationResult.stopped.length > 0) messages.push(`${reconciliationResult.stopped.length} stopped`);
+            showToast('success', `💊 ${messages.join(', ')}`);
+          }
+        } catch (medError) {
+          console.error('Medication extraction failed:', medError);
+        }
+      }
+
+      // 4. SAVE NOTE
+      const vitals = parseVitals(noteText);
+      const examination = parseExamination(noteText);
+
+      const progressNote: ProgressNote = {
         id: Date.now().toString(),
-        transcript: finalTranscript,
-        duration: currentDuration,
-        timestamp: new Date()
+        timestamp: new Date().toISOString(),
+        note: noteText,
+        authorEmail: userEmail || '',
+        authorName: userName || userEmail || '',
+        date: new Date().toISOString(),
+        addedBy: userName || userEmail || '',
+        vitals,
+        examination,
+        medications: medicationsForNote.length > 0 ? medicationsForNote : undefined
       };
 
-      setSessions(prev => [...prev, newSession]);
+      await onSave(progressNote);
 
-      // Update combined transcript
-      setCombinedTranscript(prev =>
-        prev ? `${prev} ${finalTranscript}` : finalTranscript
-      );
-
-      setLiveTranscript('');
-      setRecordingTime(0);
+      setIsProcessing(false);
       finalTranscriptRef.current = '';
-      interimTranscriptRef.current = '';
 
-      console.log('✅ Recording session saved:', newSession);
+      showToast('success', '✅ Note saved!');
+      setTimeout(() => onCancel(), 500);
 
     } catch (err) {
-      console.error('❌ Error stopping recording:', err);
-      setError((err as Error).message);
+      console.error('❌ Error:', err);
+      setError('Failed: ' + (err as Error).message);
       setIsProcessing(false);
-      setProcessingStep('');
-      setTranscriptionStatus('');
     }
   };
 
@@ -362,367 +685,255 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
 
     setIsProcessing(true);
     setProcessingStep('formatting');
+    await generateNoteFromText(fullTranscript);
+  };
+
+  // Core note generation logic
+  const generateNoteFromText = async (fullTranscript: string) => {
+    setIsProcessing(true);
+    setProcessingStep('formatting');
 
     const { date, time } = getCurrentDateTime();
     const dayInfo = getDayOfAdmission();
+    const dolInfo = getDayOfLife();
 
-    const prompt = `You are an expert NICU/PICU medical scribe with 20 years experience. Your task is to convert voice dictation into a perfectly structured clinical progress note.
+    const prompt = `You are an elite NICU/PICU intensivist creating world-class clinical documentation.
+
+PATIENT: ${patient?.name || 'N/A'} | ${getCurrentAge} | ${dolInfo ? dolInfo + ' | ' : ''}${patient?.unit || 'NICU'} | Dx: ${patient?.diagnosis || 'N/A'}
+DATE: ${date} | TIME: ${time}${dayInfo ? ' | ' + dayInfo : ''}
 
 VOICE DICTATION:
 "${fullTranscript}"
 
-PATIENT CONTEXT:
-- Name: ${patient?.name || 'N/A'}
-- Age: ${patient?.age || ''} ${patient?.ageUnit || 'days'}
-- Unit: ${patient?.unit || 'NICU'}
-- Primary Diagnosis: ${patient?.diagnosis || 'N/A'}
-- Date: ${date}
-- Time: ${time}
-${dayInfo ? `- ${dayInfo}` : ''}
-
-GENERATE THIS EXACT FORMAT:
-
-CLINICAL PROGRESS NOTE
-
-Date: ${date}                                              Time: ${time}
-${dayInfo || ''}
-
-VITALS
-Temp:           HR:             RR:             SpO2:
-BP:             CRT:            Weight:
-
-SYSTEMIC EXAMINATION
-CNS   :
-CVS   :
-CHEST :
-P/A   :
-
-OTHER FINDINGS
-
-
-TREATMENT
-
-Respiratory Support:
-
-Inotropic Support:
-
-Medications:
-
-IV Fluids:
-
-Feeds:
-
-IMPRESSION
-
-
-PLAN AND ADVICE
-
-
-                                                    Dr. ${userName || '_____________'}
-
-STATE-OF-THE-ART DOCUMENTATION RULES:
-
-GOLDEN RULE: Only write what is SAID. If a specific finding is mentioned, write ONLY that finding.
-If a system is "normal" or not mentioned, write concise standard normal findings.
-
-1. VITALS - BE PRECISE:
-   If specific numbers mentioned → Write EXACTLY those numbers
-   Example: "Temp 38, HR 150" → Temp: 38°C  HR: 150/min
-
-   If "vitals stable/normal" → Write age-appropriate normals:
-   - Neonate: Temp: 37°C, HR: 140/min, RR: 48/min, SpO2: 98%
-   - Infant: Temp: 37°C, HR: 120/min, RR: 35/min, SpO2: 98%
-   - Toddler: Temp: 37°C, HR: 100/min, RR: 25/min, SpO2: 99%
-
-2. CNS - BRAIN/NEUROLOGICAL ONLY:
-   Specific finding mentioned → Write ONLY that finding:
-   - "Baby has seizures" → CNS: Seizure activity noted
-   - "Fontanelle bulging" → CNS: AF bulging
-   - "Tone decreased" → CNS: Hypotonia
-   - "Lethargy" → CNS: Lethargic
-   - "Irritable" → CNS: Irritable
-
-   If "CNS normal" or not mentioned → Write:
-   CNS: Alert and active
-   OR
-   CNS: WNL
-
-3. CVS - HEART/CARDIAC ONLY:
-   Specific finding mentioned → Write ONLY that finding:
-   - "Murmur present" → CVS: Murmur heard
-   - "Tachycardia" → CVS: Tachycardia
-   - "CRT delayed" → CVS: CRT >3 sec
-
-   DO NOT write extremity findings (cold/clammy) here - those go in OTHER FINDINGS
-
-   If "CVS normal" or not mentioned → Write:
-   CVS: S1S2+, no murmur
-
-4. CHEST - CONCISE & SMART:
-   Specific finding mentioned → Write ONLY that finding:
-   - "Subcostal retractions present" → CHEST: Subcostal retractions present
-   - "Grunting" → CHEST: Expiratory grunting
-   - "Decreased air entry left" → CHEST: Decreased AE left side
-   - "Bilateral crackles" → CHEST: B/L crackles
-
-   If "Chest clear/normal" or not mentioned → Write standard normal:
-   CHEST: B/L AE equal, no retractions
-
-5. P/A (PER ABDOMEN) - CONCISE & SMART:
-   Specific finding mentioned → Write ONLY that finding:
-   - "Abdomen distended" → P/A: Distended
-   - "Vomiting" → P/A: Vomiting noted
-   - "Tender" → P/A: Tender on palpation
-
-   If "Abdomen normal/soft" or not mentioned → Write standard normal:
-   P/A: Soft, BS+
-
-MEDICAL ABBREVIATIONS TO USE:
-- AE = Air Entry
-- B/L = Bilateral
-- BS = Bowel Sounds
-- AF = Anterior Fontanelle
-- S1S2+ = Heart sounds present
-- CRT = Capillary Refill Time
-- RR = Respiratory Rate
-- HR = Heart Rate
-- SpO2 = Oxygen Saturation
-- P/A = Per Abdomen
-
-6. OTHER FINDINGS - For Non-System Specific:
-   Use for findings that don't fit CNS/CVS/CHEST/P/A:
-   - Extremities: "Cold extremities", "Clammy", "Mottled", "Edema"
-   - Skin: "Jaundice", "Rash", "Cyanosis", "Petechiae"
-   - Access: "PIV in situ", "UVC in place", "UAC in situ"
-   - Urine: "Adequate urine output", "Oliguria", "Anuria"
-   - Perfusion: "Poor perfusion", "Mottling" (if mentioned as extremity finding)
-
-   Be concise: "Jaundice present" NOT "Jaundice is present in the baby"
-
-   If nothing specific mentioned, leave blank or write nothing
-
-7. MEDICATIONS - Professional Format:
-   Remove action words, use proper prefixes:
-   - "started vancomycin 15mg/kg" → "Inj Vancomycin 15mg/kg IV"
-   - "given ampicillin" → "Inj Ampicillin [dose]"
-   - "oral phenobarbitone 20mg" → "Syp Phenobarbitone 20mg PO"
-   - "paracetamol IV" → "Inj Paracetamol [dose]"
-
-   Format: Inj/Tab/Syp/Cap [Drug] [dose] [route] [frequency]
-
-8. RESPIRATORY SUPPORT - Under TREATMENT Only:
-   - "On CPAP" → TREATMENT: CPAP with PEEP X cmH2O, FiO2 X%
-   - "Ventilator" → TREATMENT: Ventilator mode [SIMV/AC], PIP X, PEEP X, FiO2 X%, Rate X
-   - "O2 via nasal cannula" → TREATMENT: O2 @ X L/min via nasal cannula
-   - NEVER write respiratory support in OTHER FINDINGS
-
-9. INOTROPES - Under TREATMENT Only:
-   - "On dopamine" → TREATMENT: Dopamine @ X mcg/kg/min
-   - "Adrenaline" → TREATMENT: Adrenaline @ X mcg/kg/min
-   Always include dose if mentioned
-
-10. BE SMART, BE CONCISE:
-    - Don't write verbose sentences
-    - Use medical abbreviations
-    - Be precise and professional
-    - If not mentioned, use standard concise normals
-    - If mentioned, write ONLY what's said
-
-11. IMPRESSION - STATE-OF-THE-ART CLINICAL SYNTHESIS:
-    The IMPRESSION is the MOST IMPORTANT section - it synthesizes all findings into a clear diagnosis.
-
-    GOLDEN RULES FOR IMPRESSIVE IMPRESSIONS:
-
-    a) START WITH PRIMARY DIAGNOSIS:
-       - Lead with the main diagnosis or chief problem
-       - Use proper medical terminology
-       - Be specific and definitive
-
-    b) ADD SEVERITY/STATUS:
-       - Include severity: mild/moderate/severe
-       - Include trend: improving/worsening/stable
-       - Include treatment response if mentioned
-
-    c) LIST COMPLICATIONS/CONCERNS:
-       - List secondary diagnoses or complications
-       - Numbered or bulleted format for clarity
-       - Each on a new line for readability
-
-    d) BE CONCISE BUT COMPLETE:
-       - No unnecessary words
-       - Include all significant problems
-       - Prioritize by clinical importance
-
-    STRUCTURE:
-    Primary Diagnosis (severity/status)
-    1. Complication/concern #1
-    2. Complication/concern #2
-    3. Additional problems
-
-    EXAMPLES OF STELLAR IMPRESSIONS:
-
-    Example A - Respiratory Distress Syndrome:
-    IMPRESSION:
-    Respiratory Distress Syndrome (moderate, improving on CPAP)
-    1. Prematurity (32 weeks GA)
-    2. Rule out early onset sepsis - on antibiotics
-    3. Hyperbilirubinemia - under phototherapy
-
-    Example B - Neonatal Sepsis:
-    IMPRESSION:
-    Early Onset Neonatal Sepsis (culture positive - E.coli, improving)
-    1. Respiratory distress - resolved
-    2. Metabolic acidosis - corrected
-    3. Thrombocytopenia - recovering
-
-    Example C - Meconium Aspiration:
-    IMPRESSION:
-    Meconium Aspiration Syndrome (severe, on mechanical ventilation)
-    1. Persistent Pulmonary Hypertension
-    2. Acute Kidney Injury - oliguria present
-    3. Perinatal asphyxia
-
-    Example D - Seizures:
-    IMPRESSION:
-    Neonatal Seizures (controlled on phenobarbitone)
-    1. Hypoxic Ischemic Encephalopathy - Grade II
-    2. Metabolic derangements - corrected
-
-    Example E - Simple stable case:
-    IMPRESSION:
-    Transient Tachypnea of Newborn (resolved)
-    Clinically stable
-
-    WHAT MAKES AN IMPRESSION AWESOME:
-    ✓ Clear primary diagnosis at the top
-    ✓ Clinical status/severity included
-    ✓ Complications listed systematically
-    ✓ Easy to understand at a glance
-    ✓ No vague terms like "sick baby" or "unwell"
-    ✓ Proper medical terminology
-    ✓ Prioritized by importance
-    ✓ Treatment response if mentioned
-
-    AVOID IN IMPRESSION:
-    ✗ Vague statements: "Baby is sick", "Not doing well"
-    ✗ Too much detail: Save details for examination
-    ✗ Repeating vitals: Already documented above
-    ✗ Long paragraphs: Use structured list
-    ✗ Uncertainty without reason: Instead of "? Sepsis", write "Rule out sepsis"
-
-CRITICAL RULES FOR STATE-OF-THE-ART DOCUMENTATION:
-
-✓ BE LITERAL: If a specific finding is mentioned → Write ONLY that finding, nothing more
-✓ BE SMART: If "normal" or not mentioned → Write concise standard normal findings
-✓ USE ABBREVIATIONS: AE, B/L, BS, S1S2+, CRT, WNL (professional & concise)
-✓ BE CONCISE: "Soft, BS+" not "Soft, non-distended, bowel sounds present, no organomegaly"
-✓ DON'T ADD: If user says "subcostal retractions", write ONLY that, don't add other findings
-✓ DON'T REPEAT: Don't write "normal" - use specific abbreviated findings
-✓ NO PLACEHOLDERS: Remove all [brackets], template text, "any advice/counseling", etc.
-✓ CLEAN SECTIONS: If section empty, leave blank - don't write placeholder text
-✓ CNS NORMAL: Just "Alert and active" or "WNL" - NO fontanelle in normal
-✓ EXTREMITIES: Cold/clammy extremities → OTHER FINDINGS, NOT CVS
-✓ SYSTEM-SPECIFIC: CVS = heart only, CHEST = lungs only, CNS = brain only
-✓ MEDICATIONS: Inj/Tab/Syp format, remove "started/given"
-✓ NO EMOJIS, NO MARKDOWN, CLEAN PROFESSIONAL DOCUMENTATION
-
-PERFECT EXAMPLES:
-
-Example 1 - Mixed findings:
-Voice: "Subcostal retractions present, other systems normal, vitals stable"
-CORRECT:
-VITALS: Temp: 37°C  HR: 140/min  RR: 48/min  SpO2: 98%
-CNS   : Alert and active
-CVS   : S1S2+, no murmur
-CHEST : Subcostal retractions present
-P/A   : Soft, BS+
-
-Example 2 - All normal:
-Voice: "Baby is stable, all systems normal"
-CORRECT:
-VITALS: Temp: 37°C  HR: 140/min  RR: 48/min  SpO2: 98%
-CNS   : WNL
-CVS   : S1S2+, no murmur
-CHEST : B/L AE equal, no retractions
-P/A   : Soft, BS+
-
-Example 3 - Cold extremities (goes to OTHER FINDINGS):
-Voice: "Cold and clammy extremities, jaundice present, CVS normal"
-CORRECT:
-CVS: S1S2+, no murmur
-OTHER FINDINGS: Cold and clammy extremities, jaundice present
-
-Example 4 - Specific findings with empty sections:
-Voice: "Baby has seizures, abdomen distended, started phenobarbitone"
-CORRECT:
-CNS: Seizure activity noted
-CVS: S1S2+, no murmur
-CHEST: B/L AE equal, no retractions
-P/A: Distended
-OTHER FINDINGS:
-(leave blank if nothing to write)
-TREATMENT
-Medications: Inj Phenobarbitone [dose]
-
-Example 5 - Clean sections, no placeholders:
-Voice: "Respiratory distress with grunting, on CPAP PEEP 5 FiO2 40"
-CORRECT:
-CHEST: Expiratory grunting, tachypnea
-TREATMENT
-Respiratory Support: CPAP with PEEP 5 cmH2O, FiO2 40%
-
-Example 6 - Complete Note with IMPRESSION and PLAN AND ADVICE:
-Voice: "Baby has respiratory distress, grunting present, on CPAP PEEP 5, SpO2 92%, continue surfactant, chest X-ray needed"
-CORRECT:
-VITALS: SpO2: 92%
-CNS: Alert and active
-CVS: S1S2+, no murmur
-CHEST: Expiratory grunting, subcostal retractions
-P/A: Soft, BS+
-
-TREATMENT
-Respiratory Support: CPAP with PEEP 5 cmH2O
-Medications: Inj Surfactant (given)
-
-IMPRESSION:
-Respiratory Distress Syndrome (moderate, on CPAP)
-1. Prematurity
-2. Rule out pneumonia
-
-PLAN AND ADVICE:
-- Continue CPAP, wean as tolerated
-- Chest X-ray to assess lung fields
-- Monitor SpO2 closely
-- If worsening, consider intubation
-- Counsel parents regarding progress
-
-REMEMBER:
-- NO placeholder text like "[any findings]" or "any advice/counseling"
-- Empty sections stay empty - don't fill with template text
-- CNS normal = "Alert and active" or "WNL" (NOT "AF flat")
-- Cold/clammy extremities = OTHER FINDINGS (NOT CVS)
-- System-specific only (CVS = heart, CHEST = lungs, CNS = brain)
-- IMPRESSION must be concise, structured, and state primary diagnosis clearly
-- PLAN AND ADVICE should be actionable bullet points`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    CLINICAL PROGRESS NOTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Date: ${date}                                        Time: ${time}
+${dayInfo || ''}${dolInfo ? '                                             ' + dolInfo : ''}
+
+┌─ SUBJECTIVE ─────────────────────────────────────────────────┐
+│                                                              │
+│ CHIEF CONCERN: [Context-aware - identify the TYPE]:         │
+│   • Disease/Condition update (e.g., "RDS Day 3 - weaning")  │
+│   • Investigation review (e.g., "CXR review - improving")   │
+│   • Procedure (e.g., "Post UVC insertion")                  │
+│   • Counselling (e.g., "Discharge counselling")             │
+│   • Routine follow-up (e.g., "Routine Day 5 assessment")    │
+│                                                              │
+│ HISTORY: [What happened BEFORE this note - timeline]:       │
+│   • Birth/Admission details if relevant                     │
+│   • Course since last review                                │
+│   • Events/changes in last 24h                              │
+│   • Previous interventions and response                     │
+│                                                              │
+│ FEEDING: [Type, volume, frequency, tolerance]               │
+│ OUTPUT: [Urine, stool - adequacy]                           │
+│ PARENTS: [Concerns, counselling done]                       │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ OBJECTIVE ──────────────────────────────────────────────────┐
+│                                                              │
+│ VITALS                                                       │
+│ T:      HR:      RR:      SpO2:      BP:      CRT:      Wt:  │
+│                                                              │
+│ RESPIRATORY SUPPORT: [ONLY if mentioned - with STATUS]:     │
+│   Status: Continuing / Newly started / Changed / Weaning    │
+│   Mode: [CPAP/HFNC/Ventilator/Room air/O2]                  │
+│   Settings: [FiO2, PEEP, PIP, etc. if mentioned]            │
+│                                                              │
+│ OTHER SUPPORT: [ONLY if mentioned - IV lines, feeds, etc.]  │
+│                                                              │
+│ EXAMINATION                                                  │
+│ General  :                                                   │
+│ CNS      :                                                   │
+│ CVS      :                                                   │
+│ Resp     :                                                   │
+│ Abdomen  :                                                   │
+│ Skin     :                                                   │
+│ Access   : [Lines, tubes if mentioned]                       │
+│                                                              │
+│ INVESTIGATIONS [Only if mentioned]                           │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ ASSESSMENT ─────────────────────────────────────────────────┐
+│                                                              │
+│ PRIMARY DIAGNOSIS:                                           │
+│ [Diagnosis] - [Severity: mild/moderate/severe], [Status]     │
+│                                                              │
+│ SECONDARY DIAGNOSES:                                         │
+│ 1.                                                           │
+│ 2.                                                           │
+│ 3.                                                           │
+│                                                              │
+│ ══════════════════════════════════════════════════════════   │
+│ CLINICAL IMPRESSION:                                         │
+│ [Synthesize: What is the overall clinical picture? How is    │
+│  the patient trending? What are the key concerns? What is    │
+│  the prognosis for the next 24-48 hours?]                    │
+│ ══════════════════════════════════════════════════════════   │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ PLAN ───────────────────────────────────────────────────────┐
+│                                                              │
+│ [Write plan naturally - exactly as dictated]                 │
+│ [Group logically: Respiratory → Medications → Fluids/Feeds   │
+│  → Monitoring → Investigations → Follow-up]                  │
+│                                                              │
+│ Medications: Inj/Tab/Syp [Drug] [Dose] [Route] [Frequency]   │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+                                           Dr. ${userName || '_______________'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INTELLIGENCE GUIDELINES:
+
+1. CHIEF CONCERN - Be CONTEXT-AWARE:
+   Analyze the dictation and identify what TYPE of note this is:
+   → Disease update: "RDS Day 3 - on CPAP, weaning FiO2"
+   → Investigation: "Blood culture review - no growth at 48h"
+   → Procedure: "Post surfactant administration"
+   → Counselling: "Pre-discharge counselling with parents"
+   → Routine: "Routine morning rounds - DOL 5"
+
+2. HISTORY - Tell the STORY:
+   → What is the background? (Birth weight, GA, mode of delivery)
+   → What happened since admission/last note?
+   → What interventions were done and how did baby respond?
+   → Any significant events in the last 24 hours?
+
+3. CLINICAL IMPRESSION - This is CRITICAL:
+   Write 1-2 sentences that capture:
+   → Overall trajectory (improving/stable/worsening)
+   → Key clinical concerns right now
+   → Expected course in next 24-48 hours
+
+4. RESPIRATORY/OTHER SUPPORT - UNDERSTAND THE CONTEXT:
+   ★ ALWAYS clarify the STATUS of any support mentioned:
+     → "on CPAP" / "CPAP continuing" → Status: Continuing on CPAP
+     → "started on CPAP" / "put on CPAP" / "intubated" → Status: Newly started
+     → "CPAP to HFNC" / "weaning" / "stepped down" → Status: Changed/Weaning
+     → "extubated" / "off CPAP" / "room air" → Status: Support removed
+   ★ DO NOT include respiratory support section if NOT mentioned
+   ★ Same logic for: Ventilator, HFNC, O2 therapy, IV fluids, TPN, phototherapy, etc.
+   ★ Examples:
+     → User says "baby on CPAP" → Write: "CPAP (Continuing) - [settings if mentioned]"
+     → User says "started CPAP today" → Write: "CPAP (Newly initiated) - [settings]"
+     → User says "weaning CPAP" → Write: "CPAP (Weaning) - FiO2 reduced from X to Y"
+
+5. INTELLIGENT DEFAULTS - SYSTEM-FOCUSED EXAMINATION:
+   ★ If user focuses on ONE SYSTEM (e.g., respiratory), assume OTHER systems are NORMAL:
+     → User mentions only respiratory → Other systems: "WNL"
+     → User mentions only CNS → CVS, Resp, Abdomen: assume normal
+   ★ If user says "vitals stable" or doesn't mention vitals:
+     → Neonate defaults: T:37°C HR:140/min RR:45/min SpO2:98% CRT:<2s
+   ★ If user says "exam normal" without specifics:
+     → General: Active | CNS: Normal tone | CVS: S1S2+ | Resp: B/L AE+ | Abd: Soft, BS+
+
+6. PRONUNCIATION CORRECTION - ALL MEDICAL TERMS:
+   Voice transcription often has errors. INTELLIGENTLY DECODE based on context:
+
+   MEDICATIONS:
+   → "Vanco mice in" / "Vanko my sin" → Vancomycin
+   → "Amp a sill in" / "Ampi cillin" → Ampicillin
+   → "Jenta mice in" / "Genta my sin" → Gentamicin
+   → "Phenol barb a tone" / "Pheno barbi tone" → Phenobarbitone
+   → "Dopa mean" / "Doppa meen" → Dopamine
+   → "Cafe in" / "Caff een" → Caffeine
+   → "Amino fill in" → Aminophylline
+   → "Metro nida zole" → Metronidazole
+   → "Cef o tax eem" / "Cefo taxime" → Cefotaxime
+   → "Amika sin" → Amikacin
+   → "Mero pen em" → Meropenem
+   → "Pip taz" / "Piper a cillin" → Piperacillin-Tazobactam
+   → "Surface tent" / "Sir fac tant" → Surfactant
+   → "Leve tiara set am" → Levetiracetam
+   → "Midazz o lam" → Midazolam
+
+   DIAGNOSES:
+   → "RD yes" / "R D S" → RDS (Respiratory Distress Syndrome)
+   → "Neck" / "N E C" → NEC (Necrotizing Enterocolitis)
+   → "PD A" / "Pee dee ay" → PDA (Patent Ductus Arteriosus)
+   → "High E" / "H I E" → HIE (Hypoxic Ischemic Encephalopathy)
+   → "Sepsis" / "Sep sis" → Sepsis
+   → "Neo natal" / "Neonatal" → Neonatal
+   → "Hyper bili" / "Jaundice" → Hyperbilirubinemia
+   → "Meck onium" / "Meconium" → Meconium Aspiration
+
+   PROCEDURES/EQUIPMENT:
+   → "See pap" / "C pap" → CPAP
+   → "High flow" / "HF NC" → HFNC
+   → "You vee see" / "UVC" → Umbilical Venous Catheter
+   → "You ay see" / "UAC" → Umbilical Arterial Catheter
+   → "Lumber puncture" / "LP" → Lumbar Puncture
+   → "Photo therapy" → Phototherapy
+   → "Exchange transfusion" → Exchange Transfusion
+
+   EXAMINATION FINDINGS:
+   → "Crep it ations" / "Creps" → Crepitations
+   → "Ron kai" / "Rhonchi" → Rhonchi
+   → "Bi lateral" → Bilateral
+   → "Hepato megaly" → Hepatomegaly
+   → "Tachy cardia" → Tachycardia
+   → "Brady cardia" → Bradycardia
+   → "Hypo tonia" → Hypotonia
+
+7. CONTEXT-BASED VALIDATION:
+   ★ Only include items RELEVANT to the condition:
+     → Sepsis → Antibiotics expected | RDS → Caffeine, Surfactant expected
+     → Seizures → Anticonvulsants expected | HIE → Phenobarbitone expected
+   ★ IF UNCLEAR: Write "Unable to appreciate" - DO NOT GUESS randomly
+   ★ NEVER invent things not mentioned or implied by the dictation
+
+8. ABBREVIATIONS:
+   B/L=Bilateral | AE=Air Entry | BS=Bowel Sounds | S1S2+=Heart sounds normal
+   CRT=Capillary Refill | GA=Gestational Age | DOL=Day of Life | EBM=Expressed Breast Milk
+   TPN=Total Parenteral Nutrition | WNL=Within Normal Limits | NAD=No Abnormality Detected
+
+CRITICAL RULES:
+✓ One line per finding - be concise
+✓ Use medical abbreviations
+✓ Numbers with units (37°C, 140/min, 2.5kg)
+✓ NO markdown formatting (no **, ##, *)
+✓ CLINICAL IMPRESSION is mandatory - synthesize the case
+✓ Plan should mirror what was dictated
+✓ If a system is NOT mentioned, write "WNL" or skip it - DO NOT fabricate findings
+✓ Respiratory support: MUST indicate status (Continuing/New/Changed/Weaning)
+✓ All medical terms must be spelled correctly - use context to decode pronunciation errors`;
 
     try {
+      console.log('🤖 Sending request to Gemini AI...');
       const response = await aiRef.current!.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt
       });
 
+      console.log('✅ Received response from Gemini');
       let noteText = response.text.trim();
+      console.log('📝 Generated note length:', noteText.length, 'characters');
 
       // Post-processing: Clean up any markdown formatting
       noteText = noteText.replace(/```/g, '').replace(/\*\*/g, '');
 
+      if (!noteText || noteText.length < 10) {
+        console.error('⚠️ Generated note is too short or empty');
+        setError('Generated note is empty. Please try again.');
+        setIsProcessing(false);
+        setProcessingStep('');
+        return;
+      }
+
+      console.log('✅ Setting formatted note:', noteText.substring(0, 100) + '...');
       setFormattedNote(noteText);
       setEditableNote(noteText);
       setIsProcessing(false);
       setProcessingStep('');
 
     } catch (err) {
-      console.error('Formatting error:', err);
+      console.error('❌ Formatting error:', err);
       setError('Failed to generate note. Please try again.');
       setIsProcessing(false);
       setProcessingStep('');
@@ -896,70 +1107,226 @@ REMEMBER:
 
   // Save note
   const handleSave = async () => {
+    console.log('💾 handleSave called');
+    console.log('   - isSaving:', isSaving);
+    console.log('   - isEditing:', isEditing);
+    console.log('   - formattedNote length:', formattedNote?.length || 0);
+    console.log('   - editableNote length:', editableNote?.length || 0);
+
     // Prevent double save
-    if (isSaving) return;
+    if (isSaving) {
+      console.log('⚠️ Already saving, skipping...');
+      return;
+    }
 
     const noteToSave = isEditing ? editableNote : formattedNote;
-    if (!noteToSave) return;
+    console.log('   - noteToSave length:', noteToSave?.length || 0);
 
+    if (!noteToSave) {
+      console.error('❌ No note to save! noteToSave is empty');
+      setError('No note content to save. Please generate a note first.');
+      return;
+    }
+
+    console.log('✅ Proceeding with save...');
     setIsSaving(true);
 
     // Parse structured data from the clinical note
-    const medications = parseMedications(noteToSave);
     const vitals = parseVitals(noteToSave);
     const examination = parseExamination(noteToSave);
 
-    const progressNote: ProgressNote = {
-      id: existingNote?.id || Date.now().toString(),
-      timestamp: new Date().toISOString(),
-      note: noteToSave,
-      authorEmail: userEmail || '',
-      authorName: userName || userEmail || '',
-      date: new Date().toISOString(),
-      addedBy: userName || userEmail || '',
-      vitals: vitals,
-      examination: examination,
-      medications: medications.length > 0 ? medications : undefined
-    };
-
-    // Auto-add medications to patient's medication management
-    if (medications.length > 0 && patient && onUpdatePatient) {
-      const existingMedications = patient.medications || [];
-      const newMedications: Medication[] = [];
-
-      // Check each parsed medication
-      for (const newMed of medications) {
-        // Check if medication already exists and is active
-        const existingMed = existingMedications.find(
-          (med) =>
-            med.name.toLowerCase() === newMed.name.toLowerCase() &&
-            med.isActive !== false
-        );
-
-        if (!existingMed) {
-          // Add new medication if it doesn't exist or is not active
-          newMedications.push(newMed);
-        }
-      }
-
-      // Merge new medications with existing ones
-      if (newMedications.length > 0) {
-        const updatedPatient = {
-          ...patient,
-          medications: [...existingMedications, ...newMedications]
-        };
-        onUpdatePatient(updatedPatient);
-      }
-    }
-
     try {
+      // ============================================================================
+      // NEOLINK AI-POWERED MEDICATION EXTRACTION & RECONCILIATION
+      // ============================================================================
+
+      let medicationsForNote: any[] = [];
+
+      if (patient && onUpdatePatient) {
+        try {
+          // STEP 1: Extract medications using Neolink AI
+          const extractionResult = await extractMedicationsFromNote(
+            noteToSave,
+            {
+              age: patient.age,
+              ageUnit: patient.ageUnit,
+              unit: patient.unit,
+              diagnosis: patient.diagnosis,
+              currentMedications: patient.medications || []
+            }
+          );
+
+          console.log('🔬 Medication Extraction:', {
+            method: extractionResult.method,
+            found: extractionResult.totalFound,
+            confidence: extractionResult.confidence,
+            time: extractionResult.processingTime + 'ms'
+          });
+
+          // Convert extracted medications for progress note
+          medicationsForNote = extractionResult.medications.map(em => ({
+            name: em.name,
+            dose: em.dose,
+            route: em.route,
+            frequency: em.frequency,
+            startDate: new Date().toISOString(),
+            isActive: true,
+            addedBy: userName || userEmail || 'Clinical Note',
+            addedAt: new Date().toISOString()
+          }));
+
+          // STEP 2: Reconcile with patient medication list
+          const reconciliationResult = await reconcileMedications(
+            extractionResult.medications,
+            patient.medications || [],
+            extractionResult.stoppedMedications,
+            {
+              addedBy: userName || userEmail || 'System',
+              addedAt: new Date().toISOString()
+            }
+          );
+
+          console.log('💊 Medication Reconciliation:', {
+            added: reconciliationResult.added.length,
+            updated: reconciliationResult.updated.length,
+            stopped: reconciliationResult.stopped.length,
+            unchanged: reconciliationResult.unchanged.length,
+            errors: reconciliationResult.errors.length
+          });
+
+          // STEP 3: Update patient if there are changes
+          const hasChanges =
+            reconciliationResult.added.length > 0 ||
+            reconciliationResult.updated.length > 0 ||
+            reconciliationResult.stopped.length > 0;
+
+          if (hasChanges) {
+            const allMedications = getMedicationsAfterReconciliation(reconciliationResult);
+
+            const updatedPatient = {
+              ...patient,
+              medications: allMedications
+            };
+
+            // Save to Firestore IMMEDIATELY
+            // Note: Patients are stored in the root 'patients' collection
+            try {
+              const patientRef = doc(db, 'patients', patient.id);
+              await updateDoc(patientRef, {
+                medications: allMedications
+              });
+              console.log('✅ Medications saved to Firestore');
+            } catch (firestoreError) {
+              console.error('❌ Failed to save medications to Firestore:', firestoreError);
+              showToast('error', '❌ Failed to save medications');
+              throw firestoreError;
+            }
+
+            // Update local state via callback
+            onUpdatePatient(updatedPatient);
+
+            // VISUAL FEEDBACK: Show toast notification
+            const messages: string[] = [];
+            if (reconciliationResult.added.length > 0) {
+              messages.push(`${reconciliationResult.added.length} added`);
+            }
+            if (reconciliationResult.updated.length > 0) {
+              messages.push(`${reconciliationResult.updated.length} updated`);
+            }
+            if (reconciliationResult.stopped.length > 0) {
+              messages.push(`${reconciliationResult.stopped.length} stopped`);
+            }
+
+            showToast('success', `💊 ${messages.join(', ')}`);
+          }
+
+          // Log any errors
+          if (reconciliationResult.errors.length > 0) {
+            console.warn('⚠️ Reconciliation warnings:', reconciliationResult.errors);
+          }
+
+        } catch (medError) {
+          console.error('❌ Medication extraction failed:', medError);
+
+          // FALLBACK: Use existing regex-based extraction
+          console.log('⚠️ Falling back to regex extraction');
+          const medications = parseMedications(noteToSave);
+          medicationsForNote = medications;
+
+          // Simple duplicate prevention (old logic)
+          if (medications.length > 0) {
+            const existingMedications = patient.medications || [];
+            const newMedications = medications.filter(newMed =>
+              !existingMedications.find(existing =>
+                existing.name.toLowerCase() === newMed.name.toLowerCase() &&
+                existing.isActive !== false
+              )
+            );
+
+            if (newMedications.length > 0) {
+              const allMedications = [...existingMedications, ...newMedications];
+
+              // Save to Firestore IMMEDIATELY
+              // Note: Patients are stored in the root 'patients' collection
+              try {
+                const patientRef = doc(db, 'patients', patient.id);
+                await updateDoc(patientRef, {
+                  medications: allMedications
+                });
+                console.log('✅ Medications saved to Firestore (fallback mode)');
+              } catch (firestoreError) {
+                console.error('❌ Failed to save medications to Firestore:', firestoreError);
+              }
+
+              const updatedPatient = {
+                ...patient,
+                medications: allMedications
+              };
+              onUpdatePatient(updatedPatient);
+              showToast('warning', `⚠️ ${newMedications.length} medication(s) added (fallback mode)`);
+            }
+          }
+        }
+      } else {
+        // No patient or no update callback - use simple parsing
+        medicationsForNote = parseMedications(noteToSave);
+      }
+
+      // ============================================================================
+      // CREATE PROGRESS NOTE
+      // ============================================================================
+
+      const progressNote: ProgressNote = {
+        id: existingNote?.id || Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        note: noteToSave,
+        authorEmail: userEmail || '',
+        authorName: userName || userEmail || '',
+        date: new Date().toISOString(),
+        addedBy: userName || userEmail || '',
+        vitals: vitals,
+        examination: examination,
+        medications: medicationsForNote.length > 0 ? medicationsForNote : undefined
+      };
+
+      // ============================================================================
+      // SAVE NOTE
+      // ============================================================================
+
+      console.log('📤 Calling onSave with progress note...');
+      console.log('   - Note preview:', progressNote.note.substring(0, 100) + '...');
       await onSave(progressNote);
+      console.log('✅ Note saved successfully!');
+
       // Close after successful save
       setTimeout(() => {
+        console.log('🚪 Closing note editor...');
         onCancel();
       }, 500);
+
     } catch (err) {
-      setError('Failed to save note');
+      console.error('❌ Failed to save note:', err);
+      setError('Failed to save note: ' + (err as Error).message);
       setIsSaving(false);
     }
   };
@@ -1017,95 +1384,98 @@ REMEMBER:
         {/* Recording Interface */}
         {!formattedNote && (
           <>
-            {/* Audio Waveform Visualization */}
-            {isRecording && (
-              <div className="mb-6 bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
-                <div className="flex items-center justify-center gap-0.5 h-16">
+            {/* Audio Waveform Visualization - shows during init AND recording */}
+            {(isInitializing || isRecording) && (
+              <div className="mb-4 bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+                <div className="flex items-center justify-center gap-0.5 h-12">
                   {audioLevels.slice(0, 32).map((level, i) => (
                     <motion.div
                       key={i}
-                      className="w-1.5 bg-gradient-to-t from-blue-500 to-blue-400 rounded-full"
-                      animate={{ height: Math.max(4, level * 60) }}
-                      transition={{ duration: 0.05 }}
+                      className={`w-1.5 rounded-full ${isInitializing ? 'bg-gradient-to-t from-violet-500 to-violet-400' : 'bg-gradient-to-t from-red-500 to-red-400'}`}
+                      animate={{ height: isInitializing ? Math.max(4, Math.sin(Date.now() / 200 + i) * 20 + 20) : Math.max(4, level * 50) }}
+                      transition={{ duration: 0.1 }}
                     />
                   ))}
                 </div>
                 <div className="text-center mt-2">
-                  <span className="text-2xl font-bold text-slate-800 font-mono">
+                  <span className="text-xl font-bold text-slate-800 font-mono">
                     {formatTime(recordingTime)}
                   </span>
-                  <span className="ml-2 text-xs text-red-500 animate-pulse font-medium">RECORDING</span>
+                  <span className={`ml-2 text-xs font-medium animate-pulse ${isInitializing ? 'text-violet-500' : 'text-red-500'}`}>
+                    {isInitializing ? 'STARTING' : 'REC'}
+                  </span>
                 </div>
+
+                </div>
+            )}
+
+            {/* Recording indicator with DONE button */}
+            {(isInitializing || isRecording) && !isProcessing && (
+              <div className="flex flex-col items-center py-4">
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
+                  isInitializing ? 'bg-violet-500' : 'bg-red-500 animate-pulse'
+                }`}>
+                  {isInitializing ? (
+                    <Loader2 className="w-8 h-8 text-white animate-spin" />
+                  ) : (
+                    <Mic className="w-8 h-8 text-white" />
+                  )}
+                </div>
+                <p className="mt-3 text-slate-500 text-sm">
+                  {isInitializing ? 'Connecting...' : 'Speak now...'}
+                </p>
+
+                {/* Live transcript preview */}
+                {liveTranscript && (
+                  <div className="mt-3 px-4 py-2 bg-blue-50 rounded-lg max-w-md">
+                    <p className="text-sm text-blue-800 italic">{liveTranscript}</p>
+                  </div>
+                )}
+
+                {/* DONE Button - Stop, Generate, Save all in one */}
+                {isRecording && !isInitializing && (
+                  <motion.button
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={stopAndSaveNote}
+                    className="mt-6 px-8 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-lg font-bold rounded-2xl shadow-xl flex items-center gap-3 transition-all"
+                  >
+                    <Save className="w-5 h-5" />
+                    Done
+                  </motion.button>
+                )}
               </div>
             )}
 
-            {/* Live Transcription */}
-            {isRecording && liveTranscript && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mb-4 bg-blue-50 border border-blue-200 rounded-xl p-4"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Volume2 className="w-4 h-4 text-blue-500" />
-                  <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Live Transcription</span>
+            {/* Processing indicator */}
+            {isProcessing && (
+              <div className="flex flex-col items-center py-8">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center shadow-xl">
+                  <Loader2 className="w-10 h-10 text-white animate-spin" />
                 </div>
-                <p className="text-sm text-blue-800 leading-relaxed">{liveTranscript}</p>
-              </motion.div>
+                <p className="mt-4 text-lg font-semibold text-slate-700">
+                  {processingStep === 'formatting' ? 'Generating note...' : 'Saving...'}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">This will take a few seconds</p>
+              </div>
             )}
 
-            {/* Recording Controls */}
-            <div className="flex flex-col items-center py-8">
-              {!isRecording ? (
+            {/* Show record button only when not recording and no sessions */}
+            {!isInitializing && !isRecording && !isProcessing && sessions.length === 0 && !formattedNote && (
+              <div className="flex flex-col items-center py-6">
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={startRecording}
-                  className="w-28 h-28 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 shadow-xl shadow-blue-200 flex flex-col items-center justify-center transition-all hover:shadow-2xl"
+                  className="w-24 h-24 rounded-full shadow-xl flex flex-col items-center justify-center bg-gradient-to-br from-blue-500 to-blue-700 shadow-blue-200 hover:shadow-2xl"
                 >
-                  <Mic className="w-10 h-10 text-white" />
-                  <span className="text-white text-xs font-medium mt-1">TAP TO RECORD</span>
+                  <Mic className="w-8 h-8 text-white" />
+                  <span className="text-white text-xs font-medium mt-1">REC</span>
                 </motion.button>
-              ) : (
-                <div className="flex items-center gap-4">
-                  {/* Pause/Resume */}
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={isPaused ? resumeRecording : pauseRecording}
-                    className="w-16 h-16 rounded-full bg-amber-500 shadow-lg flex items-center justify-center"
-                  >
-                    {isPaused ? (
-                      <Play className="w-7 h-7 text-white" />
-                    ) : (
-                      <Pause className="w-7 h-7 text-white" />
-                    )}
-                  </motion.button>
-
-                  {/* Stop */}
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={stopRecording}
-                    className="w-24 h-24 rounded-full bg-gradient-to-br from-red-500 to-red-600 shadow-xl shadow-red-200 flex flex-col items-center justify-center"
-                  >
-                    <Square className="w-8 h-8 text-white" />
-                    <span className="text-white text-xs font-medium mt-1">STOP</span>
-                  </motion.button>
-                </div>
-              )}
-
-              <p className="mt-6 text-slate-500 text-sm text-center max-w-xs">
-                {isRecording
-                  ? isPaused
-                    ? 'Recording paused. Tap play to continue.'
-                    : 'Speak your clinical findings clearly. Tap stop when done.'
-                  : sessions.length > 0
-                    ? 'Tap to add another recording or generate note below.'
-                    : 'Tap to start recording your clinical note.'
-                }
-              </p>
-            </div>
+              </div>
+            )}
 
             {/* Recording Sessions */}
             {sessions.length > 0 && (
@@ -1186,10 +1556,24 @@ REMEMBER:
                 {!isRecording && (
                   <button
                     onClick={startRecording}
-                    className="mt-2 w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium flex items-center justify-center gap-2 transition-all"
+                    disabled={isInitializing}
+                    className={`mt-2 w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+                      isInitializing
+                        ? 'bg-slate-200 text-slate-400 cursor-wait'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
                   >
-                    <Plus className="w-4 h-4" />
-                    Add Another Recording
+                    {isInitializing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Starting...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        Add Another Recording
+                      </>
+                    )}
                   </button>
                 )}
               </div>
@@ -1283,7 +1667,7 @@ REMEMBER:
             <div className="flex gap-3">
               <button
                 onClick={handleClear}
-                className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium flex items-center justify-center gap-2 transition-all"
+                className="py-3.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium flex items-center justify-center gap-2 transition-all"
               >
                 <RefreshCw className="w-4 h-4" />
                 Start Over

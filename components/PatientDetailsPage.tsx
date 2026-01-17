@@ -301,35 +301,39 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   const hasActiveFilters = dateFilter.period !== 'All Time' || shiftFilter.enabled || nicuView !== 'All';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-cyan-50/30">
-      {/* Compact Top Header - Fixed */}
-      <div className="sticky top-0 z-40 bg-white/95 backdrop-blur-xl border-b border-slate-200/60 shadow-sm">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5">
-          <div className="flex items-center justify-between gap-2">
-            {/* Left: Back + Title */}
-            <div className="flex items-center gap-2 min-w-0 flex-1">
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-50">
+      {/* Professional Header */}
+      <div className="flex-shrink-0 bg-white border-b border-slate-200 shadow-sm">
+        <div className="px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            {/* Left: Back + Title + Unit Badge */}
+            <div className="flex items-center gap-4">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onBack}
-                className="flex-shrink-0 p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-slate-700 font-medium"
               >
-                <ChevronLeft className="w-5 h-5 text-slate-700" />
+                <ChevronLeft className="w-5 h-5" />
+                <span className="hidden sm:inline">Back</span>
               </motion.button>
-              <div className="min-w-0">
-                <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">All Patients</h1>
-                <p className="text-xs text-slate-500 truncate">{selectedUnit} Unit</p>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Patient Registry</h1>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-semibold">{selectedUnit}</span>
+                  <span className="text-sm text-slate-500">{filteredPatients.length} of {unitPatients.length} patients</span>
+                </div>
               </div>
             </div>
 
             {/* Right: Actions */}
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              {/* Filter Button */}
+            <div className="flex items-center gap-2">
+              {/* Filter Button - Mobile */}
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowFilterDrawer(true)}
-                className={`relative p-2 rounded-lg transition-all ${
+                className={`lg:hidden relative p-2.5 rounded-lg transition-all ${
                   hasActiveFilters
                     ? 'bg-blue-500 text-white shadow-md'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -347,7 +351,8 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => setSelectionMode(true)}
-                  className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                  className="p-2.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors border border-red-200"
+                  title="Bulk Delete"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -366,42 +371,42 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="sticky top-[57px] z-30 bg-red-500 text-white shadow-md"
+            className="flex-shrink-0 bg-red-500 text-white shadow-md"
           >
-            <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
+            <div className="px-4 sm:px-6 lg:px-8 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
                       setSelectionMode(false);
                       clearSelection();
                     }}
-                    className="p-1 hover:bg-red-600 rounded"
+                    className="p-1.5 hover:bg-red-600 rounded-lg transition-colors"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-5 h-5" />
                   </button>
-                  <span className="font-semibold">{selectedPatientIds.size} selected</span>
+                  <span className="font-bold text-lg">{selectedPatientIds.size} selected</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={selectAllFiltered}
-                    className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs font-medium"
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition-colors"
                   >
-                    All ({filteredPatients.length})
+                    Select All ({filteredPatients.length})
                   </button>
                   {selectedPatientIds.size > 0 && (
                     <>
                       <button
                         onClick={clearSelection}
-                        className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs font-medium"
+                        className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition-colors"
                       >
                         Clear
                       </button>
                       <button
                         onClick={() => setShowDeleteConfirm(true)}
-                        className="px-2 py-1 bg-white text-red-600 hover:bg-red-50 rounded text-xs font-bold"
+                        className="px-4 py-1.5 bg-white text-red-600 hover:bg-red-50 rounded-lg text-sm font-bold transition-colors"
                       >
-                        Delete
+                        Delete Selected
                       </button>
                     </>
                   )}
@@ -412,172 +417,220 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 space-y-3">
-        {/* Compact Search */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative"
-        >
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search by name, diagnosis, NTID..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-slate-100 rounded"
-            >
-              <X className="w-4 h-4 text-slate-400" />
-            </button>
-          )}
-        </motion.div>
-
-        {/* Quick Status Chips - Horizontal Scroll */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {statusOptions.map((status) => {
-            const count = status.value === 'All' ? stats.all : stats[status.value.toLowerCase().replace(' ', '') as keyof typeof stats] || 0;
-            const isActive = outcomeFilter === status.value;
-
-            return (
-              <motion.button
-                key={status.value}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => setOutcomeFilter(status.value)}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all ${
-                  isActive
-                    ? `${status.bgColor} ${status.color} shadow-md`
-                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <span className="mr-1">{status.icon}</span>
-                {status.label}
-                <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  isActive ? 'bg-white/50' : 'bg-slate-100'
-                }`}>
-                  {count}
-                </span>
-              </motion.button>
-            );
-          })}
-        </motion.div>
-
-        {/* Stats Bar - Compact */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl shadow-lg p-3 text-white"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              <div>
-                <p className="text-xs opacity-90">Showing</p>
-                <p className="text-2xl font-bold">{filteredPatients.length}</p>
-              </div>
-            </div>
-            {(outcomeFilter !== 'In Progress' || searchQuery || hasActiveFilters) && (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  setOutcomeFilter('In Progress');
-                  setSearchQuery('');
-                  setDateFilter({ period: 'All Time' });
-                  setShiftFilter({ enabled: false, startTime: '08:00', endTime: '20:00' });
-                  setNicuView('All');
-                }}
-                className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-semibold transition-colors"
-              >
-                Reset
-              </motion.button>
-            )}
-          </div>
-        </motion.div>
-
-        {/* Patient List */}
-        {filteredPatients.length > 0 ? (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden"
-          >
-            {isLazyLoaded && onLoadAllPatients && (
-              <div className="bg-amber-50 border-b border-amber-200 px-3 py-2 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 text-amber-700">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  <span>Showing recent {patients.length} patients</span>
+      {/* Main Content - Flex grow to fill remaining space */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        {/* Left Sidebar - Desktop Filters */}
+        <div className="hidden lg:flex lg:flex-col lg:w-72 xl:w-80 flex-shrink-0 bg-white border-r border-slate-200 overflow-y-auto">
+          <div className="p-4 space-y-6">
+            {/* Stats Summary */}
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-4 text-white">
+              <h3 className="text-sm font-semibold text-slate-300 mb-3">Patient Overview</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white/10 rounded-lg p-3">
+                  <p className="text-2xl font-bold">{stats.total}</p>
+                  <p className="text-xs text-slate-400">Total</p>
                 </div>
-                <button
-                  onClick={onLoadAllPatients}
-                  className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded font-medium"
-                >
-                  Load All
-                </button>
+                <div className="bg-blue-500/20 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-blue-400">{stats.inProgress}</p>
+                  <p className="text-xs text-blue-300">Active</p>
+                </div>
+                <div className="bg-green-500/20 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-green-400">{stats.discharged}</p>
+                  <p className="text-xs text-green-300">Discharged</p>
+                </div>
+                <div className="bg-red-500/20 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-red-400">{stats.deceased}</p>
+                  <p className="text-xs text-red-300">Deceased</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="bg-purple-500/20 rounded-lg p-3">
+                  <p className="text-xl font-bold text-purple-400">{stats.referred}</p>
+                  <p className="text-xs text-purple-300">Referred</p>
+                </div>
+                <div className="bg-amber-500/20 rounded-lg p-3">
+                  <p className="text-xl font-bold text-amber-400">{stats.stepDown}</p>
+                  <p className="text-xs text-amber-300">Step Down</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Date Filter */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Calendar className="w-4 h-4 text-blue-500" />
+                <h3 className="font-bold text-slate-900">Date Range</h3>
+              </div>
+              <DateFilter onFilterChange={setDateFilter} />
+            </div>
+
+            {/* Shift Filter */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Clock className="w-4 h-4 text-blue-500" />
+                <h3 className="font-bold text-slate-900">Shift Filter</h3>
+              </div>
+              <ShiftFilter onFilterChange={setShiftFilter} />
+            </div>
+
+            {/* NICU View */}
+            {(selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Stethoscope className="w-4 h-4 text-blue-500" />
+                  <h3 className="font-bold text-slate-900">Admission Type</h3>
+                </div>
+                <NicuViewSelection selectedView={nicuView} onSelectView={setNicuView} />
               </div>
             )}
-            <div style={{ height: '560px' }}>
-              <VirtualizedPatientList
-                patients={filteredPatients}
-                onView={onViewDetails}
-                onEdit={onEdit}
-                canEdit={canEdit}
-                selectionMode={selectionMode}
-                selectedIds={selectedPatientIds}
-                onToggleSelection={togglePatientSelection}
-              />
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.15 }}
-            className="bg-white rounded-xl shadow-lg border-2 border-dashed border-slate-300 p-8 text-center"
-          >
-            <div className="flex justify-center mb-4">
-              <div className="p-4 bg-slate-100 rounded-2xl">
-                <Users className="w-12 h-12 text-slate-400" />
-              </div>
-            </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">No Patients Found</h3>
-            <p className="text-slate-500 text-sm mb-4">
-              {searchQuery
-                ? `No results for "${searchQuery}"`
-                : outcomeFilter !== 'All'
-                ? `No ${outcomeFilter} patients`
-                : 'No patients available'}
-            </p>
-            {(outcomeFilter !== 'In Progress' || searchQuery || hasActiveFilters) && (
+
+            {/* Clear Filters */}
+            {hasActiveFilters && (
               <button
                 onClick={() => {
-                  setOutcomeFilter('In Progress');
-                  setSearchQuery('');
                   setDateFilter({ period: 'All Time' });
                   setShiftFilter({ enabled: false, startTime: '08:00', endTime: '20:00' });
                   setNicuView('All');
                 }}
-                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-semibold"
+                className="w-full py-2 text-red-600 hover:text-red-700 text-sm font-semibold border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
               >
-                Reset Filters
+                Clear All Filters
               </button>
             )}
-          </motion.div>
-        )}
+          </div>
+        </div>
+
+        {/* Main Patient List Area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Search and Filter Bar */}
+          <div className="flex-shrink-0 bg-white border-b border-slate-200 px-4 sm:px-6 py-4">
+            {/* Search */}
+            <div className="relative mb-4">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by name, diagnosis, NTID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-200 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              )}
+            </div>
+
+            {/* Status Filter Tabs */}
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              {statusOptions.map((status) => {
+                const getCount = () => {
+                  switch (status.value) {
+                    case 'All': return stats.all;
+                    case 'In Progress': return stats.inProgress;
+                    case 'Discharged': return stats.discharged;
+                    case 'Deceased': return stats.deceased;
+                    case 'Referred': return stats.referred;
+                    case 'Step Down': return stats.stepDown;
+                    default: return 0;
+                  }
+                };
+                const count = getCount();
+                const isActive = outcomeFilter === status.value;
+
+                return (
+                  <motion.button
+                    key={status.value}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setOutcomeFilter(status.value)}
+                    className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
+                      isActive
+                        ? `${status.bgColor} ${status.color} shadow-md border-current`
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="mr-1.5">{status.icon}</span>
+                    {status.label}
+                    <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${
+                      isActive ? 'bg-white/60' : 'bg-slate-100'
+                    }`}>
+                      {count}
+                    </span>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Lazy Load Banner */}
+          {isLazyLoaded && onLoadAllPatients && (
+            <div className="flex-shrink-0 bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-amber-700">
+                <AlertCircle className="w-5 h-5" />
+                <span className="font-medium">Showing recent {patients.length} patients for faster loading</span>
+              </div>
+              <button
+                onClick={onLoadAllPatients}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors"
+              >
+                Load All Patients
+              </button>
+            </div>
+          )}
+
+          {/* Patient List - Takes remaining space */}
+          <div className="flex-1 overflow-hidden">
+            {filteredPatients.length > 0 ? (
+              <div className="h-full">
+                <VirtualizedPatientList
+                  patients={filteredPatients}
+                  onView={onViewDetails}
+                  onEdit={onEdit}
+                  canEdit={canEdit}
+                  selectionMode={selectionMode}
+                  selectedIds={selectedPatientIds}
+                  onToggleSelection={togglePatientSelection}
+                />
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center p-8">
+                <div className="text-center max-w-md">
+                  <div className="flex justify-center mb-6">
+                    <div className="p-6 bg-slate-100 rounded-3xl">
+                      <Users className="w-16 h-16 text-slate-400" />
+                    </div>
+                  </div>
+                  <h3 className="text-2xl font-bold text-slate-900 mb-3">No Patients Found</h3>
+                  <p className="text-slate-500 mb-6">
+                    {searchQuery
+                      ? `No results matching "${searchQuery}"`
+                      : outcomeFilter !== 'All'
+                      ? `No patients with "${outcomeFilter}" status`
+                      : 'No patients available in this unit'}
+                  </p>
+                  {(outcomeFilter !== 'In Progress' || searchQuery || hasActiveFilters) && (
+                    <button
+                      onClick={() => {
+                        setOutcomeFilter('In Progress');
+                        setSearchQuery('');
+                        setDateFilter({ period: 'All Time' });
+                        setShiftFilter({ enabled: false, startTime: '08:00', endTime: '20:00' });
+                        setNicuView('All');
+                      }}
+                      className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold transition-colors"
+                    >
+                      Reset All Filters
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Filter Drawer - Slide from Right */}
@@ -622,7 +675,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                     <Calendar className="w-4 h-4 text-blue-500" />
                     <h3 className="font-bold text-slate-900">Date Range</h3>
                   </div>
-                  <DateFilter value={dateFilter} onChange={setDateFilter} />
+                  <DateFilter onFilterChange={setDateFilter} />
                 </div>
 
                 {/* Shift Filter */}
@@ -631,7 +684,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                     <Clock className="w-4 h-4 text-blue-500" />
                     <h3 className="font-bold text-slate-900">Shift Filter</h3>
                   </div>
-                  <ShiftFilter value={shiftFilter} onChange={setShiftFilter} />
+                  <ShiftFilter onFilterChange={setShiftFilter} />
                 </div>
 
                 {/* NICU View */}

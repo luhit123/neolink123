@@ -44,7 +44,8 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
           discharged: monthPatients.filter(p => p.outcome === 'Discharged').length,
           referred: monthPatients.filter(p => p.outcome === 'Referred').length,
           deaths: monthPatients.filter(p => p.outcome === 'Deceased').length,
-          inProgress: monthPatients.filter(p => p.outcome === 'In Progress').length
+          inProgress: monthPatients.filter(p => p.outcome === 'In Progress').length,
+          stepDown: monthPatients.filter(p => p.outcome === 'Step Down').length
         });
 
         current.setMonth(current.getMonth() + 1);
@@ -71,7 +72,8 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
         discharged: monthPatients.filter(p => p.outcome === 'Discharged').length,
         referred: monthPatients.filter(p => p.outcome === 'Referred').length,
         deaths: monthPatients.filter(p => p.outcome === 'Deceased').length,
-        inProgress: monthPatients.filter(p => p.outcome === 'In Progress').length
+        inProgress: monthPatients.filter(p => p.outcome === 'In Progress').length,
+        stepDown: monthPatients.filter(p => p.outcome === 'Step Down').length
       });
     }
 
@@ -107,7 +109,10 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
             day: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
             admissions: dayPatients.length,
             discharged: dayPatients.filter(p => p.outcome === 'Discharged').length,
-            deaths: dayPatients.filter(p => p.outcome === 'Deceased').length
+            referred: dayPatients.filter(p => p.outcome === 'Referred').length,
+            deaths: dayPatients.filter(p => p.outcome === 'Deceased').length,
+            inProgress: dayPatients.filter(p => p.outcome === 'In Progress').length,
+            stepDown: dayPatients.filter(p => p.outcome === 'Step Down').length
           });
         }
 
@@ -145,7 +150,10 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
         day: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         admissions: dayPatients.length,
         discharged: dayPatients.filter(p => p.outcome === 'Discharged').length,
-        deaths: dayPatients.filter(p => p.outcome === 'Deceased').length
+        referred: dayPatients.filter(p => p.outcome === 'Referred').length,
+        deaths: dayPatients.filter(p => p.outcome === 'Deceased').length,
+        inProgress: dayPatients.filter(p => p.outcome === 'In Progress').length,
+        stepDown: dayPatients.filter(p => p.outcome === 'Step Down').length
       });
     }
 
@@ -156,18 +164,20 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
   const yearWiseData = useMemo(() => {
     if (period !== 'All Time' && period !== 'all') return [];
 
-    const years = new Map<number, { admissions: number; discharged: number; referred: number; deaths: number }>();
+    const years = new Map<number, { admissions: number; discharged: number; referred: number; deaths: number; inProgress: number; stepDown: number }>();
 
     patients.forEach(p => {
       const year = new Date(p.admissionDate).getFullYear();
       if (!years.has(year)) {
-        years.set(year, { admissions: 0, discharged: 0, referred: 0, deaths: 0 });
+        years.set(year, { admissions: 0, discharged: 0, referred: 0, deaths: 0, inProgress: 0, stepDown: 0 });
       }
       const yearData = years.get(year)!;
       yearData.admissions++;
       if (p.outcome === 'Discharged') yearData.discharged++;
       if (p.outcome === 'Referred') yearData.referred++;
       if (p.outcome === 'Deceased') yearData.deaths++;
+      if (p.outcome === 'In Progress') yearData.inProgress++;
+      if (p.outcome === 'Step Down') yearData.stepDown++;
     });
 
     return Array.from(years.entries())
@@ -346,12 +356,30 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
   // 4. Temporal Insights (Admissions by Day of Week)
   const temporalData = useMemo(() => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const counts = days.map(d => ({ day: d, admissions: 0, deaths: 0 }));
+    const counts = days.map(d => ({ day: d, admissions: 0, discharged: 0, referred: 0, deaths: 0, stepDown: 0 }));
 
     patients.forEach(p => {
       const date = new Date(p.admissionDate);
       const dayIndex = date.getDay();
       counts[dayIndex].admissions++;
+
+      if (p.outcome === 'Discharged' && p.releaseDate) {
+        const dischargeDate = new Date(p.releaseDate);
+        const dischargeDayIndex = dischargeDate.getDay();
+        counts[dischargeDayIndex].discharged++;
+      }
+
+      if (p.outcome === 'Referred' && p.releaseDate) {
+        const referralDate = new Date(p.releaseDate);
+        const referralDayIndex = referralDate.getDay();
+        counts[referralDayIndex].referred++;
+      }
+
+      if (p.outcome === 'Step Down' && p.stepDownDate) {
+        const stepDownDateObj = new Date(p.stepDownDate);
+        const stepDownDayIndex = stepDownDateObj.getDay();
+        counts[stepDownDayIndex].stepDown++;
+      }
 
       if (p.outcome === 'Deceased') {
         const deathDate = p.releaseDate ? new Date(p.releaseDate) : date; // approx if release date missing
@@ -442,7 +470,42 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
         </div>
       </div>
 
-      {/* Row 2: Deep Dive (Weight & LOS) */}
+      {/* Row 2: Comprehensive Outcomes Trend */}
+      <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-6 hover:shadow-2xl transition-all">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <span className="text-2xl">📈</span> Complete Outcomes Trend
+          </h3>
+          <NeolinkAIButton
+            chartTitle="Complete Outcomes Trend"
+            chartType="line chart"
+            dataPoints={chartData.slice(-10).map(d => ({ label: d[xAxisKey as keyof typeof d] as string, value: `Adm: ${d.admissions}, Dis: ${d.discharged || 0}, Ref: ${d.referred || 0}, StepDown: ${d.stepDown || 0}, Deaths: ${d.deaths || 0}, InProg: ${d.inProgress || 0}` }))}
+            context="Complete breakdown of all patient outcomes over time - admissions, discharges, referrals, step-downs, deaths, and in-progress"
+          />
+        </div>
+        <p className="text-sm text-slate-500 mb-6">Track all patient outcomes: Admissions, Discharges, Referrals, Step-Downs, Deaths, and In-Progress</p>
+        <div className="h-[400px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey={xAxisKey} stroke="#64748b" tick={{ fontSize: 11 }} />
+              <YAxis stroke="#64748b" tick={{ fontSize: 11 }} />
+              <Tooltip
+                contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+              />
+              <Legend iconType="circle" />
+              <Line type="monotone" dataKey="admissions" name="Admissions" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="discharged" name="Discharged" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="referred" name="Referred" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="stepDown" name="Step Down" stroke="#a855f7" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="deaths" name="Deceased" stroke="#ef4444" strokeWidth={3} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="inProgress" name="In Progress" stroke="#06b6d4" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="5 5" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Row 3: Deep Dive (Weight & LOS) */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
         {/* Chart 3: Birth Weight Analysis */}
@@ -516,7 +579,7 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
 
       </div>
 
-      {/* Row 3: Temporal Analysis */}
+      {/* Row 4: Temporal Analysis */}
       <div className="grid grid-cols-1 gap-6">
         <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-6 hover:shadow-2xl transition-all">
           <div className="flex items-center justify-between mb-2">
@@ -526,12 +589,12 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
             <NeolinkAIButton
               chartTitle="Temporal Analysis by Day of Week"
               chartType="bar chart"
-              dataPoints={temporalData.map(d => ({ label: d.day, value: `Admissions: ${d.admissions}, Deaths: ${d.deaths}` }))}
-              context="Day-of-week patterns for admissions and mortality in NICU/PICU"
+              dataPoints={temporalData.map(d => ({ label: d.day, value: `Admissions: ${d.admissions}, Discharged: ${d.discharged}, Referred: ${d.referred}, Step Down: ${d.stepDown}, Deaths: ${d.deaths}` }))}
+              context="Day-of-week patterns for admissions, discharges, referrals, step-downs and mortality in NICU/PICU"
             />
           </div>
-          <p className="text-sm text-slate-500 mb-6">Identifying high-traffic days for resource planning</p>
-          <div className="h-[300px]">
+          <p className="text-sm text-slate-500 mb-6">Identifying high-traffic days for resource planning - All outcomes tracked</p>
+          <div className="h-[350px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={temporalData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
@@ -539,8 +602,11 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
                 <YAxis stroke="#64748b" />
                 <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                 <Legend />
-                <Bar dataKey="admissions" name="Admissions" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={60} />
-                <Bar dataKey="deaths" name="Deaths" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={60} />
+                <Bar dataKey="admissions" name="Admissions" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={35} />
+                <Bar dataKey="discharged" name="Discharged" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={35} />
+                <Bar dataKey="referred" name="Referred" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={35} />
+                <Bar dataKey="stepDown" name="Step Down" fill="#a855f7" radius={[4, 4, 0, 0]} maxBarSize={35} />
+                <Bar dataKey="deaths" name="Deceased" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={35} />
               </BarChart>
             </ResponsiveContainer>
           </div>

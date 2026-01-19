@@ -213,6 +213,13 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
         return new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
     };
 
+    const formatDateTime = (date: string) => {
+        const d = new Date(date);
+        const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+        const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+        return `${dateStr} ${timeStr}`;
+    };
+
     const currentDate = new Date().toLocaleDateString('en-GB', {
         weekday: 'short', day: '2-digit', month: 'short', year: 'numeric'
     });
@@ -435,8 +442,81 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* Drug Chart Table */}
-                                    <div className="overflow-x-auto">
+                                    {/* Mobile Card View */}
+                                    <div className="md:hidden divide-y divide-slate-100">
+                                        {meds.map((med, idx) => {
+                                            const daysRunning = med.startDate ? calculateDaysRunning(med.startDate) : 1;
+                                            const timeSlots = getTimeSlots(med.frequency || '');
+
+                                            return (
+                                                <div key={med.index} className="p-3 bg-white">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="font-bold text-slate-800 text-sm">{med.name}</span>
+                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                    med.route === 'IV' ? 'bg-blue-100 text-blue-700' :
+                                                                    med.route === 'PO' ? 'bg-green-100 text-green-700' :
+                                                                    'bg-slate-100 text-slate-700'
+                                                                }`}>
+                                                                    {med.route}
+                                                                </span>
+                                                                <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px]">
+                                                                    D{daysRunning}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 mt-1 text-xs">
+                                                                <span className="font-mono font-semibold text-slate-700">{med.dose}</span>
+                                                                <span className="text-slate-400">•</span>
+                                                                <span className="text-slate-600">{med.frequency}</span>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-1 mt-1.5">
+                                                                {timeSlots.map((time, i) => (
+                                                                    <span
+                                                                        key={i}
+                                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                            time === 'Continuous' ? 'bg-orange-100 text-orange-700' :
+                                                                            time === 'PRN' ? 'bg-purple-100 text-purple-700' :
+                                                                            time === 'STAT' ? 'bg-red-100 text-red-700' :
+                                                                            'bg-slate-100 text-slate-600'
+                                                                        }`}
+                                                                    >
+                                                                        {time}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        {!readOnly && (
+                                                            <div className="flex gap-1">
+                                                                <button
+                                                                    onClick={() => handleStopMedication(med.index)}
+                                                                    className="p-1.5 rounded bg-orange-100 text-orange-600"
+                                                                    title="Stop"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                                                                    </svg>
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleRemoveMedication(med.index)}
+                                                                    className="p-1.5 rounded bg-red-100 text-red-600"
+                                                                    title="Remove"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Desktop Table View */}
+                                    <div className="hidden md:block overflow-x-auto">
                                         <table className="w-full text-sm">
                                             <thead>
                                                 <tr className="bg-slate-50 border-b border-slate-200">
@@ -484,7 +564,7 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                                                             </td>
                                                             <td className="px-3 py-3 text-center">
                                                                 <span className="text-xs text-slate-600">
-                                                                    {med.startDate ? formatDate(med.startDate) : '-'}
+                                                                    {med.startDate ? formatDateTime(med.startDate) : '-'}
                                                                 </span>
                                                             </td>
                                                             <td className="px-3 py-3 text-center">
@@ -577,10 +657,10 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                                                         <td className="px-3 py-2 line-through">{med.name}</td>
                                                         <td className="px-3 py-2 font-mono">{med.dose}</td>
                                                         <td className="px-3 py-2 text-center text-xs">
-                                                            {med.startDate ? formatDate(med.startDate) : '-'}
+                                                            {med.startDate ? formatDateTime(med.startDate) : '-'}
                                                         </td>
                                                         <td className="px-3 py-2 text-center text-xs text-red-600 font-semibold">
-                                                            {med.stopDate ? formatDate(med.stopDate) : '-'}
+                                                            {med.stopDate ? formatDateTime(med.stopDate) : '-'}
                                                         </td>
                                                         <td className="px-3 py-2 text-center">
                                                             <span className="text-xs">{daysRan} days</span>
@@ -639,7 +719,7 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                                                 <div>
                                                     <span className="text-xs text-slate-500 font-semibold block">Started</span>
                                                     <span className="font-bold text-slate-700">
-                                                        {med.startDate ? formatDate(med.startDate) : '-'}
+                                                        {med.startDate ? formatDateTime(med.startDate) : '-'}
                                                     </span>
                                                 </div>
                                             </div>

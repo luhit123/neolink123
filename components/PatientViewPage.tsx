@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Patient, ProgressNote } from '../types';
 import { generatePatientSummary } from '../services/geminiService';
 import ClinicalNotesNavigator from './ClinicalNotesNavigator';
 import ProgressNoteForm from './ProgressNoteFormEnhanced';
 import MedicationManagement from './MedicationManagement';
 import { getFormattedAge } from '../utils/ageCalculator';
+import { useBackgroundSave } from '../contexts/BackgroundSaveContext';
 
 interface PatientViewPageProps {
   patient: Patient;
@@ -36,6 +37,9 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
 
   // Ref to track latest patient state (avoids race conditions)
   const latestPatientRef = useRef(localPatient);
+
+  // Background save context
+  const { addSavingNote, updateNoteStatus } = useBackgroundSave();
 
   useEffect(() => {
     setLocalPatient(patient);
@@ -69,6 +73,24 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
     onPatientUpdate?.(updatedPatient);
     setShowNoteForm(false);
   };
+
+  // Background save handler - saves note asynchronously
+  const handleBackgroundSave = useCallback(async (patientId: string, note: ProgressNote) => {
+    const saveId = addSavingNote(patientId, localPatient.name, note);
+    setShowNoteForm(false);
+
+    try {
+      const currentPatient = latestPatientRef.current;
+      const updatedNotes = [...(currentPatient.progressNotes || []), note];
+      const updatedPatient = { ...currentPatient, progressNotes: updatedNotes };
+      updatePatientState(updatedPatient);
+      await onPatientUpdate?.(updatedPatient);
+      updateNoteStatus(saveId, 'saved');
+    } catch (err) {
+      console.error('Background save failed:', err);
+      updateNoteStatus(saveId, 'error', (err as Error).message);
+    }
+  }, [localPatient.name, addSavingNote, updateNoteStatus, onPatientUpdate]);
 
   const handleUpdateMedications = (medications: any[]) => {
     // Use ref to get the LATEST patient state
@@ -471,6 +493,7 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
                 <ProgressNoteForm
                   onSave={handleSaveNote}
                   onCancel={() => setShowNoteForm(false)}
+                  onBackgroundSave={handleBackgroundSave}
                   onUpdatePatient={(updatedPatient) => {
                     // Use updatePatientState to sync ref immediately (prevents race condition)
                     updatePatientState(updatedPatient);

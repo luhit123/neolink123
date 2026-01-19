@@ -5,6 +5,7 @@ import { getFormattedAge } from '../utils/ageCalculator';
 interface SimplePatientRowProps {
   patient: Patient;
   onClick: () => void;
+  onQuickRecord?: (patient: Patient) => void; // Quick voice recording
   // Selection mode props
   selectionMode?: boolean;
   isSelected?: boolean;
@@ -34,6 +35,7 @@ const getStatusColor = (outcome: string) => {
 const SimplePatientRow: React.FC<SimplePatientRowProps> = ({
   patient,
   onClick,
+  onQuickRecord,
   selectionMode,
   isSelected,
   onToggleSelection
@@ -106,6 +108,24 @@ const SimplePatientRow: React.FC<SimplePatientRowProps> = ({
           {formatDate(patient.admissionDate)}
         </p>
       </div>
+
+      {/* Quick Record Button - Only for In Progress patients */}
+      {onQuickRecord && patient.outcome === 'In Progress' && !selectionMode && (
+        <div className="flex-shrink-0 mx-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onQuickRecord(patient);
+            }}
+            className="p-2.5 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all duration-200"
+            title="Quick Voice Note"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Status */}
       <div className="flex-1 flex justify-end">

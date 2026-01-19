@@ -10,6 +10,7 @@ export interface VirtualizedPatientListProps {
   onView: (patient: Patient) => void;
   onEdit?: (patient: Patient) => void;
   canEdit: boolean;
+  onQuickRecord?: (patient: Patient) => void; // Quick voice recording
   // Selection mode props (for admin delete)
   selectionMode?: boolean;
   selectedIds?: Set<string>;
@@ -36,7 +37,7 @@ export interface VirtualizedPatientListProps {
  * />
  */
 export const VirtualizedPatientList: React.FC<VirtualizedPatientListProps> = memo(
-  ({ patients, onView, onEdit, canEdit, selectionMode, selectedIds, onToggleSelection }) => {
+  ({ patients, onView, onEdit, canEdit, onQuickRecord, selectionMode, selectedIds, onToggleSelection }) => {
     // Empty state
     if (patients.length === 0) {
       return (
@@ -81,6 +82,7 @@ export const VirtualizedPatientList: React.FC<VirtualizedPatientListProps> = mem
               key={patient.id}
               patient={patient}
               onClick={() => selectionMode && onToggleSelection ? onToggleSelection(patient.id) : onView(patient)}
+              onQuickRecord={onQuickRecord}
               selectionMode={selectionMode}
               isSelected={selectedIds?.has(patient.id)}
               onToggleSelection={onToggleSelection}

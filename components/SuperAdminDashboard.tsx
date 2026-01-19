@@ -10,6 +10,7 @@ import SystemHealthPanel from './superadmin/SystemHealthPanel';
 import AIInsightsPanel from './superadmin/AIInsightsPanel';
 import AdvancedAnalyticsDashboard from './superadmin/AdvancedAnalyticsDashboard';
 import STTSettingsPanel from './superadmin/STTSettingsPanel';
+import ClinicalNoteAISettingsPanel from './superadmin/ClinicalNoteAISettingsPanel';
 import AddressInput, { AddressData } from './forms/AddressInput';
 import { generateUserID, getNextSequenceNumber } from '../utils/userIdGenerator';
 import { generateSecurePassword, generateAlphanumericPassword } from '../utils/passwordUtils';
@@ -1946,6 +1947,12 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
         {/* Settings Tab */}
         {activeTab === 'settings' && (
           <div className="space-y-6">
+            {/* Clinical Note AI Settings */}
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-sky-500/20 shadow-lg">
+              <ClinicalNoteAISettingsPanel userEmail={userEmail} />
+            </div>
+
+            {/* STT Settings */}
             <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-sky-500/20 shadow-lg">
               <STTSettingsPanel userEmail={userEmail} />
             </div>

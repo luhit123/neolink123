@@ -1299,13 +1299,13 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   )}
                 </div>
 
-                {/* Timeline View for Progress Notes */}
+                {/* Timeline View for Progress Notes - Mobile Optimized */}
                 {(patient.progressNotes?.length || 0) > 0 && !showProgressNoteForm && (
                   <div className="relative">
-                    {/* Timeline Line */}
-                    <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-blue-300"></div>
+                    {/* Timeline Line - Hidden on mobile */}
+                    <div className="hidden md:block absolute left-6 top-0 bottom-0 w-0.5 bg-blue-300"></div>
 
-                    <div className="space-y-6 mb-4">
+                    <div className="space-y-4 md:space-y-6 mb-4">
                       {patient.progressNotes
                         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                         .map((note, index) => {
@@ -1314,31 +1314,24 @@ const PatientForm: React.FC<PatientFormProps> = ({
                           const dateStr = noteDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
                           return (
-                            <div key={index} className="relative flex gap-4">
-                              {/* Timeline Node */}
-                              <div className="flex flex-col items-center flex-shrink-0">
-                                <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center shadow-lg ring-4 ring-white z-10">
-                                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                </div>
-                                <div className="text-center mt-2">
-                                  <div className="text-xs font-bold text-blue-300">{timeStr}</div>
-                                  <div className="text-xs text-blue-600">{dateStr}</div>
-                                </div>
-                              </div>
-
-                              {/* Note Card */}
-                              <div className="flex-1 relative group">
-                                <div className="bg-white rounded-lg border-2 border-blue-300 p-4 shadow-md hover:shadow-lg transition-all hover:border-blue-500">
-                                  <ProgressNoteDisplay note={note} />
-
-                                  {/* Hover Actions */}
-                                  <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div key={index} className="relative">
+                              {/* Mobile Layout - Stacked */}
+                              <div className="md:hidden">
+                                {/* Date/Time Header with Actions */}
+                                <div className="flex items-center justify-between bg-blue-600 text-white px-3 py-2 rounded-t-lg">
+                                  <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <span className="text-sm font-semibold">{dateStr}</span>
+                                    <span className="text-xs opacity-80">{timeStr}</span>
+                                  </div>
+                                  {/* Actions - Always visible on mobile */}
+                                  <div className="flex gap-1">
                                     <button
                                       type="button"
                                       onClick={() => handleEditNote(patient.progressNotes.findIndex(n => n.date === note.date))}
-                                      className="p-2 text-blue-600 hover:text-blue-600 bg-white hover:bg-blue-100 rounded-lg transition-all shadow-md"
+                                      className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-all"
                                       title="Edit note"
                                     >
                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1348,11 +1341,60 @@ const PatientForm: React.FC<PatientFormProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => removeNote(patient.progressNotes.findIndex(n => n.date === note.date))}
-                                      className="p-2 text-blue-600 hover:text-red-400 bg-white hover:bg-red-100 rounded-lg transition-all shadow-md"
+                                      className="p-1.5 bg-white/20 hover:bg-red-400/50 rounded-lg transition-all"
                                       title="Remove note"
                                     >
                                       <TrashIcon className="w-4 h-4" />
                                     </button>
+                                  </div>
+                                </div>
+                                {/* Note Content */}
+                                <div className="bg-white border-2 border-t-0 border-blue-300 rounded-b-lg overflow-hidden">
+                                  <ProgressNoteDisplay note={note} />
+                                </div>
+                              </div>
+
+                              {/* Desktop Layout - Timeline */}
+                              <div className="hidden md:flex gap-4">
+                                {/* Timeline Node */}
+                                <div className="flex flex-col items-center flex-shrink-0">
+                                  <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center shadow-lg ring-4 ring-white z-10">
+                                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                  </div>
+                                  <div className="text-center mt-2">
+                                    <div className="text-xs font-bold text-blue-300">{timeStr}</div>
+                                    <div className="text-xs text-blue-600">{dateStr}</div>
+                                  </div>
+                                </div>
+
+                                {/* Note Card */}
+                                <div className="flex-1 relative group">
+                                  <div className="bg-white rounded-lg border-2 border-blue-300 p-4 shadow-md hover:shadow-lg transition-all hover:border-blue-500">
+                                    <ProgressNoteDisplay note={note} />
+
+                                    {/* Hover Actions */}
+                                    <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleEditNote(patient.progressNotes.findIndex(n => n.date === note.date))}
+                                        className="p-2 text-blue-600 hover:text-blue-600 bg-white hover:bg-blue-100 rounded-lg transition-all shadow-md"
+                                        title="Edit note"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeNote(patient.progressNotes.findIndex(n => n.date === note.date))}
+                                        className="p-2 text-blue-600 hover:text-red-400 bg-white hover:bg-red-100 rounded-lg transition-all shadow-md"
+                                        title="Remove note"
+                                      >
+                                        <TrashIcon className="w-4 h-4" />
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               </div>

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ProgressNote, Patient } from '../../types';
-import { GoogleGenAI } from '@google/genai';
+import { generateClinicalNote, getCurrentProvider } from '../../services/clinicalNoteAIService';
 import { audioRecorder } from '../../utils/audioRecorder';
 import {
   isElevenLabsConfigured,
@@ -30,6 +30,9 @@ interface VoiceClinicalNoteProps {
   userName?: string;
   autoStart?: boolean; // Auto-start recording on mount
   onBackgroundSave?: (patientId: string, note: ProgressNote) => void; // For background processing
+  onProcessingStart?: (patientId: string, patientName: string) => string; // Called immediately when Done clicked, returns saveId
+  onProcessingComplete?: (saveId: string, patientId: string, note: ProgressNote) => void; // Called when processing done
+  onProcessingError?: (saveId: string, error: string) => void; // Called on error
 }
 
 interface RecordingSession {
@@ -60,7 +63,10 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
   userEmail,
   userName,
   autoStart = true, // Default to auto-start
-  onBackgroundSave
+  onBackgroundSave,
+  onProcessingStart,
+  onProcessingComplete,
+  onProcessingError
 }) => {
   // Core states
   const [isRecording, setIsRecording] = useState(false);
@@ -89,7 +95,6 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
 
   // Refs
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const aiRef = useRef<GoogleGenAI | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -97,12 +102,10 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
   const finalTranscriptRef = useRef<string>('');
   const autoStartedRef = useRef(false);
 
-  // Initialize Gemini AI and check ElevenLabs
+  // Check ElevenLabs configuration on mount
   useEffect(() => {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (apiKey) {
-      aiRef.current = new GoogleGenAI({ apiKey });
-    }
+    // Log current AI provider
+    console.log('Clinical Note AI Provider:', getCurrentProvider());
 
     // Check ElevenLabs configuration
     if (!isElevenLabsConfigured()) {
@@ -214,13 +217,30 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
   };
 
   // Calculate day of admission
-  const getDayOfAdmission = (): string => {
-    if (!patient?.dateOfAdmission) return '';
+  const getDayOfAdmission = (): number => {
+    if (!patient?.dateOfAdmission) return 0;
     const admission = new Date(patient.dateOfAdmission);
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - admission.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return `Day ${diffDays} of Admission`;
+    return diffDays;
+  };
+
+  // Format admission date and time
+  const getAdmissionDateTime = (): string => {
+    if (!patient?.dateOfAdmission) return 'N/A';
+    const admission = new Date(patient.dateOfAdmission);
+    const date = admission.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+    const time = admission.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+    return `${date}, ${time}`;
   };
 
   // Calculate current age dynamically from DOB
@@ -233,14 +253,17 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     return `${patient?.age || 0} ${patient?.ageUnit || 'days'}`;
   }, [patient?.dateOfBirth, patient?.age, patient?.ageUnit]);
 
-  // Calculate Day of Life (DOL) for neonates
-  const getDayOfLife = (): string => {
+  // Calculate age in days for neonates (up to 30 days)
+  const getAgeInDays = (): string => {
     if (!patient?.dateOfBirth) return '';
     const birthDate = new Date(patient.dateOfBirth);
     const now = new Date();
     const diffMs = now.getTime() - birthDate.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1; // Day 1 is birth day
-    return `DOL ${diffDays}`;
+    if (diffDays <= 30) {
+      return `${diffDays} days old`;
+    }
+    return ''; // Don't show for babies older than 30 days
   };
 
   // Start recording with real-time ElevenLabs transcription
@@ -321,10 +344,374 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     setIsPaused(false);
   };
 
-  // Stop, Generate, and Save - ALL IN ONE
+  // Background processing function - runs after modal is closed
+  const processNoteInBackground = async (transcript: string, saveId: string) => {
+    console.log('🔄 Processing note in background...');
+
+    const { date, time } = getCurrentDateTime();
+    const dayOfAdmission = getDayOfAdmission();
+    const ageInfo = getAgeInDays();
+    const admissionDateTime = getAdmissionDateTime();
+
+    const prompt = `You are an elite NICU/PICU intensivist creating world-class clinical documentation.
+
+PATIENT: ${patient?.name || 'N/A'} | ${ageInfo || getCurrentAge} | ${patient?.unit || 'NICU'} | Dx: ${patient?.diagnosis || 'N/A'}
+ADMITTED: ${admissionDateTime}${dayOfAdmission ? ` (Day ${dayOfAdmission})` : ''}
+
+VOICE DICTATION:
+"${transcript}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    CLINICAL PROGRESS NOTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Name: ${patient?.name || 'N/A'}
+Age: ${ageInfo || getCurrentAge}
+Diagnosis: ${patient?.diagnosis || 'N/A'}
+Admitted: ${admissionDateTime}${dayOfAdmission ? ` (Day ${dayOfAdmission})` : ''}
+Date: ${date}                                        Time: ${time}
+
+┌─ SUBJECTIVE ─────────────────────────────────────────────────┐
+│                                                              │
+│ CHIEF CONCERN: [WHY is this note being written NOW?]        │
+│   Examples: Seizure episode / Adding medication / Routine   │
+│   follow-up / Fever / Apnea / Desaturation / Feeding issue  │
+│                                                              │
+│ HISTORY: [Write as ONE proper sentence with 3 parts]:       │
+│   1. Primary Diagnosis + patient details                    │
+│   2. Course (improving/stable/worsening since admission)    │
+│   3. Current concern (what is happening today)              │
+│                                                              │
+│   Example:                                                   │
+│   "Known case of Respiratory Distress Syndrome, 32-week     │
+│   preterm, 1.5kg, now 5 days old, initially required CPAP   │
+│   with FiO2 40% and surfactant, has been gradually          │
+│   improving and currently stable on CPAP FiO2 25%,          │
+│   presenting today with new onset apnea episodes."          │
+│                                                              │
+│ [ONLY if user mentions - otherwise SKIP]:                   │
+│ FEEDING: [Only if mentioned]                                │
+│ OUTPUT: [Only if mentioned]                                 │
+│ PARENTS: [Only if mentioned]                                │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ OBJECTIVE ──────────────────────────────────────────────────┐
+│                                                              │
+│ VITALS                                                       │
+│ T:      HR:      RR:      SpO2:      BP:      CRT:      Wt:  │
+│                                                              │
+│ RESPIRATORY SUPPORT: [ONLY if mentioned - with STATUS]:     │
+│   Status: Continuing / Newly started / Changed / Weaning    │
+│   Mode: [CPAP/HFNC/Ventilator/Room air/O2]                  │
+│   Settings: [FiO2, PEEP, PIP, etc. if mentioned]            │
+│                                                              │
+│ OTHER SUPPORT: [ONLY if mentioned - IV lines, feeds, etc.]  │
+│                                                              │
+│ EXAMINATION                                                  │
+│ General  : [Include any extra findings not fitting below]    │
+│ CNS      :                                                   │
+│ CVS      :                                                   │
+│ Resp     :                                                   │
+│ Abdomen  :                                                   │
+│                                                              │
+│ INVESTIGATIONS [Only if mentioned]                           │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ ASSESSMENT ─────────────────────────────────────────────────┐
+│                                                              │
+│ PRIMARY DIAGNOSIS:                                           │
+│ [Diagnosis] - [Severity: mild/moderate/severe], [Status]     │
+│                                                              │
+│ SECONDARY DIAGNOSES:                                         │
+│ 1.                                                           │
+│ 2.                                                           │
+│ 3.                                                           │
+│                                                              │
+│ ══════════════════════════════════════════════════════════   │
+│ CLINICAL IMPRESSION:                                         │
+│ [Synthesize: What is the overall clinical picture? How is    │
+│  the patient trending? What are the key concerns? What is    │
+│  the prognosis for the next 24-48 hours?]                    │
+│ ══════════════════════════════════════════════════════════   │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─ PLAN ───────────────────────────────────────────────────────┐
+│                                                              │
+│ Write exactly what user dictated for the plan.               │
+│ Group logically: Respiratory → Medications → Fluids/Feeds    │
+│  → Monitoring → Investigations → Follow-up                   │
+│                                                              │
+│ Medications: Inj/Tab/Syp [Drug] [Route] [Frequency]          │
+│ ⚠️ Only include dose if CLEARLY stated by user!              │
+│                                                              │
+│ ⚠️ If user did not mention any plan, write: "Continue same"  │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+                                           Dr. ${userName || '_______________'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INTELLIGENCE GUIDELINES:
+
+1. CHIEF CONCERN - WHY IS THIS NOTE BEING WRITTEN NOW?
+   ★★★ CHIEF CONCERN = THE REASON FOR THIS NOTE (NOT the diagnosis) ★★★
+   → "patient is having seizure" → Chief Concern: "Seizure episode"
+   → "adding phenobarbitone" → Chief Concern: "Adding medication"
+   → "routine note" / "daily round" → Chief Concern: "Routine follow-up"
+   → "fever since morning" → Chief Concern: "Fever"
+   → "baby desaturated" → Chief Concern: "Desaturation episode"
+   → "apnea episode" → Chief Concern: "Apnea"
+   → "starting feeds" → Chief Concern: "Initiating feeds"
+   → LISTEN to the dictation - what EVENT or ACTION triggered this note?
+
+2. HISTORY - WRITE AS ONE PROPER FLOWING SENTENCE:
+   ★★★ HISTORY IS MANDATORY - MUST INCLUDE ALL 3 PARTS IN ONE SENTENCE ★★★
+
+   ⚠️ CRITICAL: Do NOT output labels like "ADMISSION REASON:", "COURSE:", "CURRENT STATUS:"
+   ⚠️ CRITICAL: Do NOT break into multiple short sentences or bullet points
+   ⚠️ Write as ONE connected flowing sentence with these 3 parts:
+
+   PART 1 - PRIMARY DIAGNOSIS + PATIENT DETAILS:
+   → "Known case of [Diagnosis], [GA]-week preterm/term, [weight], now [X] days old"
+
+   PART 2 - COURSE (how patient progressed since admission):
+   → "initially required [treatment], has been [improving/stable/worsening]"
+
+   PART 3 - CURRENT CONCERN (what is happening today):
+   → "currently [status], presenting today with [today's concern]"
+   → ⚠️ NEVER write "not known", "unknown", "N/A" - ALWAYS infer from dictation
+
+   ✅ GOOD EXAMPLE (one flowing sentence):
+   "Known case of Respiratory Distress Syndrome, 32-week preterm, 1.5kg, now 5 days old,
+   initially required CPAP with FiO2 40% and surfactant, has been gradually improving
+   and currently stable on CPAP FiO2 25%, presenting today with new onset apnea episodes."
+
+   ✅ Another good example:
+   "Known case of Neonatal Sepsis, term baby, 3.2kg, now 8 days old, was admitted with
+   fever and lethargy, started on antibiotics with cultures sent, has been improving
+   and currently afebrile, presenting today for routine follow-up."
+
+   ❌ BAD EXAMPLE (broken sentences, labels):
+   "ADMISSION REASON: RDS. COURSE: Improving. CURRENT STATUS: Apnea."
+
+   ❌ BAD EXAMPLE (too short, missing parts):
+   "RDS. Improving. Apnea today."
+
+   ★ Do NOT add FEEDING, OUTPUT, PARENTS unless user explicitly mentions them
+
+3. CLINICAL IMPRESSION - This is CRITICAL:
+   Write 1-2 sentences that capture:
+   → Overall trajectory (improving/stable/worsening)
+   → Key clinical concerns right now
+   → Expected course in next 24-48 hours
+
+4. RESPIRATORY/OTHER SUPPORT - UNDERSTAND THE CONTEXT:
+   ★ ALWAYS clarify the STATUS of any support mentioned:
+     → "on CPAP" / "CPAP continuing" → Status: Continuing on CPAP
+     → "started on CPAP" / "put on CPAP" / "intubated" → Status: Newly started
+     → "CPAP to HFNC" / "weaning" / "stepped down" → Status: Changed/Weaning
+     → "extubated" / "off CPAP" / "room air" → Status: Support removed
+   ★ DO NOT include respiratory support section if NOT mentioned
+   ★ Same logic for: Ventilator, HFNC, O2 therapy, IV fluids, TPN, phototherapy, etc.
+
+5. EXAMINATION FINDINGS - SMART DEFAULTS:
+   ★★★ CRITICAL: NEVER LEAVE EXAMINATION BLANK IF USER SAYS "NORMAL" ★★★
+
+   A) IF USER SAYS "all systems normal" / "systemic examination normal" / "other systems normal":
+      → ⚠️ MUST WRITE ALL 5 SYSTEMS - NEVER LEAVE BLANK:
+      General: Active, alert, no distress
+      CNS: Alert, normal tone, reflexes intact
+      CVS: S1S2+, no murmur, CRT <3s
+      Resp: B/L AE+, no added sounds
+      Abdomen: Soft, non-tender, BS+
+
+   B) IF USER MENTIONS A SPECIFIC PROBLEM + "rest/other systems normal":
+      → Write ABNORMAL finding for affected system
+      → ⚠️ MUST WRITE NORMAL findings for ALL other systems - NEVER LEAVE BLANK
+      Example if user says "seizure, other systems normal":
+      General: Active, alert
+      CNS: Seizure activity noted
+      CVS: S1S2+, no murmur, CRT <3s
+      Resp: B/L AE+, no added sounds
+      Abdomen: Soft, non-tender, BS+
+
+   C) IF USER SAYS NOTHING about examination:
+      → Leave examination findings blank
+      → Do NOT assume anything
+
+6. VITALS - SMART DEFAULTS:
+
+   IF USER SAYS "vitals stable" / "vitals normal" / "hemodynamically stable":
+   → Fill in normal ranges:
+   → T: Afebrile / 36.5-37.5°C
+   → HR: 120-160/min (neonate) or age-appropriate
+   → RR: 40-60/min (neonate) or age-appropriate
+   → SpO2: 95-100%
+   → BP: Normal for age
+   → CRT: <3 sec
+
+   IF USER GIVES SPECIFIC VALUES:
+   → Use EXACTLY what they said
+   → Don't modify or assume other values
+
+7. MEDICATION DOSES - CRITICAL RULE:
+   ★ ONLY include dose if user CLEARLY mentioned it (e.g., "vancomycin 15mg/kg")
+   ★ If dose NOT mentioned, write "as per protocol" after the drug name
+   ★ NEVER assume or invent doses - use "as per protocol" if not stated
+
+8. ABBREVIATIONS:
+   B/L=Bilateral | AE=Air Entry | BS=Bowel Sounds | S1S2+=Heart sounds normal
+   CRT=Capillary Refill | GA=Gestational Age | EBM=Expressed Breast Milk
+   TPN=Total Parenteral Nutrition | WNL=Within Normal Limits | NAD=No Abnormality Detected
+
+   ⚠️ AGE FORMAT: For babies up to 30 days, write age as "X days old" (NOT "DOL X")
+
+CRITICAL RULES:
+✓ One line per finding - be concise
+✓ Use medical abbreviations
+✓ Numbers with units (37°C, 140/min, 2.5kg)
+✓ NO markdown formatting (no **, ##, *)
+✓ CLINICAL IMPRESSION is mandatory - synthesize the case
+✓ CHIEF CONCERN must reflect the ACTUAL problem from dictation
+✓ "Vitals stable" → fill normal vital ranges
+✓ "All systems normal" / "other systems normal" → MUST write ALL systems with normal findings (General, CNS, CVS, Resp, Abdomen)
+✓ NEVER write "normal" for a system when user mentions pathology in that system
+✓ NEVER output placeholder text like "[add here]", "[write here]", "[add plan]"
+✓ NEVER output instruction labels like "ADMISSION REASON:", "COURSE:", "CURRENT STATUS:"
+✓ If user didn't mention plan, write "Continue same" (never leave blank or use placeholder)
+✓ NEVER write "not known", "unknown", "N/A", "not available" in HISTORY - infer current status from dictation
+✓ Blood products (FFP, PRBC, Platelets, Cryoprecipitate) and requisitions go in PLAN, NOT Investigations
+✓ Investigations = Lab tests, imaging, cultures ONLY (CBC, CRP, X-ray, USG, Blood culture, etc.)`;
+
+    try {
+      console.log(`🤖 Background: Generating SOAP note using ${getCurrentProvider()}...`);
+      const responseText = await generateClinicalNote(prompt);
+
+      let noteText = responseText.trim().replace(/```/g, '').replace(/\*\*/g, '');
+
+      if (!noteText || noteText.length < 10) {
+        console.error('❌ Background: Failed to generate note');
+        if (onProcessingError) {
+          onProcessingError(saveId, 'Failed to generate note');
+        }
+        return;
+      }
+
+      console.log('✅ Background: Note generated, length:', noteText.length);
+
+      // Parse vitals and examination
+      const vitals = parseVitals(noteText);
+      const examination = parseExamination(noteText);
+
+      // Create progress note
+      const progressNote: ProgressNote = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        note: noteText,
+        authorEmail: userEmail || '',
+        authorName: userName || userEmail || '',
+        date: new Date().toISOString(),
+        addedBy: userName || userEmail || '',
+        vitals,
+        examination
+      };
+
+      console.log('📤 Background: Calling onProcessingComplete');
+      if (onProcessingComplete && patient?.id) {
+        onProcessingComplete(saveId, patient.id, progressNote);
+      }
+
+    } catch (err) {
+      console.error('❌ Background processing error:', err);
+      if (onProcessingError) {
+        onProcessingError(saveId, (err as Error).message);
+      }
+    }
+  };
+
+  // Process ALL in background - transcription (if needed) + Gemini - runs after modal closes immediately
+  const processAllInBackground = async (saveId: string, currentTranscript: string) => {
+    console.log('🔄 Processing ALL in background...');
+
+    let transcript = currentTranscript;
+
+    // Wait a bit for any final transcripts from WebSocket
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // Stop live transcription - returns audio blob if WebSocket never connected
+    const audioBlob = await stopLiveTranscription();
+
+    // If we got an audio blob, WebSocket failed - use batch transcription
+    if (audioBlob && audioBlob.size > 0 && (!transcript || transcript.length < 3)) {
+      console.log('🔄 Background: WebSocket failed - using batch transcription');
+      try {
+        const batchTranscript = await transcribeWithElevenLabs(audioBlob, (status) => {
+          console.log('Background transcription status:', status);
+        });
+        if (batchTranscript && batchTranscript.trim()) {
+          transcript = batchTranscript.trim();
+        }
+      } catch (err) {
+        console.error('Background batch transcription failed:', err);
+        if (onProcessingError) {
+          onProcessingError(saveId, 'Transcription failed: ' + (err as Error).message);
+        }
+        return;
+      }
+    }
+
+    // Check if we have a valid transcript
+    if (!transcript || transcript.length < 3) {
+      console.error('Background: No valid transcript');
+      if (onProcessingError) {
+        onProcessingError(saveId, 'No speech detected. Please try again.');
+      }
+      return;
+    }
+
+    console.log('📝 Background transcript:', transcript.substring(0, 100) + '...');
+
+    // Now process with Gemini
+    await processNoteInBackground(transcript, saveId);
+  };
+
+  // Stop, Generate, and Save - ALL IN ONE (with immediate background indicator)
   const stopAndSaveNote = async () => {
     console.log('🛑 Stop → Generate → Save');
 
+    // =====================================================================
+    // IMMEDIATE BACKGROUND INDICATOR - Show indicator & close modal FIRST
+    // This must happen BEFORE any cleanup to ensure instant response on mobile
+    // =====================================================================
+    if (onProcessingStart && patient?.id) {
+      // Capture transcript BEFORE any cleanup
+      const currentTranscript = finalTranscriptRef.current.trim();
+
+      // Show indicator IMMEDIATELY
+      const saveId = onProcessingStart(patient.id, patient.name);
+      console.log('📤 Processing started IMMEDIATELY, saveId:', saveId);
+
+      // Close modal IMMEDIATELY so user can proceed to next patient
+      onCancel();
+
+      // NOW do cleanup and processing in background (after modal is closed)
+      setTimeout(() => {
+        // Stop recording cleanup
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+        }
+        stopAudioVisualization();
+
+        // Do ALL processing in background (transcription if needed + Gemini)
+        processAllInBackground(saveId, currentTranscript);
+      }, 0);
+
+      return;
+    }
+
+    // Fallback: Original flow if onProcessingStart not provided
     // 1. STOP RECORDING
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -332,6 +719,7 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     stopAudioVisualization();
     setIsRecording(false);
 
+    // Fallback: Original flow if onProcessingStart not provided
     // Wait for final transcripts
     await new Promise(resolve => setTimeout(resolve, 300));
 
@@ -373,13 +761,14 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     setProcessingStep('formatting');
 
     const { date, time } = getCurrentDateTime();
-    const dayInfo = getDayOfAdmission();
-    const dolInfo = getDayOfLife();
+    const dayOfAdmission = getDayOfAdmission();
+    const ageInfo = getAgeInDays();
+    const admissionDateTime = getAdmissionDateTime();
 
     const prompt = `You are an elite NICU/PICU intensivist creating world-class clinical documentation.
 
-PATIENT: ${patient?.name || 'N/A'} | ${getCurrentAge} | ${dolInfo ? dolInfo + ' | ' : ''}${patient?.unit || 'NICU'} | Dx: ${patient?.diagnosis || 'N/A'}
-DATE: ${date} | TIME: ${time}${dayInfo ? ' | ' + dayInfo : ''}
+PATIENT: ${patient?.name || 'N/A'} | ${ageInfo || getCurrentAge} | ${patient?.unit || 'NICU'} | Dx: ${patient?.diagnosis || 'N/A'}
+ADMITTED: ${admissionDateTime}${dayOfAdmission ? ` (Day ${dayOfAdmission})` : ''}
 
 VOICE DICTATION:
 "${transcript}"
@@ -387,27 +776,34 @@ VOICE DICTATION:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     CLINICAL PROGRESS NOTE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Name: ${patient?.name || 'N/A'}
+Age: ${ageInfo || getCurrentAge}
+Diagnosis: ${patient?.diagnosis || 'N/A'}
+Admitted: ${admissionDateTime}${dayOfAdmission ? ` (Day ${dayOfAdmission})` : ''}
 Date: ${date}                                        Time: ${time}
-${dayInfo || ''}${dolInfo ? '                                             ' + dolInfo : ''}
 
 ┌─ SUBJECTIVE ─────────────────────────────────────────────────┐
 │                                                              │
-│ CHIEF CONCERN: [Context-aware - identify the TYPE]:         │
-│   • Disease/Condition update (e.g., "RDS Day 3 - weaning")  │
-│   • Investigation review (e.g., "CXR review - improving")   │
-│   • Procedure (e.g., "Post UVC insertion")                  │
-│   • Counselling (e.g., "Discharge counselling")             │
-│   • Routine follow-up (e.g., "Routine Day 5 assessment")    │
+│ CHIEF CONCERN: [WHY is this note being written NOW?]        │
+│   Examples: Seizure episode / Adding medication / Routine   │
+│   follow-up / Fever / Apnea / Desaturation / Feeding issue  │
 │                                                              │
-│ HISTORY: [What happened BEFORE this note - timeline]:       │
-│   • Birth/Admission details if relevant                     │
-│   • Course since last review                                │
-│   • Events/changes in last 24h                              │
-│   • Previous interventions and response                     │
+│ HISTORY: [Write as ONE proper sentence with 3 parts]:       │
+│   1. Primary Diagnosis + patient details                    │
+│   2. Course (improving/stable/worsening since admission)    │
+│   3. Current concern (what is happening today)              │
 │                                                              │
-│ FEEDING: [Type, volume, frequency, tolerance]               │
-│ OUTPUT: [Urine, stool - adequacy]                           │
-│ PARENTS: [Concerns, counselling done]                       │
+│   Example:                                                   │
+│   "Known case of Respiratory Distress Syndrome, 32-week     │
+│   preterm, 1.5kg, now 5 days old, initially required CPAP   │
+│   with FiO2 40% and surfactant, has been gradually          │
+│   improving and currently stable on CPAP FiO2 25%,          │
+│   presenting today with new onset apnea episodes."          │
+│                                                              │
+│ [ONLY if user mentions - otherwise SKIP]:                   │
+│ FEEDING: [Only if mentioned]                                │
+│ OUTPUT: [Only if mentioned]                                 │
+│ PARENTS: [Only if mentioned]                                │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 
@@ -424,13 +820,11 @@ ${dayInfo || ''}${dolInfo ? '                                             ' + do
 │ OTHER SUPPORT: [ONLY if mentioned - IV lines, feeds, etc.]  │
 │                                                              │
 │ EXAMINATION                                                  │
-│ General  :                                                   │
+│ General  : [Include any extra findings not fitting below]    │
 │ CNS      :                                                   │
 │ CVS      :                                                   │
 │ Resp     :                                                   │
 │ Abdomen  :                                                   │
-│ Skin     :                                                   │
-│ Access   : [Lines, tubes if mentioned]                       │
 │                                                              │
 │ INVESTIGATIONS [Only if mentioned]                           │
 │                                                              │
@@ -457,11 +851,14 @@ ${dayInfo || ''}${dolInfo ? '                                             ' + do
 
 ┌─ PLAN ───────────────────────────────────────────────────────┐
 │                                                              │
-│ [Write plan naturally - exactly as dictated]                 │
-│ [Group logically: Respiratory → Medications → Fluids/Feeds   │
-│  → Monitoring → Investigations → Follow-up]                  │
+│ Write exactly what user dictated for the plan.               │
+│ Group logically: Respiratory → Medications → Fluids/Feeds    │
+│  → Monitoring → Investigations → Follow-up                   │
 │                                                              │
-│ Medications: Inj/Tab/Syp [Drug] [Dose] [Route] [Frequency]   │
+│ Medications: Inj/Tab/Syp [Drug] [Route] [Frequency]          │
+│ ⚠️ Only include dose if CLEARLY stated by user!              │
+│                                                              │
+│ ⚠️ If user did not mention any plan, write: "Continue same"  │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 
@@ -470,19 +867,51 @@ ${dayInfo || ''}${dolInfo ? '                                             ' + do
 
 INTELLIGENCE GUIDELINES:
 
-1. CHIEF CONCERN - Be CONTEXT-AWARE:
-   Analyze the dictation and identify what TYPE of note this is:
-   → Disease update: "RDS Day 3 - on CPAP, weaning FiO2"
-   → Investigation: "Blood culture review - no growth at 48h"
-   → Procedure: "Post surfactant administration"
-   → Counselling: "Pre-discharge counselling with parents"
-   → Routine: "Routine morning rounds - DOL 5"
+1. CHIEF CONCERN - WHY IS THIS NOTE BEING WRITTEN NOW?
+   ★★★ CHIEF CONCERN = THE REASON FOR THIS NOTE (NOT the diagnosis) ★★★
+   → "patient is having seizure" → Chief Concern: "Seizure episode"
+   → "adding phenobarbitone" → Chief Concern: "Adding medication"
+   → "routine note" / "daily round" → Chief Concern: "Routine follow-up"
+   → "fever since morning" → Chief Concern: "Fever"
+   → "baby desaturated" → Chief Concern: "Desaturation episode"
+   → "apnea episode" → Chief Concern: "Apnea"
+   → "starting feeds" → Chief Concern: "Initiating feeds"
+   → LISTEN to the dictation - what EVENT or ACTION triggered this note?
 
-2. HISTORY - Tell the STORY:
-   → What is the background? (Birth weight, GA, mode of delivery)
-   → What happened since admission/last note?
-   → What interventions were done and how did baby respond?
-   → Any significant events in the last 24 hours?
+2. HISTORY - WRITE AS ONE PROPER FLOWING SENTENCE:
+   ★★★ HISTORY IS MANDATORY - MUST INCLUDE ALL 3 PARTS IN ONE SENTENCE ★★★
+
+   ⚠️ CRITICAL: Do NOT output labels like "ADMISSION REASON:", "COURSE:", "CURRENT STATUS:"
+   ⚠️ CRITICAL: Do NOT break into multiple short sentences or bullet points
+   ⚠️ Write as ONE connected flowing sentence with these 3 parts:
+
+   PART 1 - PRIMARY DIAGNOSIS + PATIENT DETAILS:
+   → "Known case of [Diagnosis], [GA]-week preterm/term, [weight], now [X] days old"
+
+   PART 2 - COURSE (how patient progressed since admission):
+   → "initially required [treatment], has been [improving/stable/worsening]"
+
+   PART 3 - CURRENT CONCERN (what is happening today):
+   → "currently [status], presenting today with [today's concern]"
+   → ⚠️ NEVER write "not known", "unknown", "N/A" - ALWAYS infer from dictation
+
+   ✅ GOOD EXAMPLE (one flowing sentence):
+   "Known case of Respiratory Distress Syndrome, 32-week preterm, 1.5kg, now 5 days old,
+   initially required CPAP with FiO2 40% and surfactant, has been gradually improving
+   and currently stable on CPAP FiO2 25%, presenting today with new onset apnea episodes."
+
+   ✅ Another good example:
+   "Known case of Neonatal Sepsis, term baby, 3.2kg, now 8 days old, was admitted with
+   fever and lethargy, started on antibiotics with cultures sent, has been improving
+   and currently afebrile, presenting today for routine follow-up."
+
+   ❌ BAD EXAMPLE (broken sentences, labels):
+   "ADMISSION REASON: RDS. COURSE: Improving. CURRENT STATUS: Apnea."
+
+   ❌ BAD EXAMPLE (too short, missing parts):
+   "RDS. Improving. Apnea today."
+
+   ★ Do NOT add FEEDING, OUTPUT, PARENTS unless user explicitly mentions them
 
 3. CLINICAL IMPRESSION - This is CRITICAL:
    Write 1-2 sentences that capture:
@@ -498,21 +927,58 @@ INTELLIGENCE GUIDELINES:
      → "extubated" / "off CPAP" / "room air" → Status: Support removed
    ★ DO NOT include respiratory support section if NOT mentioned
    ★ Same logic for: Ventilator, HFNC, O2 therapy, IV fluids, TPN, phototherapy, etc.
+
+5. EXAMINATION FINDINGS - SMART DEFAULTS:
+   ★★★ CRITICAL: NEVER LEAVE EXAMINATION BLANK IF USER SAYS "NORMAL" ★★★
+
+   A) IF USER SAYS "all systems normal" / "systemic examination normal" / "other systems normal":
+      → ⚠️ MUST WRITE ALL 5 SYSTEMS - NEVER LEAVE BLANK:
+      General: Active, alert, no distress
+      CNS: Alert, normal tone, reflexes intact
+      CVS: S1S2+, no murmur, CRT <3s
+      Resp: B/L AE+, no added sounds
+      Abdomen: Soft, non-tender, BS+
+
+   B) IF USER MENTIONS A SPECIFIC PROBLEM + "rest/other systems normal":
+      → Write ABNORMAL finding for affected system
+      → ⚠️ MUST WRITE NORMAL findings for ALL other systems - NEVER LEAVE BLANK
+      Example if user says "seizure, other systems normal":
+      General: Active, alert
+      CNS: Seizure activity noted
+      CVS: S1S2+, no murmur, CRT <3s
+      Resp: B/L AE+, no added sounds
+      Abdomen: Soft, non-tender, BS+
+
+   C) IF USER SAYS NOTHING about examination:
+      → Leave examination findings blank
+      → Do NOT assume anything
+
+6. VITALS - SMART DEFAULTS:
+
+   IF USER SAYS "vitals stable" / "vitals normal" / "hemodynamically stable":
+   → Fill in normal ranges:
+   → T: Afebrile / 36.5-37.5°C
+   → HR: 120-160/min (neonate) or age-appropriate
+   → RR: 40-60/min (neonate) or age-appropriate
+   → SpO2: 95-100%
+   → BP: Normal for age
+   → CRT: <3 sec
+
+   IF USER GIVES SPECIFIC VALUES:
+   → Use EXACTLY what they said
+   → Don't modify or assume other values
+
+7. MEDICATION DOSES - CRITICAL RULE:
+   ★ ONLY include dose if user CLEARLY mentioned it (e.g., "vancomycin 15mg/kg")
+   ★ If dose NOT mentioned, write "as per protocol" after the drug name
+   ★ NEVER assume or invent doses - use "as per protocol" if not stated
    ★ Examples:
-     → User says "baby on CPAP" → Write: "CPAP (Continuing) - [settings if mentioned]"
-     → User says "started CPAP today" → Write: "CPAP (Newly initiated) - [settings]"
-     → User says "weaning CPAP" → Write: "CPAP (Weaning) - FiO2 reduced from X to Y"
+     → User says "started vancomycin" → Write: "Inj Vancomycin (as per protocol) IV"
+     → User says "vancomycin 15mg/kg" → Write: "Inj Vancomycin 15mg/kg IV"
+     → User says "on dopamine" → Write: "Dopamine infusion (as per protocol)"
+     → User says "dopamine 10 mcg/kg/min" → Write: "Dopamine 10 mcg/kg/min"
 
-5. INTELLIGENT DEFAULTS - SYSTEM-FOCUSED EXAMINATION:
-   ★ If user focuses on ONE SYSTEM (e.g., respiratory), assume OTHER systems are NORMAL:
-     → User mentions only respiratory → Other systems: "WNL"
-     → User mentions only CNS → CVS, Resp, Abdomen: assume normal
-   ★ If user says "vitals stable" or doesn't mention vitals:
-     → Neonate defaults: T:37°C HR:140/min RR:45/min SpO2:98% CRT:<2s
-   ★ If user says "exam normal" without specifics:
-     → General: Active | CNS: Normal tone | CVS: S1S2+ | Resp: B/L AE+ | Abd: Soft, BS+
-
-6. PRONUNCIATION CORRECTION - ALL MEDICAL TERMS:
+7. PRONUNCIATION CORRECTION - ALL MEDICAL TERMS:
    Voice transcription often has errors. INTELLIGENTLY DECODE based on context:
 
    MEDICATIONS:
@@ -569,8 +1035,10 @@ INTELLIGENCE GUIDELINES:
 
 8. ABBREVIATIONS:
    B/L=Bilateral | AE=Air Entry | BS=Bowel Sounds | S1S2+=Heart sounds normal
-   CRT=Capillary Refill | GA=Gestational Age | DOL=Day of Life | EBM=Expressed Breast Milk
+   CRT=Capillary Refill | GA=Gestational Age | EBM=Expressed Breast Milk
    TPN=Total Parenteral Nutrition | WNL=Within Normal Limits | NAD=No Abnormality Detected
+
+   ⚠️ AGE FORMAT: For babies up to 30 days, write age as "X days old" (NOT "DOL X")
 
 CRITICAL RULES:
 ✓ One line per finding - be concise
@@ -579,18 +1047,17 @@ CRITICAL RULES:
 ✓ NO markdown formatting (no **, ##, *)
 ✓ CLINICAL IMPRESSION is mandatory - synthesize the case
 ✓ Plan should mirror what was dictated
-✓ If a system is NOT mentioned, write "WNL" or skip it - DO NOT fabricate findings
+✓ CHIEF CONCERN must reflect the ACTUAL problem from dictation (NOT "Routine follow-up" if user mentions a problem)
+✓ NEVER write "normal" for a system when user mentions pathology (seizure = CNS abnormal, NOT normal)
+✓ If user doesn't mention a system, skip it or leave blank - DO NOT assume normal
 ✓ Respiratory support: MUST indicate status (Continuing/New/Changed/Weaning)
 ✓ All medical terms must be spelled correctly - use context to decode pronunciation errors`;
 
     try {
-      console.log('🤖 Generating SOAP note...');
-      const response = await aiRef.current!.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: prompt
-      });
+      console.log(`🤖 Generating SOAP note using ${getCurrentProvider()}...`);
+      const responseText = await generateClinicalNote(prompt);
 
-      let noteText = response.text.trim().replace(/```/g, '').replace(/\*\*/g, '');
+      let noteText = responseText.trim().replace(/```/g, '').replace(/\*\*/g, '');
 
       if (!noteText || noteText.length < 10) {
         setError('Failed to generate note. Please try again.');
@@ -646,8 +1113,18 @@ CRITICAL RULES:
             const allMedications = getMedicationsAfterReconciliation(reconciliationResult);
             const updatedPatient = { ...patient, medications: allMedications };
 
-            const patientRef = doc(db, 'patients', patient.id);
-            await updateDoc(patientRef, { medications: allMedications });
+            // Only update Firestore if patient already exists (has been saved before)
+            // For new admissions, medications will be saved when the form is submitted
+            if (patient.id) {
+              try {
+                const patientRef = doc(db, 'patients', patient.id);
+                await updateDoc(patientRef, { medications: allMedications });
+                console.log('✅ Medications saved to Firestore');
+              } catch (firestoreError) {
+                // Patient might not exist yet (new admission) - that's OK
+                console.log('ℹ️ Firestore update skipped - patient may be new:', firestoreError);
+              }
+            }
             onUpdatePatient(updatedPatient);
 
             const messages: string[] = [];
@@ -678,13 +1155,27 @@ CRITICAL RULES:
         medications: medicationsForNote.length > 0 ? medicationsForNote : undefined
       };
 
-      await onSave(progressNote);
+      // Check if background save is enabled
+      if (onBackgroundSave && patient?.id) {
+        // Close immediately and save in background
+        setIsProcessing(false);
+        finalTranscriptRef.current = '';
 
-      setIsProcessing(false);
-      finalTranscriptRef.current = '';
+        // Trigger background save - this returns immediately
+        onBackgroundSave(patient.id, progressNote);
 
-      showToast('success', '✅ Note saved!');
-      setTimeout(() => onCancel(), 500);
+        // Close the modal immediately so user can proceed to next patient
+        onCancel();
+      } else {
+        // Traditional blocking save
+        await onSave(progressNote);
+
+        setIsProcessing(false);
+        finalTranscriptRef.current = '';
+
+        showToast('success', '✅ Note saved!');
+        setTimeout(() => onCancel(), 500);
+      }
 
     } catch (err) {
       console.error('❌ Error:', err);
@@ -718,13 +1209,14 @@ CRITICAL RULES:
     setProcessingStep('formatting');
 
     const { date, time } = getCurrentDateTime();
-    const dayInfo = getDayOfAdmission();
-    const dolInfo = getDayOfLife();
+    const dayOfAdmission = getDayOfAdmission();
+    const ageInfo = getAgeInDays();
+    const admissionDateTime = getAdmissionDateTime();
 
     const prompt = `You are an elite NICU/PICU intensivist creating world-class clinical documentation.
 
-PATIENT: ${patient?.name || 'N/A'} | ${getCurrentAge} | ${dolInfo ? dolInfo + ' | ' : ''}${patient?.unit || 'NICU'} | Dx: ${patient?.diagnosis || 'N/A'}
-DATE: ${date} | TIME: ${time}${dayInfo ? ' | ' + dayInfo : ''}
+PATIENT: ${patient?.name || 'N/A'} | ${ageInfo || getCurrentAge} | ${patient?.unit || 'NICU'} | Dx: ${patient?.diagnosis || 'N/A'}
+ADMITTED: ${admissionDateTime}${dayOfAdmission ? ` (Day ${dayOfAdmission})` : ''}
 
 VOICE DICTATION:
 "${fullTranscript}"
@@ -732,27 +1224,34 @@ VOICE DICTATION:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     CLINICAL PROGRESS NOTE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Name: ${patient?.name || 'N/A'}
+Age: ${ageInfo || getCurrentAge}
+Diagnosis: ${patient?.diagnosis || 'N/A'}
+Admitted: ${admissionDateTime}${dayOfAdmission ? ` (Day ${dayOfAdmission})` : ''}
 Date: ${date}                                        Time: ${time}
-${dayInfo || ''}${dolInfo ? '                                             ' + dolInfo : ''}
 
 ┌─ SUBJECTIVE ─────────────────────────────────────────────────┐
 │                                                              │
-│ CHIEF CONCERN: [Context-aware - identify the TYPE]:         │
-│   • Disease/Condition update (e.g., "RDS Day 3 - weaning")  │
-│   • Investigation review (e.g., "CXR review - improving")   │
-│   • Procedure (e.g., "Post UVC insertion")                  │
-│   • Counselling (e.g., "Discharge counselling")             │
-│   • Routine follow-up (e.g., "Routine Day 5 assessment")    │
+│ CHIEF CONCERN: [WHY is this note being written NOW?]        │
+│   Examples: Seizure episode / Adding medication / Routine   │
+│   follow-up / Fever / Apnea / Desaturation / Feeding issue  │
 │                                                              │
-│ HISTORY: [What happened BEFORE this note - timeline]:       │
-│   • Birth/Admission details if relevant                     │
-│   • Course since last review                                │
-│   • Events/changes in last 24h                              │
-│   • Previous interventions and response                     │
+│ HISTORY: [Write as ONE proper sentence with 3 parts]:       │
+│   1. Primary Diagnosis + patient details                    │
+│   2. Course (improving/stable/worsening since admission)    │
+│   3. Current concern (what is happening today)              │
 │                                                              │
-│ FEEDING: [Type, volume, frequency, tolerance]               │
-│ OUTPUT: [Urine, stool - adequacy]                           │
-│ PARENTS: [Concerns, counselling done]                       │
+│   Example:                                                   │
+│   "Known case of Respiratory Distress Syndrome, 32-week     │
+│   preterm, 1.5kg, now 5 days old, initially required CPAP   │
+│   with FiO2 40% and surfactant, has been gradually          │
+│   improving and currently stable on CPAP FiO2 25%,          │
+│   presenting today with new onset apnea episodes."          │
+│                                                              │
+│ [ONLY if user mentions - otherwise SKIP]:                   │
+│ FEEDING: [Only if mentioned]                                │
+│ OUTPUT: [Only if mentioned]                                 │
+│ PARENTS: [Only if mentioned]                                │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 
@@ -769,13 +1268,11 @@ ${dayInfo || ''}${dolInfo ? '                                             ' + do
 │ OTHER SUPPORT: [ONLY if mentioned - IV lines, feeds, etc.]  │
 │                                                              │
 │ EXAMINATION                                                  │
-│ General  :                                                   │
+│ General  : [Include any extra findings not fitting below]    │
 │ CNS      :                                                   │
 │ CVS      :                                                   │
 │ Resp     :                                                   │
 │ Abdomen  :                                                   │
-│ Skin     :                                                   │
-│ Access   : [Lines, tubes if mentioned]                       │
 │                                                              │
 │ INVESTIGATIONS [Only if mentioned]                           │
 │                                                              │
@@ -802,11 +1299,14 @@ ${dayInfo || ''}${dolInfo ? '                                             ' + do
 
 ┌─ PLAN ───────────────────────────────────────────────────────┐
 │                                                              │
-│ [Write plan naturally - exactly as dictated]                 │
-│ [Group logically: Respiratory → Medications → Fluids/Feeds   │
-│  → Monitoring → Investigations → Follow-up]                  │
+│ Write exactly what user dictated for the plan.               │
+│ Group logically: Respiratory → Medications → Fluids/Feeds    │
+│  → Monitoring → Investigations → Follow-up                   │
 │                                                              │
-│ Medications: Inj/Tab/Syp [Drug] [Dose] [Route] [Frequency]   │
+│ Medications: Inj/Tab/Syp [Drug] [Route] [Frequency]          │
+│ ⚠️ Only include dose if CLEARLY stated by user!              │
+│                                                              │
+│ ⚠️ If user did not mention any plan, write: "Continue same"  │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 
@@ -815,19 +1315,51 @@ ${dayInfo || ''}${dolInfo ? '                                             ' + do
 
 INTELLIGENCE GUIDELINES:
 
-1. CHIEF CONCERN - Be CONTEXT-AWARE:
-   Analyze the dictation and identify what TYPE of note this is:
-   → Disease update: "RDS Day 3 - on CPAP, weaning FiO2"
-   → Investigation: "Blood culture review - no growth at 48h"
-   → Procedure: "Post surfactant administration"
-   → Counselling: "Pre-discharge counselling with parents"
-   → Routine: "Routine morning rounds - DOL 5"
+1. CHIEF CONCERN - WHY IS THIS NOTE BEING WRITTEN NOW?
+   ★★★ CHIEF CONCERN = THE REASON FOR THIS NOTE (NOT the diagnosis) ★★★
+   → "patient is having seizure" → Chief Concern: "Seizure episode"
+   → "adding phenobarbitone" → Chief Concern: "Adding medication"
+   → "routine note" / "daily round" → Chief Concern: "Routine follow-up"
+   → "fever since morning" → Chief Concern: "Fever"
+   → "baby desaturated" → Chief Concern: "Desaturation episode"
+   → "apnea episode" → Chief Concern: "Apnea"
+   → "starting feeds" → Chief Concern: "Initiating feeds"
+   → LISTEN to the dictation - what EVENT or ACTION triggered this note?
 
-2. HISTORY - Tell the STORY:
-   → What is the background? (Birth weight, GA, mode of delivery)
-   → What happened since admission/last note?
-   → What interventions were done and how did baby respond?
-   → Any significant events in the last 24 hours?
+2. HISTORY - WRITE AS ONE PROPER FLOWING SENTENCE:
+   ★★★ HISTORY IS MANDATORY - MUST INCLUDE ALL 3 PARTS IN ONE SENTENCE ★★★
+
+   ⚠️ CRITICAL: Do NOT output labels like "ADMISSION REASON:", "COURSE:", "CURRENT STATUS:"
+   ⚠️ CRITICAL: Do NOT break into multiple short sentences or bullet points
+   ⚠️ Write as ONE connected flowing sentence with these 3 parts:
+
+   PART 1 - PRIMARY DIAGNOSIS + PATIENT DETAILS:
+   → "Known case of [Diagnosis], [GA]-week preterm/term, [weight], now [X] days old"
+
+   PART 2 - COURSE (how patient progressed since admission):
+   → "initially required [treatment], has been [improving/stable/worsening]"
+
+   PART 3 - CURRENT CONCERN (what is happening today):
+   → "currently [status], presenting today with [today's concern]"
+   → ⚠️ NEVER write "not known", "unknown", "N/A" - ALWAYS infer from dictation
+
+   ✅ GOOD EXAMPLE (one flowing sentence):
+   "Known case of Respiratory Distress Syndrome, 32-week preterm, 1.5kg, now 5 days old,
+   initially required CPAP with FiO2 40% and surfactant, has been gradually improving
+   and currently stable on CPAP FiO2 25%, presenting today with new onset apnea episodes."
+
+   ✅ Another good example:
+   "Known case of Neonatal Sepsis, term baby, 3.2kg, now 8 days old, was admitted with
+   fever and lethargy, started on antibiotics with cultures sent, has been improving
+   and currently afebrile, presenting today for routine follow-up."
+
+   ❌ BAD EXAMPLE (broken sentences, labels):
+   "ADMISSION REASON: RDS. COURSE: Improving. CURRENT STATUS: Apnea."
+
+   ❌ BAD EXAMPLE (too short, missing parts):
+   "RDS. Improving. Apnea today."
+
+   ★ Do NOT add FEEDING, OUTPUT, PARENTS unless user explicitly mentions them
 
 3. CLINICAL IMPRESSION - This is CRITICAL:
    Write 1-2 sentences that capture:
@@ -843,21 +1375,58 @@ INTELLIGENCE GUIDELINES:
      → "extubated" / "off CPAP" / "room air" → Status: Support removed
    ★ DO NOT include respiratory support section if NOT mentioned
    ★ Same logic for: Ventilator, HFNC, O2 therapy, IV fluids, TPN, phototherapy, etc.
+
+5. EXAMINATION FINDINGS - SMART DEFAULTS:
+   ★★★ CRITICAL: NEVER LEAVE EXAMINATION BLANK IF USER SAYS "NORMAL" ★★★
+
+   A) IF USER SAYS "all systems normal" / "systemic examination normal" / "other systems normal":
+      → ⚠️ MUST WRITE ALL 5 SYSTEMS - NEVER LEAVE BLANK:
+      General: Active, alert, no distress
+      CNS: Alert, normal tone, reflexes intact
+      CVS: S1S2+, no murmur, CRT <3s
+      Resp: B/L AE+, no added sounds
+      Abdomen: Soft, non-tender, BS+
+
+   B) IF USER MENTIONS A SPECIFIC PROBLEM + "rest/other systems normal":
+      → Write ABNORMAL finding for affected system
+      → ⚠️ MUST WRITE NORMAL findings for ALL other systems - NEVER LEAVE BLANK
+      Example if user says "seizure, other systems normal":
+      General: Active, alert
+      CNS: Seizure activity noted
+      CVS: S1S2+, no murmur, CRT <3s
+      Resp: B/L AE+, no added sounds
+      Abdomen: Soft, non-tender, BS+
+
+   C) IF USER SAYS NOTHING about examination:
+      → Leave examination findings blank
+      → Do NOT assume anything
+
+6. VITALS - SMART DEFAULTS:
+
+   IF USER SAYS "vitals stable" / "vitals normal" / "hemodynamically stable":
+   → Fill in normal ranges:
+   → T: Afebrile / 36.5-37.5°C
+   → HR: 120-160/min (neonate) or age-appropriate
+   → RR: 40-60/min (neonate) or age-appropriate
+   → SpO2: 95-100%
+   → BP: Normal for age
+   → CRT: <3 sec
+
+   IF USER GIVES SPECIFIC VALUES:
+   → Use EXACTLY what they said
+   → Don't modify or assume other values
+
+7. MEDICATION DOSES - CRITICAL RULE:
+   ★ ONLY include dose if user CLEARLY mentioned it (e.g., "vancomycin 15mg/kg")
+   ★ If dose NOT mentioned, write "as per protocol" after the drug name
+   ★ NEVER assume or invent doses - use "as per protocol" if not stated
    ★ Examples:
-     → User says "baby on CPAP" → Write: "CPAP (Continuing) - [settings if mentioned]"
-     → User says "started CPAP today" → Write: "CPAP (Newly initiated) - [settings]"
-     → User says "weaning CPAP" → Write: "CPAP (Weaning) - FiO2 reduced from X to Y"
+     → User says "started vancomycin" → Write: "Inj Vancomycin (as per protocol) IV"
+     → User says "vancomycin 15mg/kg" → Write: "Inj Vancomycin 15mg/kg IV"
+     → User says "on dopamine" → Write: "Dopamine infusion (as per protocol)"
+     → User says "dopamine 10 mcg/kg/min" → Write: "Dopamine 10 mcg/kg/min"
 
-5. INTELLIGENT DEFAULTS - SYSTEM-FOCUSED EXAMINATION:
-   ★ If user focuses on ONE SYSTEM (e.g., respiratory), assume OTHER systems are NORMAL:
-     → User mentions only respiratory → Other systems: "WNL"
-     → User mentions only CNS → CVS, Resp, Abdomen: assume normal
-   ★ If user says "vitals stable" or doesn't mention vitals:
-     → Neonate defaults: T:37°C HR:140/min RR:45/min SpO2:98% CRT:<2s
-   ★ If user says "exam normal" without specifics:
-     → General: Active | CNS: Normal tone | CVS: S1S2+ | Resp: B/L AE+ | Abd: Soft, BS+
-
-6. PRONUNCIATION CORRECTION - ALL MEDICAL TERMS:
+7. PRONUNCIATION CORRECTION - ALL MEDICAL TERMS:
    Voice transcription often has errors. INTELLIGENTLY DECODE based on context:
 
    MEDICATIONS:
@@ -914,8 +1483,10 @@ INTELLIGENCE GUIDELINES:
 
 8. ABBREVIATIONS:
    B/L=Bilateral | AE=Air Entry | BS=Bowel Sounds | S1S2+=Heart sounds normal
-   CRT=Capillary Refill | GA=Gestational Age | DOL=Day of Life | EBM=Expressed Breast Milk
+   CRT=Capillary Refill | GA=Gestational Age | EBM=Expressed Breast Milk
    TPN=Total Parenteral Nutrition | WNL=Within Normal Limits | NAD=No Abnormality Detected
+
+   ⚠️ AGE FORMAT: For babies up to 30 days, write age as "X days old" (NOT "DOL X")
 
 CRITICAL RULES:
 ✓ One line per finding - be concise
@@ -924,19 +1495,18 @@ CRITICAL RULES:
 ✓ NO markdown formatting (no **, ##, *)
 ✓ CLINICAL IMPRESSION is mandatory - synthesize the case
 ✓ Plan should mirror what was dictated
-✓ If a system is NOT mentioned, write "WNL" or skip it - DO NOT fabricate findings
+✓ CHIEF CONCERN must reflect the ACTUAL problem from dictation (NOT "Routine follow-up" if user mentions a problem)
+✓ NEVER write "normal" for a system when user mentions pathology (seizure = CNS abnormal, NOT normal)
+✓ If user doesn't mention a system, skip it or leave blank - DO NOT assume normal
 ✓ Respiratory support: MUST indicate status (Continuing/New/Changed/Weaning)
 ✓ All medical terms must be spelled correctly - use context to decode pronunciation errors`;
 
     try {
-      console.log('🤖 Sending request to Gemini AI...');
-      const response = await aiRef.current!.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt
-      });
+      console.log(`🤖 Sending request to ${getCurrentProvider()} AI...`);
+      const responseText = await generateClinicalNote(prompt);
 
-      console.log('✅ Received response from Gemini');
-      let noteText = response.text.trim();
+      console.log('✅ Received response from AI');
+      let noteText = responseText.trim();
       console.log('📝 Generated note length:', noteText.length, 'characters');
 
       // Post-processing: Clean up any markdown formatting
@@ -1232,18 +1802,19 @@ CRITICAL RULES:
               medications: allMedications
             };
 
-            // Save to Firestore IMMEDIATELY
-            // Note: Patients are stored in the root 'patients' collection
-            try {
-              const patientRef = doc(db, 'patients', patient.id);
-              await updateDoc(patientRef, {
-                medications: allMedications
-              });
-              console.log('✅ Medications saved to Firestore');
-            } catch (firestoreError) {
-              console.error('❌ Failed to save medications to Firestore:', firestoreError);
-              showToast('error', '❌ Failed to save medications');
-              throw firestoreError;
+            // Save to Firestore only if patient already exists (has been saved before)
+            // For new admissions, medications will be saved when the form is submitted
+            if (patient.id) {
+              try {
+                const patientRef = doc(db, 'patients', patient.id);
+                await updateDoc(patientRef, {
+                  medications: allMedications
+                });
+                console.log('✅ Medications saved to Firestore');
+              } catch (firestoreError) {
+                // Patient might not exist yet (new admission) - that's OK
+                console.log('ℹ️ Firestore update skipped - patient may be new:', firestoreError);
+              }
             }
 
             // Update local state via callback
@@ -1290,16 +1861,19 @@ CRITICAL RULES:
             if (newMedications.length > 0) {
               const allMedications = [...existingMedications, ...newMedications];
 
-              // Save to Firestore IMMEDIATELY
-              // Note: Patients are stored in the root 'patients' collection
-              try {
-                const patientRef = doc(db, 'patients', patient.id);
-                await updateDoc(patientRef, {
-                  medications: allMedications
-                });
-                console.log('✅ Medications saved to Firestore (fallback mode)');
-              } catch (firestoreError) {
-                console.error('❌ Failed to save medications to Firestore:', firestoreError);
+              // Save to Firestore only if patient already exists
+              // For new admissions, medications will be saved when the form is submitted
+              if (patient.id) {
+                try {
+                  const patientRef = doc(db, 'patients', patient.id);
+                  await updateDoc(patientRef, {
+                    medications: allMedications
+                  });
+                  console.log('✅ Medications saved to Firestore (fallback mode)');
+                } catch (firestoreError) {
+                  // Patient might not exist yet - that's OK
+                  console.log('ℹ️ Firestore update skipped - patient may be new:', firestoreError);
+                }
               }
 
               const updatedPatient = {

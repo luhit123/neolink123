@@ -6,6 +6,11 @@ interface ProgressNoteFormProps {
     onSave: (note: ProgressNote) => void;
     onCancel: () => void;
     onUpdatePatient?: (patient: Patient) => void; // Callback to update patient data
+    onBackgroundSave?: (patientId: string, note: ProgressNote) => void; // Background save for immediate close
+    // New callbacks for immediate indicator on Done click
+    onProcessingStart?: (patientId: string, patientName: string) => string;
+    onProcessingComplete?: (saveId: string, patientId: string, note: ProgressNote) => void;
+    onProcessingError?: (saveId: string, error: string) => void;
     existingNote?: ProgressNote;
     lastNote?: ProgressNote;
     userEmail?: string;
@@ -29,6 +34,10 @@ const ProgressNoteFormEnhanced: React.FC<ProgressNoteFormProps> = ({
     onSave,
     onCancel,
     onUpdatePatient,
+    onBackgroundSave,
+    onProcessingStart,
+    onProcessingComplete,
+    onProcessingError,
     existingNote,
     userEmail,
     userName,
@@ -40,6 +49,10 @@ const ProgressNoteFormEnhanced: React.FC<ProgressNoteFormProps> = ({
             onSave={onSave}
             onCancel={onCancel}
             onUpdatePatient={onUpdatePatient}
+            onBackgroundSave={onBackgroundSave}
+            onProcessingStart={onProcessingStart}
+            onProcessingComplete={onProcessingComplete}
+            onProcessingError={onProcessingError}
             existingNote={existingNote}
             userEmail={userEmail}
             userName={userName}

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Patient, ProgressNote } from '../types';
 import { XIcon, WandIcon, ClipboardDocumentListIcon } from './common/Icons';
 import ClinicalNotesNavigator from './ClinicalNotesNavigator';
 import { generatePatientSummary } from '../services/geminiService';
 import ProgressNoteForm from './ProgressNoteFormEnhanced';
 import MedicationManagement from './MedicationManagement';
+import { useBackgroundSave } from '../contexts/BackgroundSaveContext';
 
 interface PatientDetailModalProps {
   patient: Patient;
@@ -46,6 +47,9 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
     const [showQuickMed, setShowQuickMed] = useState(false);
     const [localPatient, setLocalPatient] = useState(patient);
 
+    // Background save context
+    const { addSavingNote, updateNoteStatus, setOnViewPatient } = useBackgroundSave();
+
     const handleGenerateSummary = async () => {
         setIsLoadingSummary(true);
         setError('');
@@ -84,6 +88,33 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
         }
         setShowQuickNote(false);
     };
+
+    // Background save handler - saves note asynchronously and shows status indicator
+    const handleBackgroundSave = useCallback(async (patientId: string, note: ProgressNote) => {
+        // Add to background save queue - shows "Saving..." indicator
+        const saveId = addSavingNote(patientId, localPatient.name, note);
+
+        // Close modal immediately so user can proceed
+        setShowQuickNote(false);
+
+        try {
+            // Update local state immediately
+            const updatedNotes = [...(localPatient.progressNotes || []), note];
+            const updatedPatient = { ...localPatient, progressNotes: updatedNotes };
+            setLocalPatient(updatedPatient);
+
+            // Save to parent (which saves to Firestore)
+            if (onPatientUpdate) {
+                await onPatientUpdate(updatedPatient);
+            }
+
+            // Update status to saved
+            updateNoteStatus(saveId, 'saved');
+        } catch (err) {
+            console.error('Background save failed:', err);
+            updateNoteStatus(saveId, 'error', (err as Error).message);
+        }
+    }, [localPatient, addSavingNote, updateNoteStatus, onPatientUpdate]);
 
     const handleUpdateMedications = (medications: any[]) => {
         const updatedPatient = { ...localPatient, medications };
@@ -551,6 +582,7 @@ const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
               <ProgressNoteForm
                 onSave={handleSaveProgressNote}
                 onCancel={() => setShowQuickNote(false)}
+                onBackgroundSave={handleBackgroundSave}
                 onUpdatePatient={(updatedPatient) => {
                   setLocalPatient(updatedPatient);
                   if (onPatientUpdate) {

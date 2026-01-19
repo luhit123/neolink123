@@ -11,6 +11,8 @@ import { UserRole, UserProfile, Patient, Unit, InstitutionUser } from './types';
 import { animations } from './theme/material3Theme';
 import SharedBottomNav from './components/SharedBottomNav';
 import { ChatProvider } from './contexts/ChatContext';
+import { BackgroundSaveProvider } from './contexts/BackgroundSaveContext';
+import BackgroundSaveIndicator from './components/BackgroundSaveIndicator';
 import AutoUpdatePrompt from './components/AutoUpdatePrompt';
 
 // Lazy load heavy components
@@ -61,7 +63,7 @@ function App() {
     showAddPatientPage,
     superAdminViewingInstitution,
     districtAdminViewingInstitution,
-    // Add other states if needed
+    showPatientList,
   });
 
   // Update refs when state changes
@@ -72,9 +74,10 @@ function App() {
       showReferralManagement,
       showAddPatientPage,
       superAdminViewingInstitution,
-      districtAdminViewingInstitution
+      districtAdminViewingInstitution,
+      showPatientList
     };
-  }, [showSuperAdminPanel, showAdminPanel, showReferralManagement, showAddPatientPage, superAdminViewingInstitution, districtAdminViewingInstitution]);
+  }, [showSuperAdminPanel, showAdminPanel, showReferralManagement, showAddPatientPage, superAdminViewingInstitution, districtAdminViewingInstitution, showPatientList]);
 
   // Smart back navigation
   useEffect(() => {
@@ -86,6 +89,12 @@ function App() {
     }
 
     const handlePopState = (event: PopStateEvent) => {
+      // Skip if Dashboard already handled this popstate (e.g., closing patient view)
+      if ((window as any).__patientViewBackHandled) {
+        console.log('App: Skipping popstate - already handled by Dashboard');
+        return;
+      }
+
       const state = stateRef.current;
 
       // Check for any open modals/panels in priority order
@@ -125,6 +134,12 @@ function App() {
       if (state.districtAdminViewingInstitution) {
         setDistrictAdminViewingInstitution(null);
         window.history.pushState({ page: 'app' }, '', window.location.pathname);
+        return;
+      }
+
+      if (state.showPatientList) {
+        setShowPatientList(false);
+        // Don't push new state - we're already at 'app' state after the pop
         return;
       }
 
@@ -468,6 +483,8 @@ function App() {
       setShowReferralManagement(false);
       setShowAddPatientPage(false);
       setShowPatientList(true);
+      // Push history state for back button
+      window.history.pushState({ page: 'patientList' }, '', window.location.pathname);
     } else if (tab === 'analytics') {
       setShowReferralManagement(false);
       setShowAddPatientPage(false);
@@ -886,9 +903,13 @@ function App() {
 
   // Main Application - Wrapped with ErrorBoundary and MotionConfig
   return (
+    <BackgroundSaveProvider>
     <ChatProvider>
       {/* Auto-update prompt for instant updates */}
       <AutoUpdatePrompt />
+
+      {/* Background save indicator for clinical notes */}
+      <BackgroundSaveIndicator />
 
       <ErrorBoundary>
         <MotionConfig
@@ -957,6 +978,7 @@ function App() {
         </MotionConfig>
       </ErrorBoundary>
     </ChatProvider>
+    </BackgroundSaveProvider>
   );
 }
 

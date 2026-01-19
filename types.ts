@@ -145,6 +145,7 @@ export enum MedicationCategory {
 }
 
 export interface ProgressNote {
+  id?: string; // Unique identifier for the note
   date: string; // ISO string
   note?: string; // General clinical note (optional now)
 
@@ -164,6 +165,10 @@ export interface ProgressNote {
   addedBy?: string; // User name who added the note
   addedByEmail?: string; // User email for documentation
   timestamp?: string; // Timestamp for sorting
+
+  // Author tracking (for voice notes)
+  authorEmail?: string; // Author's email
+  authorName?: string; // Author's name
 }
 
 export interface EditHistory {

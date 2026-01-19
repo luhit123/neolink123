@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Patient, Unit, UserRole, ObservationPatient, ObservationOutcome } from '../types';
+import { Patient, Unit, UserRole, ObservationPatient, ObservationOutcome, ProgressNote } from '../types';
 import VirtualizedPatientList from './VirtualizedPatientList';
 import DateFilter, { DateFilterValue } from './DateFilter';
 import ShiftFilter, { ShiftFilterConfigs } from './ShiftFilter';
@@ -9,7 +9,10 @@ import NicuViewSelection from './NicuViewSelection';
 import { db } from '../firebaseConfig';
 import { doc, updateDoc } from 'firebase/firestore';
 import { deleteMultiplePatients } from '../services/firestoreService';
-import { X, Filter, Search, ChevronLeft, Users, Calendar, Clock, Stethoscope, TrendingUp, AlertCircle } from 'lucide-react';
+import { X, Filter, Search, ChevronLeft, Users, Calendar, Clock, Stethoscope, TrendingUp, AlertCircle, Mic } from 'lucide-react';
+import { showToast } from '../utils/toast';
+import ProgressNoteForm from './ProgressNoteFormEnhanced';
+import { useBackgroundSave } from '../contexts/BackgroundSaveContext';
 
 interface PatientDetailsPageProps {
   patients: Patient[];
@@ -25,6 +28,9 @@ interface PatientDetailsPageProps {
   onLoadAllPatients?: () => void;
   institutionId?: string;
   onPatientsDeleted?: () => void;
+  userEmail?: string;
+  userName?: string;
+  onPatientUpdate?: (patient: Patient) => void;
 }
 
 const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
@@ -40,7 +46,10 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   isLazyLoaded = true,
   onLoadAllPatients,
   institutionId,
-  onPatientsDeleted
+  onPatientsDeleted,
+  userEmail = '',
+  userName = '',
+  onPatientUpdate
 }) => {
   const hasRole = (role: UserRole) => {
     return userRole === role || (allRoles && allRoles.includes(role));
@@ -61,6 +70,31 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   const [selectedPatientIds, setSelectedPatientIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [quickRecordPatient, setQuickRecordPatient] = useState<Patient | null>(null);
+
+  // Background save context
+  const { addSavingNote, startProcessing, updateNoteStatus, updateNoteContent, setOnViewPatient } = useBackgroundSave();
+
+  // Register the "Click to view" handler for saved notes
+  React.useEffect(() => {
+    const handleViewSavedNote = (patientId: string, noteId?: string) => {
+      console.log('📋 Click to view - Patient:', patientId, 'Note:', noteId);
+      // Find the patient and navigate to their details
+      const patient = patients.find(p => p.id === patientId);
+      if (patient) {
+        onViewDetails(patient);
+        // The noteId can be used to scroll to/highlight the specific note
+        // For now, just opening patient details shows all notes
+      }
+    };
+
+    setOnViewPatient(handleViewSavedNote);
+
+    // Cleanup on unmount
+    return () => {
+      setOnViewPatient(undefined);
+    };
+  }, [patients, onViewDetails, setOnViewPatient]);
 
   const isAdmin = hasRole(UserRole.Admin);
   const canEdit = hasRole(UserRole.Doctor);
@@ -68,6 +102,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   // Status filter options with colors and icons
   const statusOptions: Array<{ value: OutcomeFilter; label: string; color: string; bgColor: string; icon: string }> = [
     { value: 'All', label: 'All', color: 'text-slate-700', bgColor: 'bg-slate-100 border-slate-300', icon: '📊' },
+    { value: 'Admission', label: 'New Admission', color: 'text-cyan-700', bgColor: 'bg-cyan-100 border-cyan-300', icon: '🏥' },
     { value: 'In Progress', label: 'Active', color: 'text-blue-700', bgColor: 'bg-blue-100 border-blue-300', icon: '🔵' },
     { value: 'Discharged', label: 'Discharged', color: 'text-green-700', bgColor: 'bg-green-100 border-green-300', icon: '✅' },
     { value: 'Deceased', label: 'Deceased', color: 'text-red-700', bgColor: 'bg-red-100 border-red-300', icon: '💔' },
@@ -214,7 +249,17 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
     let filtered = unitPatients;
 
     if (outcomeFilter !== 'All') {
-      filtered = filtered.filter(p => p.outcome === outcomeFilter);
+      if (outcomeFilter === 'Admission') {
+        // Filter for new admissions (within last 24 hours)
+        const now = new Date();
+        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        filtered = filtered.filter(p => {
+          const admissionDate = new Date(p.admissionDate);
+          return admissionDate >= twentyFourHoursAgo && p.outcome === 'In Progress';
+        });
+      } else {
+        filtered = filtered.filter(p => p.outcome === outcomeFilter);
+      }
     }
 
     if (searchQuery.trim()) {
@@ -238,6 +283,14 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
     const inProgress = unitPatients.filter(p => p.outcome === 'In Progress').length;
     const stepDown = unitPatients.filter(p => p.outcome === 'Step Down').length;
 
+    // Count new admissions (admitted within last 24 hours)
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const admission = unitPatients.filter(p => {
+      const admissionDate = new Date(p.admissionDate);
+      return admissionDate >= twentyFourHoursAgo && p.outcome === 'In Progress';
+    }).length;
+
     return {
       all: total,
       total,
@@ -245,9 +298,99 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
       discharged,
       referred,
       inProgress,
-      stepDown
+      stepDown,
+      admission
     };
   }, [unitPatients]);
+
+  // Quick record handlers
+  const handleQuickRecord = useCallback((patient: Patient) => {
+    setQuickRecordPatient(patient);
+  }, []);
+
+  const handleQuickRecordSave = useCallback((note: ProgressNote) => {
+    if (!quickRecordPatient) return;
+
+    const updatedNotes = [...(quickRecordPatient.progressNotes || []), note];
+    const updatedPatient = { ...quickRecordPatient, progressNotes: updatedNotes };
+
+    if (onPatientUpdate) {
+      onPatientUpdate(updatedPatient);
+    }
+    setQuickRecordPatient(null);
+  }, [quickRecordPatient, onPatientUpdate]);
+
+  const handleQuickRecordBackgroundSave = useCallback(async (patientId: string, note: ProgressNote) => {
+    if (!quickRecordPatient) return;
+
+    const saveId = addSavingNote(patientId, quickRecordPatient.name, note);
+
+    // Close modal immediately
+    setQuickRecordPatient(null);
+
+    try {
+      const updatedNotes = [...(quickRecordPatient.progressNotes || []), note];
+      const updatedPatient = { ...quickRecordPatient, progressNotes: updatedNotes };
+
+      if (onPatientUpdate) {
+        await onPatientUpdate(updatedPatient);
+      }
+      updateNoteStatus(saveId, 'saved');
+    } catch (err) {
+      console.error('Background save failed:', err);
+      updateNoteStatus(saveId, 'error', (err as Error).message);
+    }
+  }, [quickRecordPatient, addSavingNote, updateNoteStatus, onPatientUpdate]);
+
+  // Handler for immediate indicator when Done is clicked (before Gemini processing)
+  const handleProcessingStart = useCallback((patientId: string, patientName: string): string => {
+    console.log('📤 Processing started for:', patientName);
+    // This shows indicator immediately when Done is clicked
+    // Modal close is handled by VoiceClinicalNote via onCancel()
+    const saveId = startProcessing(patientId, patientName);
+    return saveId;
+  }, [startProcessing]);
+
+  // Handler for when Gemini processing completes
+  const handleProcessingComplete = useCallback(async (saveId: string, patientId: string, note: ProgressNote) => {
+    console.log('✅ Processing complete, saving note for patient:', patientId);
+
+    // Update indicator to "saving" status
+    updateNoteStatus(saveId, 'saving');
+    updateNoteContent(saveId, note);
+
+    try {
+      // Find the patient from the list
+      const patientToUpdate = patients.find(p => p.id === patientId);
+
+      if (patientToUpdate) {
+        // Add note to patient's progressNotes
+        const updatedNotes = [...(patientToUpdate.progressNotes || []), note];
+        const updatedPatient = { ...patientToUpdate, progressNotes: updatedNotes };
+
+        // Save to Firestore
+        const patientRef = doc(db, 'patients', patientId);
+        await updateDoc(patientRef, { progressNotes: updatedNotes });
+
+        // Update local state
+        if (onPatientUpdate) {
+          await onPatientUpdate(updatedPatient);
+        }
+      }
+
+      updateNoteStatus(saveId, 'saved');
+      showToast('success', '✅ Clinical note saved!');
+    } catch (err) {
+      console.error('Save failed:', err);
+      updateNoteStatus(saveId, 'error', (err as Error).message);
+    }
+  }, [updateNoteStatus, updateNoteContent, patients, onPatientUpdate]);
+
+  // Handler for processing errors
+  const handleProcessingError = useCallback((saveId: string, error: string) => {
+    console.error('❌ Processing failed:', error);
+    updateNoteStatus(saveId, 'error', error);
+  }, [updateNoteStatus]);
 
   const togglePatientSelection = (patientId: string) => {
     setSelectedPatientIds(prev => {
@@ -530,6 +673,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                 const getCount = () => {
                   switch (status.value) {
                     case 'All': return stats.all;
+                    case 'Admission': return stats.admission;
                     case 'In Progress': return stats.inProgress;
                     case 'Discharged': return stats.discharged;
                     case 'Deceased': return stats.deceased;
@@ -591,6 +735,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                   onView={onViewDetails}
                   onEdit={onEdit}
                   canEdit={canEdit}
+                  onQuickRecord={canEdit ? handleQuickRecord : undefined}
                   selectionMode={selectionMode}
                   selectedIds={selectedPatientIds}
                   onToggleSelection={togglePatientSelection}
@@ -783,6 +928,61 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                     `Delete ${selectedPatientIds.size}`
                   )}
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Quick Record Modal */}
+      <AnimatePresence>
+        {quickRecordPatient && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[70] p-0 md:p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="bg-white rounded-t-3xl md:rounded-3xl shadow-2xl w-full md:max-w-4xl h-full md:h-auto md:max-h-[90vh] overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-teal-500 to-emerald-600 px-4 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-xl">
+                    <Mic className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Quick Voice Note</h3>
+                    <p className="text-xs text-white/80">{quickRecordPatient.name}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setQuickRecordPatient(null)}
+                  className="p-2 hover:bg-white/20 rounded-xl transition-colors"
+                >
+                  <X className="w-5 h-5 text-white" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="overflow-y-auto h-[calc(100vh-60px)] md:max-h-[calc(90vh-80px)] p-2 md:p-4">
+                <ProgressNoteForm
+                  onSave={handleQuickRecordSave}
+                  onCancel={() => setQuickRecordPatient(null)}
+                  onBackgroundSave={handleQuickRecordBackgroundSave}
+                  onProcessingStart={handleProcessingStart}
+                  onProcessingComplete={handleProcessingComplete}
+                  onProcessingError={handleProcessingError}
+                  userEmail={userEmail}
+                  userName={userName}
+                  patient={quickRecordPatient}
+                />
               </div>
             </motion.div>
           </motion.div>

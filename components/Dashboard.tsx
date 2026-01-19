@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import { db } from '../firebaseConfig';
@@ -158,17 +158,35 @@ const Dashboard: React.FC<DashboardProps> = ({
   const { updateContext } = useChatContext();
 
   // Handle back navigation from patient view page
+  // Use a ref to track state for the event handler
+  const showPatientViewPageRef = useRef(showPatientViewPage);
+  useEffect(() => {
+    showPatientViewPageRef.current = showPatientViewPage;
+  }, [showPatientViewPage]);
+
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
-      if (showPatientViewPage) {
+      if (showPatientViewPageRef.current) {
+        console.log('Dashboard: Handling back from patient view -> patient list');
+        event.stopImmediatePropagation();
+        event.preventDefault();
         setShowPatientViewPage(false);
         setPatientToView(null);
+        // Re-push history state for patient list so back button works correctly
+        // This ensures: patientView -> patientList -> dashboard (not patientView -> dashboard)
+        window.history.pushState({ page: 'patientList' }, '', window.location.pathname);
+        // Mark that we handled this popstate so App.tsx doesn't also handle it
+        (window as any).__patientViewBackHandled = true;
+        setTimeout(() => {
+          (window as any).__patientViewBackHandled = false;
+        }, 100);
       }
     };
 
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [showPatientViewPage]);
+    // Use capture phase to run before App.tsx's handler
+    window.addEventListener('popstate', handlePopState, true);
+    return () => window.removeEventListener('popstate', handlePopState, true);
+  }, []);
 
   // Pull to Refresh Handler
   const handleRefresh = async () => {
@@ -236,6 +254,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         setShowPatientDetailsPage(true);
         setShowAdvancedAnalytics(false);
         setShowQuickActions(false);
+        window.history.pushState({ page: 'patientList' }, '', window.location.pathname);
         break;
       case 'more':
         setShowQuickActions(true);
@@ -1060,11 +1079,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     return (
       <PatientViewPage
         patient={patientToView}
-        onBack={() => {
-          setShowPatientViewPage(false);
-          setPatientToView(null);
-          window.history.back();
-        }}
+        onBack={() => window.history.back()}
         onEdit={handleEditPatient}
         canEdit={hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)}
         userEmail={userEmail || ''}
@@ -1088,13 +1103,24 @@ const Dashboard: React.FC<DashboardProps> = ({
       <PatientDetailsPage
         patients={patients}
         selectedUnit={selectedUnit}
-        onBack={() => setShowPatientDetailsPage(false)}
+        onBack={() => window.history.back()}
         onViewDetails={handleViewDetails}
         onEdit={handleEditPatient}
         userRole={userRole}
         allRoles={allRoles}
         observationPatients={observationPatients}
         institutionId={institutionId}
+        userEmail={userEmail || ''}
+        userName={displayName || userEmail?.split('@')[0] || 'User'}
+        onPatientUpdate={async (updatedPatient) => {
+          // Update patient in Firestore
+          if (updatedPatient.id) {
+            const patientRef = doc(db, 'patients', updatedPatient.id);
+            await updateDoc(patientRef, { ...updatedPatient });
+            // Update local state
+            setPatients(prev => prev.map(p => p.id === updatedPatient.id ? updatedPatient : p));
+          }
+        }}
         onPatientsDeleted={() => {
           // Real-time listener will automatically refresh patients
           console.log('✅ Patients deleted - real-time listener will update');
@@ -1285,6 +1311,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 onClick={() => {
                   haptics.tap();
                   setShowPatientDetailsPage(true);
+                  window.history.pushState({ page: 'patientList' }, '', window.location.pathname);
                 }}
                 className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-slate-600 to-slate-700 text-white rounded-lg hover:from-slate-700 hover:to-slate-800 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold text-sm"
               >
@@ -1349,25 +1376,6 @@ const Dashboard: React.FC<DashboardProps> = ({
               }
               color="bg-amber-500/90"
             />
-          </div>
-
-          {/* Additional Rate Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-            <div className="bg-gradient-to-br from-green-500/20 to-green-600/10 p-4 md:p-6 rounded-xl border border-green-500/30">
-              <div className="text-xs md:text-sm text-green-300 font-medium mb-1">💚 Discharge Rate</div>
-              <div className="text-2xl md:text-3xl font-bold text-green-400">{stats.dischargeRate}</div>
-              <div className="text-xs text-green-300/70 mt-2">{stats.discharged} of {stats.total} patients successfully discharged</div>
-            </div>
-            <div className="bg-gradient-to-br from-orange-500/20 to-orange-600/10 p-4 md:p-6 rounded-xl border border-orange-500/30">
-              <div className="text-xs md:text-sm text-orange-300 font-medium mb-1">🔄 Referral Rate</div>
-              <div className="text-2xl md:text-3xl font-bold text-orange-400">{stats.referralRate}</div>
-              <div className="text-xs text-orange-300/70 mt-2">{stats.referred} of {stats.total} patients referred to other facilities</div>
-            </div>
-            <div className="bg-gradient-to-br from-red-500/20 to-red-600/10 p-4 md:p-6 rounded-xl border border-red-500/30">
-              <div className="text-xs md:text-sm text-red-300 font-medium mb-1">⚠️ Mortality Rate</div>
-              <div className="text-2xl md:text-3xl font-bold text-red-400">{stats.mortalityRate}</div>
-              <div className="text-xs text-red-300/70 mt-2">{stats.deceased} of {stats.total} patients</div>
-            </div>
           </div>
 
           {/* Advanced Analytics Toggle & Section */}
@@ -1877,6 +1885,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               setShowPatientDetailsPage(true);
               setShowQuickActions(false);
               haptics.tap();
+              window.history.pushState({ page: 'patientList' }, '', window.location.pathname);
             }}
             className="w-full bg-slate-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-lg hover:bg-slate-700 transition-all"
           >

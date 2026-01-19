@@ -9,6 +9,31 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      proxy: {
+        // Proxy RunPod API to bypass CORS (note: domain is api.runpod.AI)
+        '/api/runpod': {
+          target: 'https://api.runpod.ai',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/runpod/, ''),
+          secure: true,
+          headers: {
+            'Connection': 'keep-alive',
+          },
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq, req) => {
+              // Ensure Authorization header is forwarded
+              const authHeader = req.headers['authorization'];
+              if (authHeader) {
+                proxyReq.setHeader('Authorization', authHeader);
+              }
+              console.log('🔀 Proxying to RunPod:', req.url);
+            });
+            proxy.on('proxyRes', (proxyRes) => {
+              console.log('📥 RunPod response:', proxyRes.statusCode);
+            });
+          },
+        },
+      },
     },
     // Build optimization for world-class performance
     build: {

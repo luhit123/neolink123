@@ -9,6 +9,7 @@ import PremiumStatCard from './superadmin/PremiumStatCard';
 import SystemHealthPanel from './superadmin/SystemHealthPanel';
 import AIInsightsPanel from './superadmin/AIInsightsPanel';
 import AdvancedAnalyticsDashboard from './superadmin/AdvancedAnalyticsDashboard';
+import STTSettingsPanel from './superadmin/STTSettingsPanel';
 import AddressInput, { AddressData } from './forms/AddressInput';
 import { generateUserID, getNextSequenceNumber } from '../utils/userIdGenerator';
 import { generateSecurePassword, generateAlphanumericPassword } from '../utils/passwordUtils';
@@ -30,7 +31,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [initLoading, setInitLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'institutions' | 'analytics' | 'indications' | 'medications' | 'passwordReset'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'institutions' | 'analytics' | 'indications' | 'medications' | 'passwordReset' | 'settings'>('overview');
   const [showMedicationPanel, setShowMedicationPanel] = useState(false);
   const [selectedInstitution, setSelectedInstitution] = useState<string | 'all'>('all');
   const [patients, setPatients] = useState<any[]>([]);
@@ -987,6 +988,21 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
               )}
             </div>
           </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`px-6 py-3 font-semibold transition-colors border-b-2 whitespace-nowrap ${activeTab === 'settings'
+              ? 'border-sky-500 text-sky-600 dark:text-sky-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Settings
+            </div>
+          </button>
         </div>
 
         {/* Overview Tab - World-Class Dashboard */}
@@ -1923,6 +1939,15 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-sky-500/20 shadow-lg">
+              <STTSettingsPanel userEmail={userEmail} />
             </div>
           </div>
         )}

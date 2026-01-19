@@ -1,50 +1,1237 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeoLink - Revolutionary Pediatric Care Management System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/theme/black.min.css">
+    <style>
+        :root {
+            --primary-color: #06b6d4;
+            --secondary-color: #3b82f6;
+            --accent-color: #10b981;
+            --danger-color: #ef4444;
+        }
 
-  <!-- Cache Control - Force fresh content on every load -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-  <meta http-equiv="Pragma" content="no-cache" />
-  <meta http-equiv="Expires" content="0" />
+        .reveal {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
 
-  <link rel="icon"
-    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
+        .reveal h1, .reveal h2, .reveal h3 {
+            text-transform: none;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
 
-  <!-- Mobile Viewport & Native App Optimization -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=1.0, viewport-fit=cover, user-scalable=yes" />
+        .reveal section {
+            text-align: left;
+        }
 
-  <!-- Theme Colors (Android) -->
-  <meta name="theme-color" content="#0EA5E9" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#0C4A6E" media="(prefers-color-scheme: dark)" />
+        .reveal .title-slide {
+            text-align: center;
+        }
 
-  <!-- PWA Meta -->
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="NeoLink" />
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-top: 30px;
+        }
 
-  <!-- Description & SEO -->
-  <meta name="description" content="Medical Records System for PICU/NICU - Professional Healthcare Management" />
-  <meta name="application-name" content="NeoLink" />
+        .feature-card {
+            background: rgba(6, 182, 212, 0.1);
+            border: 2px solid var(--primary-color);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            transition: transform 0.3s ease;
+        }
 
-  <!-- Disable tap highlight on mobile (we use custom ripple) -->
-  <meta name="msapplication-tap-highlight" content="no" />
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(6, 182, 212, 0.3);
+        }
 
-  <!-- Manifest & Icons -->
-  <link rel="manifest" href="/manifest.json" />
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        .feature-card h3 {
+            margin-top: 0;
+            font-size: 1.2em;
+        }
 
-  <title>NeoLink - PICU/NICU Records</title>
+        .stat-box {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            padding: 20px 30px;
+            border-radius: 10px;
+            margin: 10px;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
 
-  <!-- Native App Styles -->
-  <link rel="stylesheet" href="/styles/native.css" />
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .tech-badge {
+            background: rgba(59, 130, 246, 0.2);
+            border: 2px solid var(--secondary-color);
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+        }
+
+        .highlight {
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        .emoji {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        ul li:before {
+            content: "▸ ";
+            color: var(--primary-color);
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .ai-features {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.2));
+            padding: 30px;
+            border-radius: 20px;
+            margin-top: 20px;
+        }
+
+        .architecture-diagram {
+            background: rgba(15, 23, 42, 0.8);
+            padding: 20px;
+            border-radius: 15px;
+            border: 2px solid var(--primary-color);
+            margin-top: 20px;
+            font-family: monospace;
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            margin: 5px;
+            font-size: 0.9em;
+        }
+
+        .superadmin { background: #dc2626; }
+        .admin { background: #f97316; }
+        .doctor { background: #06b6d4; }
+        .nurse { background: #10b981; }
+        .district { background: #8b5cf6; }
+
+        .impact-number {
+            font-size: 3em;
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+    </style>
 </head>
+<body>
+    <div class="reveal">
+        <div class="slides">
 
-<body class="bg-sky-100 text-slate-900">
-  <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
+            <!-- Title Slide -->
+            <section class="title-slide">
+                <h1 style="font-size: 3em; margin-bottom: 20px;">🏥 NeoLink</h1>
+                <h2 style="font-size: 1.8em;">Revolutionary Pediatric Care Management System</h2>
+                <p style="font-size: 1.2em; margin-top: 50px;">
+                    AI-Powered Clinical Decision Support for PICU/NICU/SNCU
+                </p>
+                <p style="margin-top: 100px; font-style: italic; opacity: 0.7;">
+                    Transforming Pediatric Healthcare with Intelligence
+                </p>
+            </section>
+
+            <!-- Problem Statement -->
+            <section>
+                <h2>⚡ The Challenge</h2>
+                <div style="margin-top: 50px;">
+                    <div class="feature-card">
+                        <h3>📋 Paper-Based Records</h3>
+                        <p>Inefficient, error-prone, and difficult to analyze patient data across pediatric intensive care units</p>
+                    </div>
+                    <div class="feature-card" style="margin-top: 20px;">
+                        <h3>🔍 Limited Analytics</h3>
+                        <p>No real-time insights into patient outcomes, mortality trends, or clinical decision support</p>
+                    </div>
+                    <div class="feature-card" style="margin-top: 20px;">
+                        <h3>⏰ Clinical Overload</h3>
+                        <p>Healthcare professionals overwhelmed with documentation while needing instant clinical guidance</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Solution Overview -->
+            <section>
+                <h2>✨ The Solution: NeoLink</h2>
+                <p style="font-size: 1.3em; margin-top: 40px;">
+                    A <span class="highlight">web-based Progressive Web Application</span> that digitizes,
+                    intelligizes, and optimizes pediatric intensive care management
+                </p>
+                <div class="feature-grid" style="margin-top: 50px;">
+                    <div class="feature-card">
+                        <h3>🌐 Accessible Anywhere</h3>
+                        <p>Web, mobile, tablet - works offline with PWA technology</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🤖 AI-Powered</h3>
+                        <p>30+ AI clinical decision support functions powered by Google Gemini</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📊 Real-Time Analytics</h3>
+                        <p>Comprehensive dashboards with predictive insights</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔒 Secure & Compliant</h3>
+                        <p>Role-based access control with healthcare-grade security</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- User Roles -->
+            <section>
+                <h2>👥 Multi-Level User System</h2>
+                <div style="margin-top: 50px; text-align: center;">
+                    <div class="role-badge superadmin">SuperAdmin</div>
+                    <p style="margin: 10px 0;">System-wide administration, medication databases, institution management</p>
+
+                    <div class="role-badge admin">Institution Admin</div>
+                    <p style="margin: 10px 0;">Hospital management, user approvals, facility configuration</p>
+
+                    <div class="role-badge doctor">Doctor</div>
+                    <p style="margin: 10px 0;">Full patient records, diagnoses, medications, AI clinical support</p>
+
+                    <div class="role-badge nurse">Nurse</div>
+                    <p style="margin: 10px 0;">Patient record drafts, basic information entry</p>
+
+                    <div class="role-badge district">District Admin</div>
+                    <p style="margin: 10px 0;">Cross-institution analytics, referral tracking</p>
+                </div>
+                <p style="margin-top: 50px; text-align: center; font-size: 1.2em;">
+                    <span class="highlight">Hierarchical permissions</span> ensuring data security and appropriate access
+                </p>
+            </section>
+
+            <!-- Patient Management -->
+            <section>
+                <h2>🏥 Comprehensive Patient Management</h2>
+                <div class="feature-grid">
+                    <div>
+                        <h3 class="highlight">Patient Data Tracking</h3>
+                        <ul>
+                            <li>Demographics & NTID</li>
+                            <li>Admission details & types</li>
+                            <li>Vital signs monitoring</li>
+                            <li>Birth weight & delivery mode</li>
+                            <li>Clinical examination findings</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="highlight">Clinical Documentation</h3>
+                        <ul>
+                            <li>ICD-10 coded diagnoses</li>
+                            <li>Timestamped progress notes</li>
+                            <li>Medication tracking</li>
+                            <li>Outcome monitoring</li>
+                            <li>PDF export & printing</li>
+                        </ul>
+                    </div>
+                </div>
+                <div style="margin-top: 40px; text-align: center;">
+                    <span class="stat-box">📝 Draft System</span>
+                    <span class="stat-box">🔄 Referral Tracking</span>
+                    <span class="stat-box">💊 Medication Database</span>
+                </div>
+            </section>
+
+            <!-- Patient Outcomes -->
+            <section>
+                <h2>📈 Patient Outcome Tracking</h2>
+                <div style="margin-top: 60px; text-align: center; font-size: 1.3em;">
+                    <div style="margin: 30px 0;">
+                        <span class="emoji">✅</span> <span class="highlight">In Progress</span> - Active patient monitoring
+                    </div>
+                    <div style="margin: 30px 0;">
+                        <span class="emoji">🏠</span> <span class="highlight">Discharged</span> - Successful treatment completion
+                    </div>
+                    <div style="margin: 30px 0;">
+                        <span class="emoji">🏨</span> <span class="highlight">Referred</span> - Transferred to another facility
+                    </div>
+                    <div style="margin: 30px 0;">
+                        <span class="emoji">⬇️</span> <span class="highlight">Step Down</span> - Moved to lower care level
+                    </div>
+                    <div style="margin: 30px 0;">
+                        <span class="emoji">⚰️</span> <span class="highlight">Deceased</span> - With mortality analytics
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analytics Dashboard -->
+            <section>
+                <h2>📊 Advanced Analytics & Dashboards</h2>
+                <div class="feature-card">
+                    <h3>Main Dashboard Metrics</h3>
+                    <div style="display: flex; justify-content: space-around; margin-top: 20px; flex-wrap: wrap;">
+                        <div style="text-align: center; margin: 10px;">
+                            <div class="impact-number">📋</div>
+                            <p>Total Patients</p>
+                        </div>
+                        <div style="text-align: center; margin: 10px;">
+                            <div class="impact-number">💚</div>
+                            <p>Active Cases</p>
+                        </div>
+                        <div style="text-align: center; margin: 10px;">
+                            <div class="impact-number">📈</div>
+                            <p>Discharge Rate</p>
+                        </div>
+                        <div style="text-align: center; margin: 10px;">
+                            <div class="impact-number">📉</div>
+                            <p>Mortality Rate</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="feature-grid" style="margin-top: 30px;">
+                    <div class="feature-card">
+                        <h3>PICU/NICU Analysis</h3>
+                        <p>Separate views for Inborn vs Outborn patients with referring hospital tracking</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>Visual Analytics</h3>
+                        <p>Line charts, pie charts, bar graphs - 12-month trend analysis</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI Features Part 1 -->
+            <section>
+                <h2>🤖 AI-Powered Clinical Intelligence (1/2)</h2>
+                <div class="ai-features">
+                    <h3 style="color: var(--accent-color);">Clinical Decision Support</h3>
+                    <ul style="font-size: 1.1em;">
+                        <li><strong>Differential Diagnosis:</strong> Ranked probability-based diagnosis suggestions</li>
+                        <li><strong>Treatment Protocols:</strong> Evidence-based recommendations (AAP/WHO guidelines)</li>
+                        <li><strong>Drug Interactions:</strong> Real-time medication safety checking</li>
+                        <li><strong>Dosage Calculator:</strong> Pediatric-specific medication dosing</li>
+                    </ul>
+                </div>
+                <div class="ai-features" style="margin-top: 20px;">
+                    <h3 style="color: var(--primary-color);">Predictive Analytics</h3>
+                    <ul style="font-size: 1.1em;">
+                        <li><strong>Clinical Deterioration Detection:</strong> Early warning with risk scoring</li>
+                        <li><strong>Length of Stay Estimation:</strong> Resource planning optimization</li>
+                        <li><strong>Readmission Risk:</strong> 30-day readmission probability</li>
+                        <li><strong>Sepsis Risk Calculation:</strong> Pediatric Early Warning Scores (PEWS)</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- AI Features Part 2 -->
+            <section>
+                <h2>🤖 AI-Powered Clinical Intelligence (2/2)</h2>
+                <div class="ai-features">
+                    <h3 style="color: var(--secondary-color);">Documentation AI</h3>
+                    <ul style="font-size: 1.1em;">
+                        <li><strong>SBAR Handoff Generation:</strong> Structured shift handoff notes</li>
+                        <li><strong>SOAP Progress Notes:</strong> Automated clinical note structuring</li>
+                        <li><strong>Daily Rounding Sheets:</strong> Patient prioritization</li>
+                        <li><strong>Information Extraction:</strong> Structured data from free text</li>
+                    </ul>
+                </div>
+                <div class="ai-features" style="margin-top: 20px;">
+                    <h3 style="color: var(--danger-color);">Reporting & Education</h3>
+                    <ul style="font-size: 1.1em;">
+                        <li><strong>Monthly Statistical Reports:</strong> Automated quality metrics</li>
+                        <li><strong>Family-Friendly Instructions:</strong> Patient discharge education</li>
+                        <li><strong>M&M Review Generation:</strong> Mortality & morbidity analysis</li>
+                        <li><strong>Medical Q&A:</strong> On-demand clinical knowledge support</li>
+                    </ul>
+                </div>
+                <p style="text-align: center; margin-top: 40px; font-size: 1.4em;">
+                    <span class="impact-number">30+</span> AI Functions powered by <span class="highlight">Google Gemini API</span>
+                </p>
+            </section>
+
+            <!-- Voice Features -->
+            <section>
+                <h2>🎤 Voice & Speech Integration</h2>
+                <div style="margin-top: 60px;">
+                    <div class="feature-card" style="text-align: center; padding: 40px;">
+                        <h3 style="font-size: 2em;">🎙️ Deepgram Medical Speech-to-Text</h3>
+                        <p style="font-size: 1.3em; margin-top: 30px;">
+                            Real-time voice scribe service optimized for <span class="highlight">medical terminology</span>
+                        </p>
+                        <p style="font-size: 1.1em; margin-top: 30px;">
+                            Doctors and nurses can <strong>dictate progress notes</strong> directly into the system
+                        </p>
+                        <div style="margin-top: 50px;">
+                            <span class="stat-box">🗣️ Voice Notes</span>
+                            <span class="stat-box">⚡ Real-time</span>
+                            <span class="stat-box">🏥 Medical Terms</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Technology Stack -->
+            <section>
+                <h2>🛠️ Technology Stack</h2>
+                <div class="tech-stack">
+                    <div class="tech-badge">React 19</div>
+                    <div class="tech-badge">TypeScript 5.8</div>
+                    <div class="tech-badge">Vite 6</div>
+                    <div class="tech-badge">Firebase</div>
+                    <div class="tech-badge">Firestore</div>
+                    <div class="tech-badge">Tailwind CSS</div>
+                    <div class="tech-badge">Framer Motion</div>
+                    <div class="tech-badge">Recharts</div>
+                    <div class="tech-badge">Google Gemini AI</div>
+                    <div class="tech-badge">Deepgram</div>
+                    <div class="tech-badge">jsPDF</div>
+                    <div class="tech-badge">React Router</div>
+                    <div class="tech-badge">React Hook Form</div>
+                    <div class="tech-badge">Zod</div>
+                    <div class="tech-badge">PWA</div>
+                </div>
+                <div style="margin-top: 50px; text-align: center;">
+                    <h3 class="highlight">Modern, Performant, Scalable</h3>
+                    <p style="font-size: 1.2em; margin-top: 20px;">
+                        Built with cutting-edge technologies for optimal performance and developer experience
+                    </p>
+                </div>
+            </section>
+
+            <!-- Architecture -->
+            <section>
+                <h2>🏗️ System Architecture</h2>
+                <div class="architecture-diagram">
+                    <pre style="font-size: 0.8em; line-height: 1.8;">
+┌─────────────────────────────────────────────────────────────┐
+│                    USER INTERFACE LAYER                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Desktop    │  │    Mobile    │  │    Tablet    │      │
+│  │  (Vite/React)│  │     (PWA)    │  │   (PWA)      │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   COMPONENT LAYER (71+)                      │
+│  Forms │ Analytics │ Clinical │ Chat │ Admin │ Material     │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   SERVICE LAYER (24+)                        │
+│  Gemini │ Firestore │ Auth │ Deepgram │ PDF │ ICD-10       │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                    ┌───────┴───────┐
+                    ▼               ▼
+        ┌────────────────┐  ┌─────────────────┐
+        │   Firebase     │  │  Google Gemini  │
+        │  (Auth + DB)   │  │   AI Service    │
+        └────────────────┘  └─────────────────┘
+                    </pre>
+                </div>
+            </section>
+
+            <!-- Code Stats -->
+            <section>
+                <h2>📦 Project Scale</h2>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 30px; margin-top: 60px;">
+                    <div style="text-align: center;">
+                        <div class="impact-number">71+</div>
+                        <p style="font-size: 1.3em;">React Components</p>
+                    </div>
+                    <div style="text-align: center;">
+                        <div class="impact-number">24+</div>
+                        <p style="font-size: 1.3em;">Service Modules</p>
+                    </div>
+                    <div style="text-align: center;">
+                        <div class="impact-number">30+</div>
+                        <p style="font-size: 1.3em;">AI Functions</p>
+                    </div>
+                    <div style="text-align: center;">
+                        <div class="impact-number">5</div>
+                        <p style="font-size: 1.3em;">User Role Types</p>
+                    </div>
+                </div>
+                <div style="margin-top: 60px; text-align: center;">
+                    <p style="font-size: 1.4em;">
+                        <span class="highlight">Production-grade</span> healthcare system with
+                        <span class="highlight">enterprise features</span>
+                    </p>
+                </div>
+            </section>
+
+            <!-- Key Features Summary -->
+            <section>
+                <h2>⭐ Key Differentiators</h2>
+                <div style="margin-top: 40px;">
+                    <div class="feature-card">
+                        <h3>🎯 Specialized for Pediatrics</h3>
+                        <p>PICU/NICU/SNCU specific workflows, metrics, and clinical guidelines</p>
+                    </div>
+                    <div class="feature-card" style="margin-top: 20px;">
+                        <h3>🧠 AI-First Design</h3>
+                        <p>30+ clinical AI functions integrated into every workflow - not an afterthought</p>
+                    </div>
+                    <div class="feature-card" style="margin-top: 20px;">
+                        <h3>📱 True Cross-Platform</h3>
+                        <p>PWA technology means native app experience without app store deployment</p>
+                    </div>
+                    <div class="feature-card" style="margin-top: 20px;">
+                        <h3>🔐 Healthcare-Grade Security</h3>
+                        <p>Role-based access control with Firebase security rules and audit trails</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Workflow Example -->
+            <section>
+                <h2>🔄 Typical Workflow</h2>
+                <div style="margin-top: 40px; font-size: 1.2em;">
+                    <div style="margin: 30px 0; padding: 20px; background: rgba(6, 182, 212, 0.1); border-left: 4px solid var(--accent-color); border-radius: 10px;">
+                        <strong>1. Admission</strong><br>
+                        Nurse creates patient record → Saved as draft → Doctor completes diagnosis
+                    </div>
+                    <div style="margin: 30px 0; padding: 20px; background: rgba(6, 182, 212, 0.1); border-left: 4px solid var(--primary-color); border-radius: 10px;">
+                        <strong>2. Clinical Care</strong><br>
+                        AI suggests differential diagnosis → Doctor prescribes medications → Voice notes recorded
+                    </div>
+                    <div style="margin: 30px 0; padding: 20px; background: rgba(6, 182, 212, 0.1); border-left: 4px solid var(--secondary-color); border-radius: 10px;">
+                        <strong>3. Monitoring</strong><br>
+                        Progress notes added → AI alerts for deterioration → Analytics tracked in real-time
+                    </div>
+                    <div style="margin: 30px 0; padding: 20px; background: rgba(6, 182, 212, 0.1); border-left: 4px solid var(--accent-color); border-radius: 10px;">
+                        <strong>4. Outcome</strong><br>
+                        Patient discharged/referred → PDF summary generated → Data feeds analytics dashboard
+                    </div>
+                </div>
+            </section>
+
+            <!-- Data Insights -->
+            <section>
+                <h2>📊 Analytics & Insights</h2>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h3>📈 Trend Analysis</h3>
+                        <ul>
+                            <li>12-month admission trends</li>
+                            <li>Discharge vs admission rates</li>
+                            <li>Seasonal pattern detection</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🎯 Outcome Metrics</h3>
+                        <ul>
+                            <li>Discharge rates by unit</li>
+                            <li>Mortality analysis by diagnosis</li>
+                            <li>Referral pattern tracking</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🏥 Clinical Insights</h3>
+                        <ul>
+                            <li>Top 5 diagnoses</li>
+                            <li>Top referring hospitals</li>
+                            <li>Bed occupancy rates</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📋 Quality Metrics</h3>
+                        <ul>
+                            <li>Documentation completeness</li>
+                            <li>Length of stay analysis</li>
+                            <li>Readmission tracking</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Security & Compliance -->
+            <section>
+                <h2>🔒 Security & Compliance</h2>
+                <div style="margin-top: 50px;">
+                    <div class="feature-card">
+                        <h3>🛡️ Multi-Layer Security</h3>
+                        <ul style="font-size: 1.1em;">
+                            <li><strong>Firebase Authentication:</strong> Secure email/password + Google OAuth</li>
+                            <li><strong>Firestore Security Rules:</strong> Role-based database access control</li>
+                            <li><strong>Client-Side Validation:</strong> Zod schema validation on all forms</li>
+                            <li><strong>Audit Trails:</strong> Track all user actions (create, edit, delete)</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card" style="margin-top: 30px;">
+                        <h3>✅ Healthcare Compliance</h3>
+                        <ul style="font-size: 1.1em;">
+                            <li><strong>Data Privacy:</strong> Patient data encrypted at rest and in transit</li>
+                            <li><strong>Access Control:</strong> Hierarchical permissions prevent unauthorized access</li>
+                            <li><strong>ICD-10 Coding:</strong> Standard medical coding for diagnoses</li>
+                            <li><strong>Backup & Recovery:</strong> Firebase automated backups</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Performance Optimizations -->
+            <section>
+                <h2>⚡ Performance Engineering</h2>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h3>🚀 Code Splitting</h3>
+                        <p>React, Firebase, and Chart vendors loaded separately for faster initial load</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>💾 Smart Caching</h3>
+                        <p>AI responses cached (5-min TTL), service worker caching for offline support</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📜 Virtual Scrolling</h3>
+                        <p>React Virtuoso for long patient lists - render only visible items</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>⚙️ Lazy Loading</h3>
+                        <p>Components loaded on-demand to reduce bundle size</p>
+                    </div>
+                </div>
+                <p style="text-align: center; margin-top: 50px; font-size: 1.3em;">
+                    Optimized for <span class="highlight">low-bandwidth</span> environments typical in healthcare settings
+                </p>
+            </section>
+
+            <!-- Mobile Experience -->
+            <section>
+                <h2>📱 Progressive Web App (PWA)</h2>
+                <div style="margin-top: 50px;">
+                    <div class="feature-card" style="text-align: center; padding: 40px;">
+                        <h3 style="font-size: 2em;">🌟 Native App Experience</h3>
+                        <div style="margin-top: 40px; font-size: 1.2em;">
+                            <p style="margin: 20px 0;">✅ <strong>Installable:</strong> Add to home screen (iOS/Android)</p>
+                            <p style="margin: 20px 0;">✅ <strong>Offline Support:</strong> Service worker for offline functionality</p>
+                            <p style="margin: 20px 0;">✅ <strong>Responsive Design:</strong> Optimized for mobile/tablet/desktop</p>
+                            <p style="margin: 20px 0;">✅ <strong>Touch-Optimized:</strong> 44px minimum touch targets</p>
+                            <p style="margin: 20px 0;">✅ <strong>Fast Loading:</strong> App shell architecture</p>
+                        </div>
+                        <p style="margin-top: 50px; font-size: 1.4em; color: var(--accent-color);">
+                            No App Store. No Downloads. Just Works.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Medication Management -->
+            <section>
+                <h2>💊 Medication Management</h2>
+                <div style="margin-top: 40px;">
+                    <div class="feature-card">
+                        <h3>📚 Comprehensive Medication Database</h3>
+                        <ul style="font-size: 1.1em;">
+                            <li>Centralized medication library managed by SuperAdmin</li>
+                            <li>Categories: Antibiotics, Analgesics, Cardiovascular, Neurological, Surfactants, etc.</li>
+                            <li>Dosing guidelines and route options (IV/PO/IM)</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card" style="margin-top: 20px;">
+                        <h3>⚕️ Patient Medication Tracking</h3>
+                        <ul style="font-size: 1.1em;">
+                            <li>Active and stopped medication tracking</li>
+                            <li>Dosage, route, frequency, start/stop dates</li>
+                            <li>Audit trail: Who prescribed and when</li>
+                            <li>AI-powered drug interaction checking</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Dashboard Demo -->
+            <section>
+                <h2>📊 Dashboard Visualization Examples</h2>
+                <div style="margin-top: 40px; font-size: 1.1em;">
+                    <div class="feature-card">
+                        <h3>📈 Line Charts</h3>
+                        <p>Monthly admissions vs discharges trends over 12 months</p>
+                    </div>
+                    <div class="feature-card" style="margin-top: 20px;">
+                        <h3>🥧 Pie Charts</h3>
+                        <p>Outcome distribution (Discharged/Referred/Deceased/Step Down)</p>
+                    </div>
+                    <div class="feature-card" style="margin-top: 20px;">
+                        <h3>📊 Bar Charts</h3>
+                        <p>Top 5 diagnoses, Top referring hospitals, Gender distribution</p>
+                    </div>
+                </div>
+                <p style="text-align: center; margin-top: 50px; font-size: 1.3em;">
+                    Built with <span class="highlight">Recharts</span> for interactive, responsive data visualization
+                </p>
+            </section>
+
+            <!-- Draft Workflow -->
+            <section>
+                <h2>📝 Nurse-Doctor Draft Workflow</h2>
+                <div style="margin-top: 60px; text-align: center;">
+                    <div style="display: inline-block; text-align: left; font-size: 1.2em;">
+                        <div style="margin: 30px 0; padding: 25px; background: rgba(16, 185, 129, 0.2); border-radius: 15px;">
+                            <strong>🩺 Nurse Action:</strong><br>
+                            Creates patient record with basic information → Saves as <span class="highlight">DRAFT</span>
+                        </div>
+                        <div style="text-align: center; margin: 20px 0;">
+                            <span style="font-size: 3em; color: var(--primary-color);">⬇️</span>
+                        </div>
+                        <div style="margin: 30px 0; padding: 25px; background: rgba(239, 68, 68, 0.2); border-radius: 15px;">
+                            <strong>⚠️ Draft State:</strong><br>
+                            Record marked with <span class="highlight">yellow badge and border</span> → Visible to doctors
+                        </div>
+                        <div style="text-align: center; margin: 20px 0;">
+                            <span style="font-size: 3em; color: var(--primary-color);">⬇️</span>
+                        </div>
+                        <div style="margin: 30px 0; padding: 25px; background: rgba(6, 182, 212, 0.2); border-radius: 15px;">
+                            <strong>👨‍⚕️ Doctor Action:</strong><br>
+                            Completes diagnosis, adds clinical notes, finalizes medications → <span class="highlight">FINALIZED</span>
+                        </div>
+                    </div>
+                </div>
+                <p style="text-align: center; margin-top: 40px; font-size: 1.3em;">
+                    Ensures data quality while enabling efficient team collaboration
+                </p>
+            </section>
+
+            <!-- Filtering & Search -->
+            <section>
+                <h2>🔍 Advanced Filtering & Search</h2>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h3>📅 Date Filters</h3>
+                        <ul>
+                            <li>Today</li>
+                            <li>This Week</li>
+                            <li>This Month</li>
+                            <li>Custom Range</li>
+                            <li>All Time</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🏥 Unit Filters</h3>
+                        <ul>
+                            <li>PICU</li>
+                            <li>NICU (Inborn)</li>
+                            <li>NICU (Outborn)</li>
+                            <li>SNCU</li>
+                            <li>HDU/General Wards</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📊 Status Filters</h3>
+                        <ul>
+                            <li>Active Patients</li>
+                            <li>Discharged</li>
+                            <li>Referred</li>
+                            <li>Deceased</li>
+                            <li>Step Down</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔎 Search</h3>
+                        <ul>
+                            <li>By Patient Name</li>
+                            <li>By Diagnosis</li>
+                            <li>By NTID</li>
+                            <li>Real-time Search</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PDF Generation -->
+            <section>
+                <h2>📄 Document Generation & Export</h2>
+                <div style="margin-top: 50px;">
+                    <div class="feature-card">
+                        <h3>🖨️ PDF Export Capabilities</h3>
+                        <ul style="font-size: 1.2em;">
+                            <li><strong>Patient Summary PDFs:</strong> Complete patient record with all clinical data</li>
+                            <li><strong>Discharge Summaries:</strong> Family-friendly discharge instructions</li>
+                            <li><strong>Mortality Reports:</strong> Death analysis with diagnosis breakdown</li>
+                            <li><strong>Analytics Reports:</strong> Monthly statistical summaries</li>
+                            <li><strong>Clinical Documentation:</strong> Progress notes and SBAR handoffs</li>
+                        </ul>
+                    </div>
+                    <div style="margin-top: 40px; text-align: center;">
+                        <span class="stat-box">jsPDF</span>
+                        <span class="stat-box">html2canvas</span>
+                        <span class="stat-box">jsPDF-AutoTable</span>
+                    </div>
+                    <p style="text-align: center; margin-top: 30px; font-size: 1.3em;">
+                        Professional-grade documents ready for <span class="highlight">printing or digital sharing</span>
+                    </p>
+                </div>
+            </section>
+
+            <!-- Real-time Features -->
+            <section>
+                <h2>⚡ Real-Time Collaboration</h2>
+                <div style="margin-top: 60px;">
+                    <div class="feature-card" style="padding: 40px; text-align: center;">
+                        <h3 style="font-size: 2em;">🔄 Live Data Updates</h3>
+                        <p style="font-size: 1.3em; margin-top: 30px;">
+                            Powered by <span class="highlight">Firestore Real-Time Listeners</span>
+                        </p>
+                        <div style="margin-top: 50px; text-align: left; font-size: 1.1em;">
+                            <p style="margin: 20px 0;">✅ Multiple users can view same patient simultaneously</p>
+                            <p style="margin: 20px 0;">✅ Dashboard updates instantly when new patients admitted</p>
+                            <p style="margin: 20px 0;">✅ Analytics refresh in real-time as outcomes change</p>
+                            <p style="margin: 20px 0;">✅ Draft-to-finalized status changes visible immediately</p>
+                            <p style="margin: 20px 0;">✅ No page refresh required - always current data</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Referral Tracking -->
+            <section>
+                <h2>🏨 Referral & Transfer Management</h2>
+                <div style="margin-top: 40px;">
+                    <div class="feature-card">
+                        <h3>📊 Comprehensive Referral Tracking</h3>
+                        <ul style="font-size: 1.2em;">
+                            <li>Track patients referred to other facilities</li>
+                            <li>Record referring hospital and district for incoming patients</li>
+                            <li>Analyze referral patterns and top referring hospitals</li>
+                            <li>Calculate referral rates and trends over time</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card" style="margin-top: 30px;">
+                        <h3>🗺️ District-Level Analytics</h3>
+                        <ul style="font-size: 1.2em;">
+                            <li>District Admin role for cross-institution oversight</li>
+                            <li>Monitor referral patterns across multiple hospitals</li>
+                            <li>Identify healthcare gaps and resource needs</li>
+                            <li>Optimize patient distribution across facilities</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bed Management -->
+            <section>
+                <h2>🛏️ Bed Occupancy Management</h2>
+                <div style="margin-top: 50px; text-align: center;">
+                    <div class="feature-card" style="padding: 40px;">
+                        <h3 style="font-size: 2em;">📊 Real-Time Bed Tracking</h3>
+                        <div style="margin-top: 40px; font-size: 1.2em; text-align: left;">
+                            <p style="margin: 25px 0;">✅ Track total bed capacity by unit (PICU/NICU/SNCU)</p>
+                            <p style="margin: 25px 0;">✅ Monitor current occupancy rates</p>
+                            <p style="margin: 25px 0;">✅ Visualize bed availability trends over time</p>
+                            <p style="margin: 25px 0;">✅ Institution Admin can configure bed counts</p>
+                            <p style="margin: 25px 0;">✅ Alert when approaching capacity</p>
+                        </div>
+                        <div style="margin-top: 50px;">
+                            <div class="impact-number">📈</div>
+                            <p style="font-size: 1.4em; margin-top: 20px;">
+                                Optimize <span class="highlight">resource allocation</span> and capacity planning
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Death Analytics -->
+            <section>
+                <h2>⚰️ Mortality Analytics & Quality Improvement</h2>
+                <div style="margin-top: 40px;">
+                    <div class="feature-card">
+                        <h3>📊 Comprehensive Death Analysis</h3>
+                        <ul style="font-size: 1.1em;">
+                            <li>Mortality rate tracking by unit and time period</li>
+                            <li>Death diagnosis breakdown (ICD-10 coded)</li>
+                            <li>Mortality trends over 12 months</li>
+                            <li>Comparison across inborn vs outborn patients</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card" style="margin-top: 20px;">
+                        <h3>🔍 Quality Improvement Tools</h3>
+                        <ul style="font-size: 1.1em;">
+                            <li>AI-generated Mortality & Morbidity (M&M) reviews</li>
+                            <li>Identify patterns and areas for improvement</li>
+                            <li>PDF mortality reports for committee reviews</li>
+                            <li>Predictive analytics for at-risk patients</li>
+                        </ul>
+                    </div>
+                </div>
+                <p style="text-align: center; margin-top: 40px; font-size: 1.3em;">
+                    Drive <span class="highlight">evidence-based quality improvement</span> initiatives
+                </p>
+            </section>
+
+            <!-- ICD-10 Integration -->
+            <section>
+                <h2>🏥 ICD-10 Clinical Coding</h2>
+                <div style="margin-top: 60px; text-align: center;">
+                    <div class="feature-card" style="padding: 40px;">
+                        <h3 style="font-size: 2em;">📋 Standardized Medical Coding</h3>
+                        <div style="margin-top: 40px; font-size: 1.2em; text-align: left;">
+                            <p style="margin: 25px 0;">✅ <strong>ICD-10 Integration:</strong> Standard diagnostic codes for all conditions</p>
+                            <p style="margin: 25px 0;">✅ <strong>Autocomplete Search:</strong> Find ICD-10 codes quickly</p>
+                            <p style="margin: 25px 0;">✅ <strong>Progress Notes:</strong> Link diagnoses to ICD-10 codes</p>
+                            <p style="margin: 25px 0;">✅ <strong>Analytics:</strong> Aggregate data by standardized diagnoses</p>
+                            <p style="margin: 25px 0;">✅ <strong>Reporting:</strong> Generate reports compatible with international standards</p>
+                        </div>
+                        <p style="margin-top: 50px; font-size: 1.4em; color: var(--accent-color);">
+                            Ensures data compatibility with <span class="highlight">global health systems</span>
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Target Institution -->
+            <section>
+                <h2>🏥 Current Deployment</h2>
+                <div style="margin-top: 80px; text-align: center;">
+                    <div style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(59, 130, 246, 0.3)); padding: 60px; border-radius: 30px; border: 3px solid var(--primary-color);">
+                        <h3 style="font-size: 2.5em; margin-bottom: 40px;">🎓 Nalbari Medical College & Hospital</h3>
+                        <p style="font-size: 1.4em; margin: 30px 0;">
+                            Built for and deployed at a major teaching hospital in Assam, India
+                        </p>
+                        <p style="font-size: 1.3em; margin: 30px 0;">
+                            Managing <span class="highlight">PICU, NICU, SNCU, and HDU</span> patient records
+                        </p>
+                        <p style="font-size: 1.3em; margin: 30px 0;">
+                            Supporting doctors, nurses, and administrators in delivering <span class="highlight">world-class pediatric care</span>
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Scalability -->
+            <section>
+                <h2>📈 Scalability & Multi-Institution Support</h2>
+                <div style="margin-top: 40px;">
+                    <div class="feature-card">
+                        <h3>🌐 Multi-Institution Architecture</h3>
+                        <ul style="font-size: 1.2em;">
+                            <li><strong>Institution Isolation:</strong> Each hospital has separate data namespace</li>
+                            <li><strong>SuperAdmin Control:</strong> Manage multiple institutions from central dashboard</li>
+                            <li><strong>Shared Resources:</strong> Centralized medication database across institutions</li>
+                            <li><strong>District Oversight:</strong> District Admin can view analytics across region</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card" style="margin-top: 30px;">
+                        <h3>⚡ Built to Scale</h3>
+                        <ul style="font-size: 1.2em;">
+                            <li><strong>Firebase Infrastructure:</strong> Auto-scaling database and hosting</li>
+                            <li><strong>Firestore:</strong> Handles millions of documents effortlessly</li>
+                            <li><strong>CDN Delivery:</strong> Fast global content delivery</li>
+                            <li><strong>Cost-Effective:</strong> Pay-as-you-grow pricing model</li>
+                        </ul>
+                    </div>
+                </div>
+                <p style="text-align: center; margin-top: 50px; font-size: 1.4em;">
+                    Ready to expand to <span class="highlight">multiple hospitals, districts, and regions</span>
+                </p>
+            </section>
+
+            <!-- User Experience -->
+            <section>
+                <h2>✨ User Experience Highlights</h2>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h3>🎨 Modern UI/UX</h3>
+                        <p>Dark theme with glassmorphism effects, smooth animations via Framer Motion</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🎯 Intuitive Navigation</h3>
+                        <p>Clear information hierarchy, collapsible mobile navigation, icon-based actions</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>⚡ Fast Interactions</h3>
+                        <p>Optimistic UI updates, instant search results, no unnecessary loading states</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📱 Mobile-First</h3>
+                        <p>Touch-optimized controls, full-screen modals, adaptive layouts for all devices</p>
+                    </div>
+                </div>
+                <p style="text-align: center; margin-top: 40px; font-size: 1.3em;">
+                    Designed for <span class="highlight">busy clinicians</span> who need speed and clarity
+                </p>
+            </section>
+
+            <!-- Offline Support -->
+            <section>
+                <h2>📡 Offline Capability & Sync</h2>
+                <div style="margin-top: 60px; text-align: center;">
+                    <div class="feature-card" style="padding: 40px;">
+                        <h3 style="font-size: 2em;">🔄 Service Worker Magic</h3>
+                        <p style="font-size: 1.3em; margin-top: 30px;">
+                            PWA with offline support for <span class="highlight">unreliable network conditions</span>
+                        </p>
+                        <div style="margin-top: 50px; text-align: left; font-size: 1.1em;">
+                            <p style="margin: 20px 0;">✅ <strong>App Shell Caching:</strong> Core app loads instantly from cache</p>
+                            <p style="margin: 20px 0;">✅ <strong>Static Asset Caching:</strong> CSS, JS, images cached locally</p>
+                            <p style="margin: 20px 0;">✅ <strong>Offline Detection:</strong> App notifies when connection lost</p>
+                            <p style="margin: 20px 0;">✅ <strong>Background Sync:</strong> Data syncs when connection restored</p>
+                            <p style="margin: 20px 0;">✅ <strong>Local Storage:</strong> User preferences persist offline</p>
+                        </div>
+                        <p style="margin-top: 50px; font-size: 1.4em; color: var(--accent-color);">
+                            Critical for healthcare settings with <span class="highlight">intermittent connectivity</span>
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Form Validation -->
+            <section>
+                <h2>✅ Data Quality & Validation</h2>
+                <div style="margin-top: 40px;">
+                    <div class="feature-card">
+                        <h3>🛡️ React Hook Form + Zod</h3>
+                        <ul style="font-size: 1.2em;">
+                            <li><strong>Schema Validation:</strong> All forms validated against Zod schemas</li>
+                            <li><strong>Type Safety:</strong> TypeScript ensures data integrity</li>
+                            <li><strong>Real-Time Feedback:</strong> Instant validation errors as user types</li>
+                            <li><strong>Required Fields:</strong> Prevent incomplete data submission</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card" style="margin-top: 30px;">
+                        <h3>🔒 Database-Level Rules</h3>
+                        <ul style="font-size: 1.2em;">
+                            <li><strong>Firestore Security Rules:</strong> Server-side validation enforced</li>
+                            <li><strong>Role-Based Writes:</strong> Only authorized users can modify data</li>
+                            <li><strong>Audit Trails:</strong> Track who created/edited every record</li>
+                            <li><strong>Data Integrity:</strong> Prevent malicious or accidental data corruption</li>
+                        </ul>
+                    </div>
+                </div>
+                <p style="text-align: center; margin-top: 40px; font-size: 1.3em;">
+                    <span class="highlight">Bulletproof data quality</span> from form to database
+                </p>
+            </section>
+
+            <!-- Educational Features -->
+            <section>
+                <h2>📚 Educational Support Features</h2>
+                <div style="margin-top: 50px;">
+                    <div class="feature-card">
+                        <h3>🧠 AI-Powered Learning</h3>
+                        <ul style="font-size: 1.2em;">
+                            <li><strong>Diagnosis Explanations:</strong> AI explains conditions in simple terms for doctors, nurses, or families</li>
+                            <li><strong>Clinical Guidelines:</strong> AAP and WHO protocol suggestions</li>
+                            <li><strong>Medical Q&A:</strong> Ask AI any clinical question for instant answers</li>
+                            <li><strong>Evidence-Based Medicine:</strong> Treatment recommendations backed by current research</li>
+                        </ul>
+                    </div>
+                    <div style="margin-top: 40px; text-align: center;">
+                        <p style="font-size: 1.4em;">
+                            Perfect for <span class="highlight">teaching hospital</span> environment with residents and medical students
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Future Roadmap -->
+            <section>
+                <h2>🚀 Future Enhancements</h2>
+                <div style="margin-top: 40px;">
+                    <div class="feature-card">
+                        <h3>🔮 Upcoming Features</h3>
+                        <ul style="font-size: 1.1em;">
+                            <li>Telemedicine integration for remote consultations</li>
+                            <li>Laboratory and radiology integration (LIMS/RIS)</li>
+                            <li>Automated vital signs import from monitoring devices</li>
+                            <li>Machine learning models for custom predictive analytics</li>
+                            <li>Mobile apps (iOS/Android native) for enhanced performance</li>
+                            <li>Integration with national health databases</li>
+                            <li>Advanced scheduling and resource management</li>
+                            <li>Parent/family portal for viewing patient updates</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Impact Statement -->
+            <section>
+                <h2>💡 The Impact</h2>
+                <div style="margin-top: 60px;">
+                    <div style="text-align: center; font-size: 1.3em; line-height: 2;">
+                        <p style="margin: 40px 0;">
+                            🏥 <span class="highlight">Digitizing healthcare</span> for the most vulnerable patients
+                        </p>
+                        <p style="margin: 40px 0;">
+                            🤖 <span class="highlight">Empowering clinicians</span> with AI-powered decision support
+                        </p>
+                        <p style="margin: 40px 0;">
+                            📊 <span class="highlight">Enabling data-driven</span> quality improvement initiatives
+                        </p>
+                        <p style="margin: 40px 0;">
+                            ⚡ <span class="highlight">Reducing documentation burden</span> so doctors can focus on patients
+                        </p>
+                        <p style="margin: 40px 0;">
+                            🌍 <span class="highlight">Scalable solution</span> ready to transform pediatric care across institutions
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Value Proposition -->
+            <section>
+                <h2>💎 Why NeoLink?</h2>
+                <div style="margin-top: 50px;">
+                    <div class="feature-card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(6, 182, 212, 0.3)); padding: 30px;">
+                        <h3 style="font-size: 1.8em;">For Clinicians</h3>
+                        <ul style="font-size: 1.2em; margin-top: 20px;">
+                            <li>Instant clinical decision support at point of care</li>
+                            <li>Voice dictation reduces documentation time</li>
+                            <li>Quick access to patient history and trends</li>
+                            <li>AI-generated handoffs and discharge summaries</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.3)); padding: 30px; margin-top: 20px;">
+                        <h3 style="font-size: 1.8em;">For Administrators</h3>
+                        <ul style="font-size: 1.2em; margin-top: 20px;">
+                            <li>Real-time occupancy and resource planning</li>
+                            <li>Comprehensive analytics for quality improvement</li>
+                            <li>Track outcomes and benchmark performance</li>
+                            <li>Manage multiple facilities from one dashboard</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.3), rgba(249, 115, 22, 0.3)); padding: 30px; margin-top: 20px;">
+                        <h3 style="font-size: 1.8em;">For Institutions</h3>
+                        <ul style="font-size: 1.2em; margin-top: 20px;">
+                            <li>Zero infrastructure cost - cloud-hosted solution</li>
+                            <li>No app downloads - works on any device</li>
+                            <li>HIPAA-compliant security and data privacy</li>
+                            <li>Scalable from single unit to entire hospital network</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Technical Excellence -->
+            <section>
+                <h2>🏆 Technical Excellence</h2>
+                <div class="feature-grid" style="margin-top: 50px;">
+                    <div class="feature-card">
+                        <h3>📐 Well-Architected</h3>
+                        <p>Component-based design, service-oriented architecture, separation of concerns</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔒 Type-Safe</h3>
+                        <p>TypeScript throughout, Zod validation, compile-time error detection</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>⚡ High Performance</h3>
+                        <p>Code splitting, lazy loading, virtual scrolling, optimized builds</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🧪 Production-Ready</h3>
+                        <p>Error boundaries, loading states, offline support, accessibility</p>
+                    </div>
+                </div>
+                <p style="text-align: center; margin-top: 50px; font-size: 1.4em;">
+                    Built with <span class="highlight">enterprise-grade</span> development practices
+                </p>
+            </section>
+
+            <!-- Testimonial Placeholder -->
+            <section>
+                <h2>💬 The Vision</h2>
+                <div style="margin-top: 80px; text-align: center;">
+                    <div style="background: rgba(6, 182, 212, 0.1); padding: 60px; border-radius: 30px; border-left: 5px solid var(--primary-color);">
+                        <p style="font-size: 1.8em; font-style: italic; line-height: 1.8;">
+                            "Every child deserves the best possible care. NeoLink empowers healthcare teams with the
+                            <span class="highlight">intelligence, insights, and efficiency</span> to deliver that care -
+                            no matter where they practice."
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Call to Action -->
+            <section>
+                <h2>🎯 The Bottom Line</h2>
+                <div style="margin-top: 60px; text-align: center;">
+                    <div style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(59, 130, 246, 0.3)); padding: 60px; border-radius: 30px;">
+                        <h3 style="font-size: 2.5em; margin-bottom: 40px;">NeoLink is more than software</h3>
+                        <p style="font-size: 1.5em; margin: 30px 0;">
+                            It's a <span class="highlight">comprehensive healthcare intelligence platform</span>
+                        </p>
+                        <p style="font-size: 1.5em; margin: 30px 0;">
+                            That puts <span class="highlight">AI-powered insights</span> at every clinician's fingertips
+                        </p>
+                        <p style="font-size: 1.5em; margin: 30px 0;">
+                            While <span class="highlight">scaling effortlessly</span> from one unit to an entire network
+                        </p>
+                        <p style="font-size: 1.5em; margin: 30px 0;">
+                            All with <span class="highlight">zero infrastructure cost</span> and zero app downloads
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Final Slide -->
+            <section class="title-slide">
+                <h1 style="font-size: 3.5em; margin-bottom: 40px;">🏥 NeoLink</h1>
+                <h2 style="font-size: 2em;">Transforming Pediatric Healthcare</h2>
+                <div style="margin-top: 80px; font-size: 1.4em;">
+                    <p style="margin: 20px 0;">
+                        <span class="highlight">AI-Powered</span> • <span class="highlight">Web-Based</span> • <span class="highlight">Production-Ready</span>
+                    </p>
+                    <p style="margin: 20px 0;">
+                        <span class="highlight">30+ AI Functions</span> • <span class="highlight">71+ Components</span> • <span class="highlight">24+ Services</span>
+                    </p>
+                </div>
+                <p style="margin-top: 100px; font-size: 1.8em; color: var(--accent-color);">
+                    The Future of Pediatric Intensive Care
+                </p>
+            </section>
+
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.js"></script>
+    <script>
+        Reveal.initialize({
+            hash: true,
+            controls: true,
+            progress: true,
+            center: true,
+            transition: 'slide',
+            backgroundTransition: 'fade',
+            slideNumber: true,
+            keyboard: true,
+            overview: true,
+            touch: true,
+            loop: false,
+            rtl: false,
+            fragments: true,
+            autoSlide: 0,
+            mouseWheel: false,
+            hideAddressBar: true,
+            previewLinks: false,
+            transitionSpeed: 'default',
+            viewDistance: 3,
+            width: 1280,
+            height: 720,
+        });
+    </script>
 </body>
-
 </html>

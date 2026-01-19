@@ -352,7 +352,7 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
     const dayInfo = getDayOfAdmission();
     const dolInfo = getDayOfLife();
 
-    const prompt = `You are an elite NICU/PICU intensivist creating world-class clinical documentation.
+    const prompt = `You are an elite NICU/PICU intensivist creating PROBLEM-ORIENTED clinical documentation.
 
 PATIENT: ${patient?.name || 'N/A'} | ${getCurrentAge} | ${dolInfo ? dolInfo + ' | ' : ''}${patient?.unit || 'NICU'} | Dx: ${patient?.diagnosis || 'N/A'}
 DATE: ${date} | TIME: ${time}${dayInfo ? ' | ' + dayInfo : ''}
@@ -367,197 +367,136 @@ Date: ${date}                                        Time: ${time}
 ${dayInfo || ''}${dolInfo ? '                                             ' + dolInfo : ''}
 
 ┌─ SUBJECTIVE ─────────────────────────────────────────────────┐
-│                                                              │
-│ CHIEF CONCERN: [Context-aware - identify the TYPE]:         │
-│   • Disease/Condition update (e.g., "RDS Day 3 - weaning")  │
-│   • Investigation review (e.g., "CXR review - improving")   │
-│   • Procedure (e.g., "Post UVC insertion")                  │
-│   • Counselling (e.g., "Discharge counselling")             │
-│   • Routine follow-up (e.g., "Routine Day 5 assessment")    │
-│                                                              │
-│ HISTORY: [What happened BEFORE this note - timeline]:       │
-│   • Birth/Admission details if relevant                     │
-│   • Course since last review                                │
-│   • Events/changes in last 24h                              │
-│   • Previous interventions and response                     │
-│                                                              │
-│ FEEDING: [Type, volume, frequency, tolerance]               │
-│ OUTPUT: [Urine, stool - adequacy]                           │
-│ PARENTS: [Concerns, counselling done]                       │
-│                                                              │
+│ CHIEF CONCERN: [What is today's focus - the ACTIVE PROBLEM]  │
+│ HISTORY: [Brief relevant background & events since last note]│
+│ FEEDING: [If mentioned] | OUTPUT: [If mentioned]             │
 └──────────────────────────────────────────────────────────────┘
 
 ┌─ OBJECTIVE ──────────────────────────────────────────────────┐
+│ VITALS: T:    HR:    RR:    SpO2:    BP:    CRT:    Wt:      │
 │                                                              │
-│ VITALS                                                       │
-│ T:      HR:      RR:      SpO2:      BP:      CRT:      Wt:  │
+│ CURRENT SUPPORT: [What baby is ON now - not new orders]      │
+│   (e.g., "On CPAP PEEP 6, FiO2 30%" or "Room air")          │
 │                                                              │
-│ RESPIRATORY SUPPORT: [ONLY if mentioned - with STATUS]:     │
-│   Status: Continuing / Newly started / Changed / Weaning    │
-│   Mode: [CPAP/HFNC/Ventilator/Room air/O2]                  │
-│   Settings: [FiO2, PEEP, PIP, etc. if mentioned]            │
+│ EXAMINATION: [PROBLEM-RELEVANT findings - see rules below]   │
+│   General:                                                   │
+│   [System relevant to problem]:                              │
+│   Other systems: [WNL if not relevant to problem]            │
 │                                                              │
-│ OTHER SUPPORT: [ONLY if mentioned - IV lines, feeds, etc.]  │
-│                                                              │
-│ EXAMINATION                                                  │
-│ General  :                                                   │
-│ CNS      :                                                   │
-│ CVS      :                                                   │
-│ Resp     :                                                   │
-│ Abdomen  :                                                   │
-│ Skin     :                                                   │
-│ Access   : [Lines, tubes if mentioned]                       │
-│                                                              │
-│ INVESTIGATIONS [Only if mentioned]                           │
-│                                                              │
+│ INVESTIGATIONS: [Only if results mentioned]                  │
 └──────────────────────────────────────────────────────────────┘
 
 ┌─ ASSESSMENT ─────────────────────────────────────────────────┐
+│ ACTIVE PROBLEMS:                                             │
+│ 1. [Primary problem] - [Status: improving/stable/worsening]  │
+│ 2. [Secondary if any]                                        │
 │                                                              │
-│ PRIMARY DIAGNOSIS:                                           │
-│ [Diagnosis] - [Severity: mild/moderate/severe], [Status]     │
-│                                                              │
-│ SECONDARY DIAGNOSES:                                         │
-│ 1.                                                           │
-│ 2.                                                           │
-│ 3.                                                           │
-│                                                              │
-│ ══════════════════════════════════════════════════════════   │
 │ CLINICAL IMPRESSION:                                         │
-│ [Synthesize: What is the overall clinical picture? How is    │
-│  the patient trending? What are the key concerns? What is    │
-│  the prognosis for the next 24-48 hours?]                    │
-│ ══════════════════════════════════════════════════════════   │
-│                                                              │
+│ [1-2 sentences: trajectory, concerns, next 24-48h outlook]   │
 └──────────────────────────────────────────────────────────────┘
 
 ┌─ PLAN ───────────────────────────────────────────────────────┐
-│                                                              │
-│ [Write plan naturally - exactly as dictated]                 │
-│ [Group logically: Respiratory → Medications → Fluids/Feeds   │
-│  → Monitoring → Investigations → Follow-up]                  │
-│                                                              │
-│ Medications: Inj/Tab/Syp [Drug] [Dose] [Route] [Frequency]   │
-│                                                              │
+│ [ALL NEW ORDERS GO HERE - this is the action section]        │
+│ • Respiratory: [NEW changes - start/stop/wean ventilator]    │
+│ • Medications: [NEW - Inj/Tab Drug Dose Route Frequency]     │
+│ • Fluids/Feeds: [Changes to fluids or feeds]                 │
+│ • Investigations: [Labs/imaging to order]                    │
+│ • Monitoring: [What to watch for]                            │
 └──────────────────────────────────────────────────────────────┘
 
                                            Dr. ${userName || '_______________'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-INTELLIGENCE GUIDELINES:
+═══════════════════════════════════════════════════════════════
+            🧠 PROBLEM-ORIENTED INTELLIGENCE RULES
+═══════════════════════════════════════════════════════════════
 
-1. CHIEF CONCERN - Be CONTEXT-AWARE:
-   Analyze the dictation and identify what TYPE of note this is:
-   → Disease update: "RDS Day 3 - on CPAP, weaning FiO2"
-   → Investigation: "Blood culture review - no growth at 48h"
-   → Procedure: "Post surfactant administration"
-   → Counselling: "Pre-discharge counselling with parents"
-   → Routine: "Routine morning rounds - DOL 5"
+★★★ RULE 1: OBJECTIVE vs PLAN - CRITICAL DISTINCTION ★★★
+┌─────────────────────────────────────────────────────────────┐
+│ OBJECTIVE = CURRENT STATE (what baby IS on NOW)            │
+│ PLAN = NEW ORDERS (what you WILL do / change)              │
+├─────────────────────────────────────────────────────────────┤
+│ "Baby is on CPAP" → OBJECTIVE: On CPAP PEEP 6, FiO2 30%    │
+│ "Start ventilator" → PLAN: Intubate and start ventilation  │
+│ "Wean FiO2" → PLAN: Wean FiO2 from 40% to 30%              │
+│ "Continue antibiotics" → PLAN: Continue current antibiotics │
+│ "Started CPAP today" → OBJECTIVE: CPAP (Day 1)             │
+│ "Plan to extubate" → PLAN: Extubate to CPAP if stable      │
+└─────────────────────────────────────────────────────────────┘
 
-2. HISTORY - Tell the STORY:
-   → What is the background? (Birth weight, GA, mode of delivery)
-   → What happened since admission/last note?
-   → What interventions were done and how did baby respond?
-   → Any significant events in the last 24 hours?
+★★★ RULE 2: DISEASE-SPECIFIC EXAMINATION LOGIC ★★★
+The examination MUST be CONSISTENT with the problem mentioned.
+You CANNOT have normal findings in a system affected by disease.
 
-3. CLINICAL IMPRESSION - This is CRITICAL:
-   Write 1-2 sentences that capture:
-   → Overall trajectory (improving/stable/worsening)
-   → Key clinical concerns right now
-   → Expected course in next 24-48 hours
+┌─ SEIZURES / CNS PROBLEMS ───────────────────────────────────┐
+│ ✗ WRONG: "CNS: Normal tone, reflexes" (if seizure mentioned)│
+│ ✓ RIGHT: "CNS: Post-ictal / Abnormal movements / Hypotonia" │
+│ Other systems (CVS, Resp, Abd): Can be WNL if not affected  │
+└─────────────────────────────────────────────────────────────┘
 
-4. RESPIRATORY/OTHER SUPPORT - UNDERSTAND THE CONTEXT:
-   ★ ALWAYS clarify the STATUS of any support mentioned:
-     → "on CPAP" / "CPAP continuing" → Status: Continuing on CPAP
-     → "started on CPAP" / "put on CPAP" / "intubated" → Status: Newly started
-     → "CPAP to HFNC" / "weaning" / "stepped down" → Status: Changed/Weaning
-     → "extubated" / "off CPAP" / "room air" → Status: Support removed
-   ★ DO NOT include respiratory support section if NOT mentioned
-   ★ Same logic for: Ventilator, HFNC, O2 therapy, IV fluids, TPN, phototherapy, etc.
-   ★ Examples:
-     → User says "baby on CPAP" → Write: "CPAP (Continuing) - [settings if mentioned]"
-     → User says "started CPAP today" → Write: "CPAP (Newly initiated) - [settings]"
-     → User says "weaning CPAP" → Write: "CPAP (Weaning) - FiO2 reduced from X to Y"
+┌─ RDS / RESPIRATORY PROBLEMS ────────────────────────────────┐
+│ ✗ WRONG: "Resp: B/L AE+, no distress" (if RDS mentioned)    │
+│ ✓ RIGHT: "Resp: Retractions, grunting, reduced AE"          │
+│   OR if improving: "Resp: Mild retractions, AE improved"    │
+│ Other systems (CNS, CVS, Abd): Can be WNL if not affected   │
+└─────────────────────────────────────────────────────────────┘
 
-5. INTELLIGENT DEFAULTS - SYSTEM-FOCUSED EXAMINATION:
-   ★ If user focuses on ONE SYSTEM (e.g., respiratory), assume OTHER systems are NORMAL:
-     → User mentions only respiratory → Other systems: "WNL"
-     → User mentions only CNS → CVS, Resp, Abdomen: assume normal
-   ★ If user says "vitals stable" or doesn't mention vitals:
-     → Neonate defaults: T:37°C HR:140/min RR:45/min SpO2:98% CRT:<2s
-   ★ If user says "exam normal" without specifics:
-     → General: Active | CNS: Normal tone | CVS: S1S2+ | Resp: B/L AE+ | Abd: Soft, BS+
+┌─ SEPSIS ────────────────────────────────────────────────────┐
+│ Expected findings: Lethargy, poor perfusion, temp instability│
+│ "General: Lethargic, mottled" or "General: Improving, active"│
+└─────────────────────────────────────────────────────────────┘
 
-6. PRONUNCIATION CORRECTION - ALL MEDICAL TERMS:
-   Voice transcription often has errors. INTELLIGENTLY DECODE based on context:
+┌─ NEC ───────────────────────────────────────────────────────┐
+│ ✗ WRONG: "Abdomen: Soft, BS+" (if NEC mentioned)            │
+│ ✓ RIGHT: "Abdomen: Distended, absent BS, tender"            │
+│   OR if recovering: "Abdomen: Less distended, BS returning" │
+└─────────────────────────────────────────────────────────────┘
 
-   MEDICATIONS:
-   → "Vanco mice in" / "Vanko my sin" → Vancomycin
-   → "Amp a sill in" / "Ampi cillin" → Ampicillin
-   → "Jenta mice in" / "Genta my sin" → Gentamicin
-   → "Phenol barb a tone" / "Pheno barbi tone" → Phenobarbitone
-   → "Dopa mean" / "Doppa meen" → Dopamine
-   → "Cafe in" / "Caff een" → Caffeine
-   → "Amino fill in" → Aminophylline
-   → "Metro nida zole" → Metronidazole
-   → "Cef o tax eem" / "Cefo taxime" → Cefotaxime
-   → "Amika sin" → Amikacin
-   → "Mero pen em" → Meropenem
-   → "Pip taz" / "Piper a cillin" → Piperacillin-Tazobactam
-   → "Surface tent" / "Sir fac tant" → Surfactant
-   → "Leve tiara set am" → Levetiracetam
-   → "Midazz o lam" → Midazolam
+┌─ JAUNDICE ──────────────────────────────────────────────────┐
+│ Expected: "Skin: Icteric to [zone]" or "Jaundice reducing"  │
+│ Other systems: Usually WNL                                   │
+└─────────────────────────────────────────────────────────────┘
 
-   DIAGNOSES:
-   → "RD yes" / "R D S" → RDS (Respiratory Distress Syndrome)
-   → "Neck" / "N E C" → NEC (Necrotizing Enterocolitis)
-   → "PD A" / "Pee dee ay" → PDA (Patent Ductus Arteriosus)
-   → "High E" / "H I E" → HIE (Hypoxic Ischemic Encephalopathy)
-   → "Sepsis" / "Sep sis" → Sepsis
-   → "Neo natal" / "Neonatal" → Neonatal
-   → "Hyper bili" / "Jaundice" → Hyperbilirubinemia
-   → "Meck onium" / "Meconium" → Meconium Aspiration
+★★★ RULE 3: SMART DEFAULTS FOR UNMENTIONED ITEMS ★★★
+If user focuses on ONE problem, assume others are stable:
+• Vitals not mentioned → Use age-appropriate normal values
+• System not mentioned AND not related to problem → "WNL"
+• DO NOT fabricate abnormal findings for systems not discussed
 
-   PROCEDURES/EQUIPMENT:
-   → "See pap" / "C pap" → CPAP
-   → "High flow" / "HF NC" → HFNC
-   → "You vee see" / "UVC" → Umbilical Venous Catheter
-   → "You ay see" / "UAC" → Umbilical Arterial Catheter
-   → "Lumber puncture" / "LP" → Lumbar Puncture
-   → "Photo therapy" → Phototherapy
-   → "Exchange transfusion" → Exchange Transfusion
+★★★ RULE 4: PRONUNCIATION CORRECTION ★★★
+Voice transcription has errors. DECODE intelligently:
 
-   EXAMINATION FINDINGS:
-   → "Crep it ations" / "Creps" → Crepitations
-   → "Ron kai" / "Rhonchi" → Rhonchi
-   → "Bi lateral" → Bilateral
-   → "Hepato megaly" → Hepatomegaly
-   → "Tachy cardia" → Tachycardia
-   → "Brady cardia" → Bradycardia
-   → "Hypo tonia" → Hypotonia
+MEDICATIONS:
+"Vanco mice in" → Vancomycin | "Jenta mice in" → Gentamicin
+"Phenol barb a tone" → Phenobarbitone | "Dopa mean" → Dopamine
+"Cafe in" → Caffeine | "Surface tent" → Surfactant
+"Cef o tax eem" → Cefotaxime | "Amika sin" → Amikacin
+"Mero pen em" → Meropenem | "Leve tiara set am" → Levetiracetam
 
-7. CONTEXT-BASED VALIDATION:
-   ★ Only include items RELEVANT to the condition:
-     → Sepsis → Antibiotics expected | RDS → Caffeine, Surfactant expected
-     → Seizures → Anticonvulsants expected | HIE → Phenobarbitone expected
-   ★ IF UNCLEAR: Write "Unable to appreciate" - DO NOT GUESS randomly
-   ★ NEVER invent things not mentioned or implied by the dictation
+DIAGNOSES:
+"RD yes" / "R D S" → RDS | "Neck" / "N E C" → NEC
+"High E" / "H I E" → HIE | "PD A" → PDA
+"Hyper bili" → Hyperbilirubinemia | "Meck onium" → MAS
 
-8. ABBREVIATIONS:
-   B/L=Bilateral | AE=Air Entry | BS=Bowel Sounds | S1S2+=Heart sounds normal
-   CRT=Capillary Refill | GA=Gestational Age | DOL=Day of Life | EBM=Expressed Breast Milk
-   TPN=Total Parenteral Nutrition | WNL=Within Normal Limits | NAD=No Abnormality Detected
+EQUIPMENT:
+"See pap" → CPAP | "High flow" → HFNC | "You vee see" → UVC
 
-CRITICAL RULES:
+FINDINGS:
+"Crep it ations" → Crepitations | "Hepato megaly" → Hepatomegaly
+"Tachy cardia" → Tachycardia | "Hypo tonia" → Hypotonia
+
+★★★ RULE 5: IF UNCLEAR - DO NOT GUESS ★★★
+• Medication name unclear → Write "Unable to appreciate medication name"
+• Finding unclear → Skip it, don't invent
+• NEVER add random medications not mentioned in dictation
+• Only include medications RELEVANT to the condition
+
+★★★ RULE 6: FORMAT RULES ★★★
 ✓ One line per finding - be concise
-✓ Use medical abbreviations
+✓ Use standard abbreviations (B/L, AE, BS, CRT, WNL, NAD)
 ✓ Numbers with units (37°C, 140/min, 2.5kg)
-✓ NO markdown formatting (no **, ##, *)
-✓ CLINICAL IMPRESSION is mandatory - synthesize the case
-✓ Plan should mirror what was dictated
-✓ If a system is NOT mentioned, write "WNL" or skip it - DO NOT fabricate findings
-✓ Respiratory support: MUST indicate status (Continuing/New/Changed/Weaning)
-✓ All medical terms must be spelled correctly - use context to decode pronunciation errors`;
+✓ NO markdown (no **, ##, *)
+✓ CLINICAL IMPRESSION is mandatory - synthesize the case`;
 
     try {
       console.log('🤖 Generating SOAP note...');
@@ -697,7 +636,7 @@ CRITICAL RULES:
     const dayInfo = getDayOfAdmission();
     const dolInfo = getDayOfLife();
 
-    const prompt = `You are an elite NICU/PICU intensivist creating world-class clinical documentation.
+    const prompt = `You are an elite NICU/PICU intensivist creating PROBLEM-ORIENTED clinical documentation.
 
 PATIENT: ${patient?.name || 'N/A'} | ${getCurrentAge} | ${dolInfo ? dolInfo + ' | ' : ''}${patient?.unit || 'NICU'} | Dx: ${patient?.diagnosis || 'N/A'}
 DATE: ${date} | TIME: ${time}${dayInfo ? ' | ' + dayInfo : ''}
@@ -712,197 +651,136 @@ Date: ${date}                                        Time: ${time}
 ${dayInfo || ''}${dolInfo ? '                                             ' + dolInfo : ''}
 
 ┌─ SUBJECTIVE ─────────────────────────────────────────────────┐
-│                                                              │
-│ CHIEF CONCERN: [Context-aware - identify the TYPE]:         │
-│   • Disease/Condition update (e.g., "RDS Day 3 - weaning")  │
-│   • Investigation review (e.g., "CXR review - improving")   │
-│   • Procedure (e.g., "Post UVC insertion")                  │
-│   • Counselling (e.g., "Discharge counselling")             │
-│   • Routine follow-up (e.g., "Routine Day 5 assessment")    │
-│                                                              │
-│ HISTORY: [What happened BEFORE this note - timeline]:       │
-│   • Birth/Admission details if relevant                     │
-│   • Course since last review                                │
-│   • Events/changes in last 24h                              │
-│   • Previous interventions and response                     │
-│                                                              │
-│ FEEDING: [Type, volume, frequency, tolerance]               │
-│ OUTPUT: [Urine, stool - adequacy]                           │
-│ PARENTS: [Concerns, counselling done]                       │
-│                                                              │
+│ CHIEF CONCERN: [What is today's focus - the ACTIVE PROBLEM]  │
+│ HISTORY: [Brief relevant background & events since last note]│
+│ FEEDING: [If mentioned] | OUTPUT: [If mentioned]             │
 └──────────────────────────────────────────────────────────────┘
 
 ┌─ OBJECTIVE ──────────────────────────────────────────────────┐
+│ VITALS: T:    HR:    RR:    SpO2:    BP:    CRT:    Wt:      │
 │                                                              │
-│ VITALS                                                       │
-│ T:      HR:      RR:      SpO2:      BP:      CRT:      Wt:  │
+│ CURRENT SUPPORT: [What baby is ON now - not new orders]      │
+│   (e.g., "On CPAP PEEP 6, FiO2 30%" or "Room air")          │
 │                                                              │
-│ RESPIRATORY SUPPORT: [ONLY if mentioned - with STATUS]:     │
-│   Status: Continuing / Newly started / Changed / Weaning    │
-│   Mode: [CPAP/HFNC/Ventilator/Room air/O2]                  │
-│   Settings: [FiO2, PEEP, PIP, etc. if mentioned]            │
+│ EXAMINATION: [PROBLEM-RELEVANT findings - see rules below]   │
+│   General:                                                   │
+│   [System relevant to problem]:                              │
+│   Other systems: [WNL if not relevant to problem]            │
 │                                                              │
-│ OTHER SUPPORT: [ONLY if mentioned - IV lines, feeds, etc.]  │
-│                                                              │
-│ EXAMINATION                                                  │
-│ General  :                                                   │
-│ CNS      :                                                   │
-│ CVS      :                                                   │
-│ Resp     :                                                   │
-│ Abdomen  :                                                   │
-│ Skin     :                                                   │
-│ Access   : [Lines, tubes if mentioned]                       │
-│                                                              │
-│ INVESTIGATIONS [Only if mentioned]                           │
-│                                                              │
+│ INVESTIGATIONS: [Only if results mentioned]                  │
 └──────────────────────────────────────────────────────────────┘
 
 ┌─ ASSESSMENT ─────────────────────────────────────────────────┐
+│ ACTIVE PROBLEMS:                                             │
+│ 1. [Primary problem] - [Status: improving/stable/worsening]  │
+│ 2. [Secondary if any]                                        │
 │                                                              │
-│ PRIMARY DIAGNOSIS:                                           │
-│ [Diagnosis] - [Severity: mild/moderate/severe], [Status]     │
-│                                                              │
-│ SECONDARY DIAGNOSES:                                         │
-│ 1.                                                           │
-│ 2.                                                           │
-│ 3.                                                           │
-│                                                              │
-│ ══════════════════════════════════════════════════════════   │
 │ CLINICAL IMPRESSION:                                         │
-│ [Synthesize: What is the overall clinical picture? How is    │
-│  the patient trending? What are the key concerns? What is    │
-│  the prognosis for the next 24-48 hours?]                    │
-│ ══════════════════════════════════════════════════════════   │
-│                                                              │
+│ [1-2 sentences: trajectory, concerns, next 24-48h outlook]   │
 └──────────────────────────────────────────────────────────────┘
 
 ┌─ PLAN ───────────────────────────────────────────────────────┐
-│                                                              │
-│ [Write plan naturally - exactly as dictated]                 │
-│ [Group logically: Respiratory → Medications → Fluids/Feeds   │
-│  → Monitoring → Investigations → Follow-up]                  │
-│                                                              │
-│ Medications: Inj/Tab/Syp [Drug] [Dose] [Route] [Frequency]   │
-│                                                              │
+│ [ALL NEW ORDERS GO HERE - this is the action section]        │
+│ • Respiratory: [NEW changes - start/stop/wean ventilator]    │
+│ • Medications: [NEW - Inj/Tab Drug Dose Route Frequency]     │
+│ • Fluids/Feeds: [Changes to fluids or feeds]                 │
+│ • Investigations: [Labs/imaging to order]                    │
+│ • Monitoring: [What to watch for]                            │
 └──────────────────────────────────────────────────────────────┘
 
                                            Dr. ${userName || '_______________'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-INTELLIGENCE GUIDELINES:
+═══════════════════════════════════════════════════════════════
+            🧠 PROBLEM-ORIENTED INTELLIGENCE RULES
+═══════════════════════════════════════════════════════════════
 
-1. CHIEF CONCERN - Be CONTEXT-AWARE:
-   Analyze the dictation and identify what TYPE of note this is:
-   → Disease update: "RDS Day 3 - on CPAP, weaning FiO2"
-   → Investigation: "Blood culture review - no growth at 48h"
-   → Procedure: "Post surfactant administration"
-   → Counselling: "Pre-discharge counselling with parents"
-   → Routine: "Routine morning rounds - DOL 5"
+★★★ RULE 1: OBJECTIVE vs PLAN - CRITICAL DISTINCTION ★★★
+┌─────────────────────────────────────────────────────────────┐
+│ OBJECTIVE = CURRENT STATE (what baby IS on NOW)            │
+│ PLAN = NEW ORDERS (what you WILL do / change)              │
+├─────────────────────────────────────────────────────────────┤
+│ "Baby is on CPAP" → OBJECTIVE: On CPAP PEEP 6, FiO2 30%    │
+│ "Start ventilator" → PLAN: Intubate and start ventilation  │
+│ "Wean FiO2" → PLAN: Wean FiO2 from 40% to 30%              │
+│ "Continue antibiotics" → PLAN: Continue current antibiotics │
+│ "Started CPAP today" → OBJECTIVE: CPAP (Day 1)             │
+│ "Plan to extubate" → PLAN: Extubate to CPAP if stable      │
+└─────────────────────────────────────────────────────────────┘
 
-2. HISTORY - Tell the STORY:
-   → What is the background? (Birth weight, GA, mode of delivery)
-   → What happened since admission/last note?
-   → What interventions were done and how did baby respond?
-   → Any significant events in the last 24 hours?
+★★★ RULE 2: DISEASE-SPECIFIC EXAMINATION LOGIC ★★★
+The examination MUST be CONSISTENT with the problem mentioned.
+You CANNOT have normal findings in a system affected by disease.
 
-3. CLINICAL IMPRESSION - This is CRITICAL:
-   Write 1-2 sentences that capture:
-   → Overall trajectory (improving/stable/worsening)
-   → Key clinical concerns right now
-   → Expected course in next 24-48 hours
+┌─ SEIZURES / CNS PROBLEMS ───────────────────────────────────┐
+│ ✗ WRONG: "CNS: Normal tone, reflexes" (if seizure mentioned)│
+│ ✓ RIGHT: "CNS: Post-ictal / Abnormal movements / Hypotonia" │
+│ Other systems (CVS, Resp, Abd): Can be WNL if not affected  │
+└─────────────────────────────────────────────────────────────┘
 
-4. RESPIRATORY/OTHER SUPPORT - UNDERSTAND THE CONTEXT:
-   ★ ALWAYS clarify the STATUS of any support mentioned:
-     → "on CPAP" / "CPAP continuing" → Status: Continuing on CPAP
-     → "started on CPAP" / "put on CPAP" / "intubated" → Status: Newly started
-     → "CPAP to HFNC" / "weaning" / "stepped down" → Status: Changed/Weaning
-     → "extubated" / "off CPAP" / "room air" → Status: Support removed
-   ★ DO NOT include respiratory support section if NOT mentioned
-   ★ Same logic for: Ventilator, HFNC, O2 therapy, IV fluids, TPN, phototherapy, etc.
-   ★ Examples:
-     → User says "baby on CPAP" → Write: "CPAP (Continuing) - [settings if mentioned]"
-     → User says "started CPAP today" → Write: "CPAP (Newly initiated) - [settings]"
-     → User says "weaning CPAP" → Write: "CPAP (Weaning) - FiO2 reduced from X to Y"
+┌─ RDS / RESPIRATORY PROBLEMS ────────────────────────────────┐
+│ ✗ WRONG: "Resp: B/L AE+, no distress" (if RDS mentioned)    │
+│ ✓ RIGHT: "Resp: Retractions, grunting, reduced AE"          │
+│   OR if improving: "Resp: Mild retractions, AE improved"    │
+│ Other systems (CNS, CVS, Abd): Can be WNL if not affected   │
+└─────────────────────────────────────────────────────────────┘
 
-5. INTELLIGENT DEFAULTS - SYSTEM-FOCUSED EXAMINATION:
-   ★ If user focuses on ONE SYSTEM (e.g., respiratory), assume OTHER systems are NORMAL:
-     → User mentions only respiratory → Other systems: "WNL"
-     → User mentions only CNS → CVS, Resp, Abdomen: assume normal
-   ★ If user says "vitals stable" or doesn't mention vitals:
-     → Neonate defaults: T:37°C HR:140/min RR:45/min SpO2:98% CRT:<2s
-   ★ If user says "exam normal" without specifics:
-     → General: Active | CNS: Normal tone | CVS: S1S2+ | Resp: B/L AE+ | Abd: Soft, BS+
+┌─ SEPSIS ────────────────────────────────────────────────────┐
+│ Expected findings: Lethargy, poor perfusion, temp instability│
+│ "General: Lethargic, mottled" or "General: Improving, active"│
+└─────────────────────────────────────────────────────────────┘
 
-6. PRONUNCIATION CORRECTION - ALL MEDICAL TERMS:
-   Voice transcription often has errors. INTELLIGENTLY DECODE based on context:
+┌─ NEC ───────────────────────────────────────────────────────┐
+│ ✗ WRONG: "Abdomen: Soft, BS+" (if NEC mentioned)            │
+│ ✓ RIGHT: "Abdomen: Distended, absent BS, tender"            │
+│   OR if recovering: "Abdomen: Less distended, BS returning" │
+└─────────────────────────────────────────────────────────────┘
 
-   MEDICATIONS:
-   → "Vanco mice in" / "Vanko my sin" → Vancomycin
-   → "Amp a sill in" / "Ampi cillin" → Ampicillin
-   → "Jenta mice in" / "Genta my sin" → Gentamicin
-   → "Phenol barb a tone" / "Pheno barbi tone" → Phenobarbitone
-   → "Dopa mean" / "Doppa meen" → Dopamine
-   → "Cafe in" / "Caff een" → Caffeine
-   → "Amino fill in" → Aminophylline
-   → "Metro nida zole" → Metronidazole
-   → "Cef o tax eem" / "Cefo taxime" → Cefotaxime
-   → "Amika sin" → Amikacin
-   → "Mero pen em" → Meropenem
-   → "Pip taz" / "Piper a cillin" → Piperacillin-Tazobactam
-   → "Surface tent" / "Sir fac tant" → Surfactant
-   → "Leve tiara set am" → Levetiracetam
-   → "Midazz o lam" → Midazolam
+┌─ JAUNDICE ──────────────────────────────────────────────────┐
+│ Expected: "Skin: Icteric to [zone]" or "Jaundice reducing"  │
+│ Other systems: Usually WNL                                   │
+└─────────────────────────────────────────────────────────────┘
 
-   DIAGNOSES:
-   → "RD yes" / "R D S" → RDS (Respiratory Distress Syndrome)
-   → "Neck" / "N E C" → NEC (Necrotizing Enterocolitis)
-   → "PD A" / "Pee dee ay" → PDA (Patent Ductus Arteriosus)
-   → "High E" / "H I E" → HIE (Hypoxic Ischemic Encephalopathy)
-   → "Sepsis" / "Sep sis" → Sepsis
-   → "Neo natal" / "Neonatal" → Neonatal
-   → "Hyper bili" / "Jaundice" → Hyperbilirubinemia
-   → "Meck onium" / "Meconium" → Meconium Aspiration
+★★★ RULE 3: SMART DEFAULTS FOR UNMENTIONED ITEMS ★★★
+If user focuses on ONE problem, assume others are stable:
+• Vitals not mentioned → Use age-appropriate normal values
+• System not mentioned AND not related to problem → "WNL"
+• DO NOT fabricate abnormal findings for systems not discussed
 
-   PROCEDURES/EQUIPMENT:
-   → "See pap" / "C pap" → CPAP
-   → "High flow" / "HF NC" → HFNC
-   → "You vee see" / "UVC" → Umbilical Venous Catheter
-   → "You ay see" / "UAC" → Umbilical Arterial Catheter
-   → "Lumber puncture" / "LP" → Lumbar Puncture
-   → "Photo therapy" → Phototherapy
-   → "Exchange transfusion" → Exchange Transfusion
+★★★ RULE 4: PRONUNCIATION CORRECTION ★★★
+Voice transcription has errors. DECODE intelligently:
 
-   EXAMINATION FINDINGS:
-   → "Crep it ations" / "Creps" → Crepitations
-   → "Ron kai" / "Rhonchi" → Rhonchi
-   → "Bi lateral" → Bilateral
-   → "Hepato megaly" → Hepatomegaly
-   → "Tachy cardia" → Tachycardia
-   → "Brady cardia" → Bradycardia
-   → "Hypo tonia" → Hypotonia
+MEDICATIONS:
+"Vanco mice in" → Vancomycin | "Jenta mice in" → Gentamicin
+"Phenol barb a tone" → Phenobarbitone | "Dopa mean" → Dopamine
+"Cafe in" → Caffeine | "Surface tent" → Surfactant
+"Cef o tax eem" → Cefotaxime | "Amika sin" → Amikacin
+"Mero pen em" → Meropenem | "Leve tiara set am" → Levetiracetam
 
-7. CONTEXT-BASED VALIDATION:
-   ★ Only include items RELEVANT to the condition:
-     → Sepsis → Antibiotics expected | RDS → Caffeine, Surfactant expected
-     → Seizures → Anticonvulsants expected | HIE → Phenobarbitone expected
-   ★ IF UNCLEAR: Write "Unable to appreciate" - DO NOT GUESS randomly
-   ★ NEVER invent things not mentioned or implied by the dictation
+DIAGNOSES:
+"RD yes" / "R D S" → RDS | "Neck" / "N E C" → NEC
+"High E" / "H I E" → HIE | "PD A" → PDA
+"Hyper bili" → Hyperbilirubinemia | "Meck onium" → MAS
 
-8. ABBREVIATIONS:
-   B/L=Bilateral | AE=Air Entry | BS=Bowel Sounds | S1S2+=Heart sounds normal
-   CRT=Capillary Refill | GA=Gestational Age | DOL=Day of Life | EBM=Expressed Breast Milk
-   TPN=Total Parenteral Nutrition | WNL=Within Normal Limits | NAD=No Abnormality Detected
+EQUIPMENT:
+"See pap" → CPAP | "High flow" → HFNC | "You vee see" → UVC
 
-CRITICAL RULES:
+FINDINGS:
+"Crep it ations" → Crepitations | "Hepato megaly" → Hepatomegaly
+"Tachy cardia" → Tachycardia | "Hypo tonia" → Hypotonia
+
+★★★ RULE 5: IF UNCLEAR - DO NOT GUESS ★★★
+• Medication name unclear → Write "Unable to appreciate medication name"
+• Finding unclear → Skip it, don't invent
+• NEVER add random medications not mentioned in dictation
+• Only include medications RELEVANT to the condition
+
+★★★ RULE 6: FORMAT RULES ★★★
 ✓ One line per finding - be concise
-✓ Use medical abbreviations
+✓ Use standard abbreviations (B/L, AE, BS, CRT, WNL, NAD)
 ✓ Numbers with units (37°C, 140/min, 2.5kg)
-✓ NO markdown formatting (no **, ##, *)
-✓ CLINICAL IMPRESSION is mandatory - synthesize the case
-✓ Plan should mirror what was dictated
-✓ If a system is NOT mentioned, write "WNL" or skip it - DO NOT fabricate findings
-✓ Respiratory support: MUST indicate status (Continuing/New/Changed/Weaning)
-✓ All medical terms must be spelled correctly - use context to decode pronunciation errors`;
+✓ NO markdown (no **, ##, *)
+✓ CLINICAL IMPRESSION is mandatory - synthesize the case`;
 
     try {
       console.log('🤖 Sending request to Gemini AI...');

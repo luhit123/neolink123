@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, addDoc, onSnapshot, query, where, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Patient, Institution, Unit, UserRole, ReferralDetails, VitalSigns } from '../types';
-import { generateReferralLetter } from '../utils/geminiService';
+import { generateReferralLetter } from '../utils/openaiService';
 
 interface ReferralFormProps {
   patient: Patient;

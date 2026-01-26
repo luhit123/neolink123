@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Patient } from '../../../types';
 import AnalyticsCard from '../AnalyticsCard';
-import { analyzeDeathDiagnosisPatterns } from '../../../services/geminiService';
+import { analyzeDeathDiagnosisPatterns } from '../../../services/openaiService';
 import { haptics } from '../../../utils/haptics';
 
 interface AIInsightsCardProps {

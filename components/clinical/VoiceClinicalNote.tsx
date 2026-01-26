@@ -439,12 +439,23 @@ Date: ${date}                                        Time: ${time}
 
 ┌─ PLAN ───────────────────────────────────────────────────────┐
 │                                                              │
-│ Write exactly what user dictated for the plan.               │
+│ ★★★ CURATE the plan using proper MEDICAL TERMINOLOGY ★★★     │
+│ DO NOT copy user's words verbatim - professionally rephrase! │
+│                                                              │
+│ Transform spoken language into clinical documentation:       │
+│ - "give antibiotics" → "Inj Ceftriaxone IV q12h"             │
+│ - "check blood" → "Send CBC, CRP, Blood culture"             │
+│ - "increase oxygen" → "Titrate FiO2 to maintain SpO2 >92%"   │
+│ - "watch for fever" → "Monitor temperature q4h"              │
+│ - "continue feeds" → "Continue EBM feeds as tolerated"       │
+│ - "start medicine for fits" → "Inj Phenobarbitone loading"   │
+│                                                              │
 │ Group logically: Respiratory → Medications → Fluids/Feeds    │
 │  → Monitoring → Investigations → Follow-up                   │
 │                                                              │
 │ Medications: Inj/Tab/Syp [Drug] [Route] [Frequency]          │
 │ ⚠️ Only include dose if CLEARLY stated by user!              │
+│ ⚠️ Use standard drug names (not brand names when possible)   │
 │                                                              │
 │ ⚠️ If user did not mention any plan, write: "Continue same"  │
 │                                                              │
@@ -605,6 +616,74 @@ CRITICAL RULES:
       const vitals = parseVitals(noteText);
       const examination = parseExamination(noteText);
 
+      // ============================================================================
+      // BACKGROUND: MEDICATION EXTRACTION & AUTO-SAVE
+      // ============================================================================
+      let medicationsForNote: any[] = [];
+
+      if (patient && onUpdatePatient) {
+        try {
+          console.log('🔬 Background: Extracting medications...');
+          const extractionResult = await extractMedicationsFromNote(
+            noteText,
+            {
+              age: patient.age,
+              ageUnit: patient.ageUnit,
+              unit: patient.unit,
+              diagnosis: patient.diagnosis,
+              currentMedications: patient.medications || []
+            }
+          );
+
+          console.log('🔬 Background: Medication Extraction:', extractionResult.totalFound, 'found');
+
+          medicationsForNote = extractionResult.medications.map(em => ({
+            name: em.name,
+            dose: em.dose,
+            route: em.route,
+            frequency: em.frequency,
+            startDate: new Date().toISOString(),
+            isActive: true,
+            addedBy: userName || userEmail || 'Clinical Note',
+            addedAt: new Date().toISOString()
+          }));
+
+          const reconciliationResult = await reconcileMedications(
+            extractionResult.medications,
+            patient.medications || [],
+            extractionResult.stoppedMedications,
+            { addedBy: userName || userEmail || 'System', addedAt: new Date().toISOString() }
+          );
+
+          const hasChanges = reconciliationResult.added.length > 0 ||
+            reconciliationResult.updated.length > 0 ||
+            reconciliationResult.stopped.length > 0;
+
+          if (hasChanges) {
+            const allMedications = getMedicationsAfterReconciliation(reconciliationResult);
+            const updatedPatient = { ...patient, medications: allMedications };
+
+            // Save medications to Firestore
+            if (patient.id) {
+              try {
+                const patientRef = doc(db, 'patients', patient.id);
+                await updateDoc(patientRef, { medications: allMedications });
+                console.log('✅ Background: Medications saved to Firestore');
+              } catch (firestoreError) {
+                console.log('ℹ️ Background: Firestore update skipped:', firestoreError);
+              }
+            }
+
+            // Update patient in memory
+            onUpdatePatient(updatedPatient);
+            console.log(`✅ Background: ${reconciliationResult.added.length} added, ${reconciliationResult.updated.length} updated, ${reconciliationResult.stopped.length} stopped`);
+          }
+        } catch (medError) {
+          console.error('❌ Background: Medication extraction failed:', medError);
+          // Continue without medications - don't fail the whole process
+        }
+      }
+
       // Create progress note
       const progressNote: ProgressNote = {
         id: Date.now().toString(),
@@ -615,7 +694,8 @@ CRITICAL RULES:
         date: new Date().toISOString(),
         addedBy: userName || userEmail || '',
         vitals,
-        examination
+        examination,
+        medications: medicationsForNote.length > 0 ? medicationsForNote : undefined
       };
 
       console.log('📤 Background: Calling onProcessingComplete');
@@ -851,12 +931,23 @@ Date: ${date}                                        Time: ${time}
 
 ┌─ PLAN ───────────────────────────────────────────────────────┐
 │                                                              │
-│ Write exactly what user dictated for the plan.               │
+│ ★★★ CURATE the plan using proper MEDICAL TERMINOLOGY ★★★     │
+│ DO NOT copy user's words verbatim - professionally rephrase! │
+│                                                              │
+│ Transform spoken language into clinical documentation:       │
+│ - "give antibiotics" → "Inj Ceftriaxone IV q12h"             │
+│ - "check blood" → "Send CBC, CRP, Blood culture"             │
+│ - "increase oxygen" → "Titrate FiO2 to maintain SpO2 >92%"   │
+│ - "watch for fever" → "Monitor temperature q4h"              │
+│ - "continue feeds" → "Continue EBM feeds as tolerated"       │
+│ - "start medicine for fits" → "Inj Phenobarbitone loading"   │
+│                                                              │
 │ Group logically: Respiratory → Medications → Fluids/Feeds    │
 │  → Monitoring → Investigations → Follow-up                   │
 │                                                              │
 │ Medications: Inj/Tab/Syp [Drug] [Route] [Frequency]          │
 │ ⚠️ Only include dose if CLEARLY stated by user!              │
+│ ⚠️ Use standard drug names (not brand names when possible)   │
 │                                                              │
 │ ⚠️ If user did not mention any plan, write: "Continue same"  │
 │                                                              │
@@ -1299,12 +1390,23 @@ Date: ${date}                                        Time: ${time}
 
 ┌─ PLAN ───────────────────────────────────────────────────────┐
 │                                                              │
-│ Write exactly what user dictated for the plan.               │
+│ ★★★ CURATE the plan using proper MEDICAL TERMINOLOGY ★★★     │
+│ DO NOT copy user's words verbatim - professionally rephrase! │
+│                                                              │
+│ Transform spoken language into clinical documentation:       │
+│ - "give antibiotics" → "Inj Ceftriaxone IV q12h"             │
+│ - "check blood" → "Send CBC, CRP, Blood culture"             │
+│ - "increase oxygen" → "Titrate FiO2 to maintain SpO2 >92%"   │
+│ - "watch for fever" → "Monitor temperature q4h"              │
+│ - "continue feeds" → "Continue EBM feeds as tolerated"       │
+│ - "start medicine for fits" → "Inj Phenobarbitone loading"   │
+│                                                              │
 │ Group logically: Respiratory → Medications → Fluids/Feeds    │
 │  → Monitoring → Investigations → Follow-up                   │
 │                                                              │
 │ Medications: Inj/Tab/Syp [Drug] [Route] [Frequency]          │
 │ ⚠️ Only include dose if CLEARLY stated by user!              │
+│ ⚠️ Use standard drug names (not brand names when possible)   │
 │                                                              │
 │ ⚠️ If user did not mention any plan, write: "Continue same"  │
 │                                                              │

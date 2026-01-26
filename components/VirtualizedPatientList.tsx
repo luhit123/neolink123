@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { motion } from 'framer-motion';
-import { Patient } from '../types';
+import { Patient, ObservationOutcome } from '../types';
 import SimplePatientRow from './SimplePatientRow';
 import { glassmorphism } from '../theme/glassmorphism';
 
@@ -10,35 +10,22 @@ export interface VirtualizedPatientListProps {
   onView: (patient: Patient) => void;
   onEdit?: (patient: Patient) => void;
   canEdit: boolean;
-  onQuickRecord?: (patient: Patient) => void; // Quick voice recording
-  // Selection mode props (for admin delete)
+  onQuickRecord?: (patient: Patient) => void;
+  onUpdateStatus?: (patient: Patient, status: ObservationOutcome) => void;
+  onGenerateDischarge?: (patient: Patient) => void;
+  onViewDischargeCertificate?: (patient: Patient) => void;
+  onPreviewDischarge?: (patient: Patient) => void;
+  onDownloadDischarge?: (patient: Patient) => void;
+  onDeathCertificate?: (patient: Patient) => void;
+  onStepDown?: (patient: Patient) => void;
+  onRefer?: (patient: Patient) => void;
   selectionMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelection?: (patientId: string) => void;
 }
 
-/**
- * VirtualizedPatientList - High-performance patient list with virtual scrolling
- *
- * Uses react-virtuoso to render only visible patient cards, dramatically improving
- * performance when displaying hundreds of patients.
- *
- * Performance gains:
- * - Initial render: 2000ms → 200ms (10x faster)
- * - Scroll FPS: 30fps → 60fps (smooth)
- * - Memory usage: 150MB → 50MB (3x reduction)
- *
- * @example
- * <VirtualizedPatientList
- *   patients={filteredPatients}
- *   onView={handleViewDetails}
- *   onEdit={handleEdit}
- *   canEdit={true}
- * />
- */
 export const VirtualizedPatientList: React.FC<VirtualizedPatientListProps> = memo(
-  ({ patients, onView, onEdit, canEdit, onQuickRecord, selectionMode, selectedIds, onToggleSelection }) => {
-    // Empty state
+  ({ patients, onView, onEdit, canEdit, onQuickRecord, onUpdateStatus, onGenerateDischarge, onViewDischargeCertificate, onPreviewDischarge, onDownloadDischarge, onDeathCertificate, onStepDown, onRefer, selectionMode, selectedIds, onToggleSelection }) => {
     if (patients.length === 0) {
       return (
         <motion.div
@@ -69,61 +56,37 @@ export const VirtualizedPatientList: React.FC<VirtualizedPatientListProps> = mem
     }
 
     return (
-      <div className="w-full h-full">
-        <Virtuoso
-          data={patients}
-          overscan={3}
-          increaseViewportBy={{
-            top: 200,
-            bottom: 200,
-          }}
-          itemContent={(index, patient) => (
-            <SimplePatientRow
-              key={patient.id}
-              patient={patient}
-              onClick={() => selectionMode && onToggleSelection ? onToggleSelection(patient.id) : onView(patient)}
-              onQuickRecord={onQuickRecord}
-              selectionMode={selectionMode}
-              isSelected={selectedIds?.has(patient.id)}
-              onToggleSelection={onToggleSelection}
-            />
-          )}
-          components={{
-            // Custom scrollbar styling (optional)
-            Scroller: React.forwardRef((props, ref) => (
-              <div
-                {...props}
-                ref={ref}
-                style={{
-                  ...props.style,
-                  // Custom scrollbar
-                  scrollbarWidth: 'thin',
-                  scrollbarColor: 'rgba(148, 163, 184, 0.5) transparent',
-                }}
-                className="scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-transparent"
-              />
-            )),
-          }}
-        />
-
-        {/* Patient count footer */}
-        <div className="sticky bottom-0 left-0 right-0 backdrop-blur-xl bg-white/60 border-t border-white/20 px-4 py-2 text-center">
-          <p className="text-sm text-slate-600 font-medium">
-            Showing {patients.length} patient{patients.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-      </div>
+      <Virtuoso
+        style={{ height: '100%', width: '100%' }}
+        data={patients}
+        overscan={5}
+        increaseViewportBy={{ top: 200, bottom: 200 }}
+        itemContent={(index, patient) => (
+          <SimplePatientRow
+            key={patient.id}
+            patient={patient}
+            onClick={() => selectionMode && onToggleSelection ? onToggleSelection(patient.id) : onView(patient)}
+            onQuickRecord={onQuickRecord}
+            onUpdateStatus={onUpdateStatus}
+            onGenerateDischarge={onGenerateDischarge}
+            onViewDischargeCertificate={onViewDischargeCertificate}
+            onPreviewDischarge={onPreviewDischarge}
+            onDownloadDischarge={onDownloadDischarge}
+            onDeathCertificate={onDeathCertificate}
+            onStepDown={onStepDown}
+            onRefer={onRefer}
+            selectionMode={selectionMode}
+            isSelected={selectedIds?.has(patient.id)}
+            onToggleSelection={onToggleSelection}
+          />
+        )}
+      />
     );
   }
 );
 
 VirtualizedPatientList.displayName = 'VirtualizedPatientList';
 
-/**
- * GridVirtualizedPatientList - Grid layout for larger screens
- *
- * Displays patients in a responsive grid (2-3 columns) with virtual scrolling.
- */
 export const GridVirtualizedPatientList: React.FC<VirtualizedPatientListProps> = memo(
   ({ patients, onView, onEdit, canEdit }) => {
     const itemsPerRow = window.innerWidth >= 1024 ? 3 : window.innerWidth >= 768 ? 2 : 1;
@@ -158,19 +121,18 @@ export const GridVirtualizedPatientList: React.FC<VirtualizedPatientListProps> =
     }
 
     return (
-      <div className="w-full h-full">
-        <Virtuoso
-          data={patients}
-          overscan={2}
-          itemContent={(index, patient) => (
-            <SimplePatientRow
-              key={patient.id}
-              patient={patient}
-              onClick={() => onView(patient)}
-            />
-          )}
-        />
-      </div>
+      <Virtuoso
+        style={{ height: '100%', width: '100%' }}
+        data={patients}
+        overscan={2}
+        itemContent={(index, patient) => (
+          <SimplePatientRow
+            key={patient.id}
+            patient={patient}
+            onClick={() => onView(patient)}
+          />
+        )}
+      />
     );
   }
 );

@@ -1,26 +1,32 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { ProgressNote, Patient } from '../types';
 
+export type SaveItemType = 'note' | 'discharge' | 'status';
+
 export interface SavingNote {
   id: string;
   patientId: string;
   patientName: string;
   status: 'processing' | 'saving' | 'saved' | 'error';
+  type: SaveItemType; // 'note' for clinical notes, 'discharge' for discharge summary, 'status' for status updates
   note?: ProgressNote; // Optional during processing phase
   timestamp: Date;
   errorMessage?: string;
+  statusChange?: string; // For status updates (e.g., "Discharged", "Step Down")
 }
 
 interface BackgroundSaveContextType {
   savingNotes: SavingNote[];
   addSavingNote: (patientId: string, patientName: string, note: ProgressNote) => string;
-  startProcessing: (patientId: string, patientName: string) => string; // For immediate indicator
+  startProcessing: (patientId: string, patientName: string, type?: SaveItemType, statusChange?: string) => string; // For immediate indicator
   updateNoteStatus: (id: string, status: 'processing' | 'saving' | 'saved' | 'error', errorMessage?: string) => void;
   updateNoteContent: (id: string, note: ProgressNote) => void; // Add note content after processing
   removeSavingNote: (id: string) => void;
   clearAllSaved: () => void;
   onViewPatient?: (patientId: string, noteId?: string) => void; // Include noteId for "click to view"
   setOnViewPatient: (callback: ((patientId: string, noteId?: string) => void) | undefined) => void;
+  onViewDischarge?: (patientId: string) => void; // For viewing discharge certificate
+  setOnViewDischarge: (callback: ((patientId: string) => void) | undefined) => void;
 }
 
 const BackgroundSaveContext = createContext<BackgroundSaveContextType | undefined>(undefined);
@@ -28,15 +34,18 @@ const BackgroundSaveContext = createContext<BackgroundSaveContextType | undefine
 export const BackgroundSaveProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [savingNotes, setSavingNotes] = useState<SavingNote[]>([]);
   const [onViewPatient, setOnViewPatientCallback] = useState<((patientId: string, noteId?: string) => void) | undefined>();
+  const [onViewDischarge, setOnViewDischargeCallback] = useState<((patientId: string) => void) | undefined>();
 
   // Start processing immediately (before Gemini completes) - shows indicator right away
-  const startProcessing = useCallback((patientId: string, patientName: string): string => {
+  const startProcessing = useCallback((patientId: string, patientName: string, type: SaveItemType = 'note', statusChange?: string): string => {
     const id = `save-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const savingNote: SavingNote = {
       id,
       patientId,
       patientName,
-      status: 'processing', // Shows "Processing clinical note..." immediately
+      status: 'processing',
+      type,
+      statusChange,
       timestamp: new Date()
     };
     setSavingNotes(prev => [...prev, savingNote]);
@@ -50,11 +59,16 @@ export const BackgroundSaveProvider: React.FC<{ children: ReactNode }> = ({ chil
       patientId,
       patientName,
       status: 'saving',
+      type: 'note',
       note,
       timestamp: new Date()
     };
     setSavingNotes(prev => [...prev, savingNote]);
     return id;
+  }, []);
+
+  const setOnViewDischarge = useCallback((callback: ((patientId: string) => void) | undefined) => {
+    setOnViewDischargeCallback(() => callback);
   }, []);
 
   // Add note content after Gemini processing completes
@@ -99,7 +113,9 @@ export const BackgroundSaveProvider: React.FC<{ children: ReactNode }> = ({ chil
       removeSavingNote,
       clearAllSaved,
       onViewPatient,
-      setOnViewPatient
+      setOnViewPatient,
+      onViewDischarge,
+      setOnViewDischarge
     }}>
       {children}
     </BackgroundSaveContext.Provider>

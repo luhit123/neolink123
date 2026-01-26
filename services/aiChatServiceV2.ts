@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Patient } from '../types';
 import { AppContext, ChatMessage } from '../types/chat';
 import { analyzeQueryIntent, retrieveRelevantData } from './smartDataRetrieval';
-import { answerClinicalQuestion } from './geminiService';
+import { answerClinicalQuestion } from './openaiService';
 import { getContextSummary } from './chatDataAggregator';
 
 const getApiKey = () => {

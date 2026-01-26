@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Patient, ProgressNote } from '../types';
 import { XIcon, WandIcon, ClipboardDocumentListIcon } from './common/Icons';
 import ClinicalNotesNavigator from './ClinicalNotesNavigator';
-import { generatePatientSummary } from '../services/geminiService';
+import { generatePatientSummary } from '../services/openaiService';
 import ProgressNoteForm from './ProgressNoteFormEnhanced';
 import MedicationManagement from './MedicationManagement';
 import { useBackgroundSave } from '../contexts/BackgroundSaveContext';

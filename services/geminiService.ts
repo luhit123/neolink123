@@ -19,6 +19,76 @@ const getApiKey = () => {
 
 const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
+// OpenAI Configuration (fallback)
+const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
+
+// Helper function to call OpenAI GPT
+const callOpenAI = async (prompt: string, systemPrompt?: string): Promise<string> => {
+  if (!OPENAI_API_KEY) {
+    throw new Error('OpenAI API key not configured');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: [
+        ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 1000
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error?.message || 'OpenAI API request failed');
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || '';
+};
+
+// Smart AI call with automatic fallback
+const generateWithFallback = async (
+  prompt: string,
+  systemPrompt?: string
+): Promise<string> => {
+  // Try Gemini first
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: prompt,
+    });
+    return response.text || '';
+  } catch (geminiError: any) {
+    // Check if it's a rate limit error (429)
+    const isRateLimit = geminiError?.message?.includes('429') ||
+                        geminiError?.message?.includes('RESOURCE_EXHAUSTED') ||
+                        geminiError?.message?.includes('exhausted');
+
+    if (isRateLimit && OPENAI_API_KEY) {
+      console.warn('⚠️ Gemini rate limited, switching to OpenAI GPT...');
+      try {
+        const result = await callOpenAI(prompt, systemPrompt);
+        console.log('✅ OpenAI fallback successful');
+        return result;
+      } catch (openAIError) {
+        console.error('❌ OpenAI fallback also failed:', openAIError);
+        throw openAIError;
+      }
+    }
+
+    // Re-throw if not a rate limit error or no OpenAI key
+    throw geminiError;
+  }
+};
+
 // ============================================================================
 // CACHING INFRASTRUCTURE
 // ============================================================================
@@ -1073,6 +1143,19 @@ export const explainChartData = async (
   `;
 
   try {
+    // Use OpenAI GPT as primary
+    if (OPENAI_API_KEY) {
+      const openAIResult = await callOpenAI(
+        prompt,
+        'You are NeolinkAI, an expert healthcare analytics assistant for NICU/PICU. Provide concise, clinically relevant insights. Do not use markdown formatting.'
+      );
+      const result = openAIResult + AI_DISCLAIMER;
+      setCachedResult(cacheKey, result);
+      console.log("✅ Chart explanation generated using OpenAI GPT");
+      return result;
+    }
+
+    // Fallback to Gemini if OpenAI not configured
     const response = await ai.models.generateContent({
       model: 'gemini-2.0-flash',
       contents: prompt,

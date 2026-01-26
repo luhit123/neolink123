@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { VitalSigns, ClinicalExamination, Medication } from '../types';
-import { calculateMedicationDosage } from './geminiService';
+import { calculateMedicationDosage } from './openaiService';
 
 /**
  * AI Suggestion Types

@@ -22,7 +22,7 @@ import {
   predictRisk,
   checkDrugInteractions as geminiCheckDrugInteractions,
   generateDifferentialDiagnosis as geminiDifferentialDiagnosis
-} from './geminiService';
+} from './openaiService';
 
 // Provider preference
 type AIProvider = 'medgemma' | 'gemini' | 'auto';

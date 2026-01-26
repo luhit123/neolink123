@@ -152,3 +152,107 @@ export function getCurrentAge(dateOfBirth: string | undefined, fallbackAge?: num
     ageUnit: fallbackUnit || AgeUnit.Days
   };
 }
+
+/**
+ * Calculate Expected Date of Delivery (EDD) from Last Menstrual Period (LMP)
+ * Using Naegele's Rule: LMP + 280 days (40 weeks)
+ * Adjusted for cycle length if different from 28 days
+ */
+export function calculateEDDFromLMP(lmp: string, cycleLength: number = 28): string {
+  if (!lmp) return '';
+
+  const lmpDate = new Date(lmp);
+  // Standard: LMP + 280 days, adjusted for cycle length
+  // Formula: LMP + 280 + (cycleLength - 28)
+  const daysToAdd = 280 + (cycleLength - 28);
+  const eddDate = new Date(lmpDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+
+  return eddDate.toISOString();
+}
+
+/**
+ * Calculate Gestational Age at a given date from LMP
+ * Returns weeks and days (standard obstetric format)
+ */
+export function calculateGestationalAge(lmp: string, targetDate: string): {
+  weeks: number;
+  days: number;
+  totalDays: number;
+  category: 'Extremely Preterm' | 'Very Preterm' | 'Moderate to Late Preterm' | 'Early Term' | 'Full Term' | 'Late Term' | 'Post Term';
+  displayString: string;
+} {
+  if (!lmp || !targetDate) {
+    return { weeks: 0, days: 0, totalDays: 0, category: 'Full Term', displayString: 'Unknown' };
+  }
+
+  const lmpDate = new Date(lmp);
+  const target = new Date(targetDate);
+
+  // Calculate difference in days
+  const diffMs = target.getTime() - lmpDate.getTime();
+  const totalDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  // Calculate completed weeks and remaining days
+  const weeks = Math.floor(totalDays / 7);
+  const days = totalDays % 7;
+
+  // Determine gestational age category based on WHO classification
+  let category: 'Extremely Preterm' | 'Very Preterm' | 'Moderate to Late Preterm' | 'Early Term' | 'Full Term' | 'Late Term' | 'Post Term';
+
+  if (weeks < 28) {
+    category = 'Extremely Preterm';
+  } else if (weeks < 32) {
+    category = 'Very Preterm';
+  } else if (weeks < 37) {
+    category = 'Moderate to Late Preterm';
+  } else if (weeks < 39) {
+    category = 'Early Term';
+  } else if (weeks < 41) {
+    category = 'Full Term';
+  } else if (weeks < 42) {
+    category = 'Late Term';
+  } else {
+    category = 'Post Term';
+  }
+
+  const displayString = `${weeks} weeks ${days} days`;
+
+  return { weeks, days, totalDays, category, displayString };
+}
+
+/**
+ * Get gestational age category color for UI display
+ */
+export function getGestationalAgeCategoryColor(category: string): {
+  bg: string;
+  text: string;
+  border: string;
+} {
+  switch (category) {
+    case 'Extremely Preterm':
+      return { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400' };
+    case 'Very Preterm':
+      return { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-400' };
+    case 'Moderate to Late Preterm':
+      return { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-400' };
+    case 'Early Term':
+      return { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-400' };
+    case 'Full Term':
+      return { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400' };
+    case 'Late Term':
+      return { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-400' };
+    case 'Post Term':
+      return { bg: 'bg-pink-100', text: 'text-pink-800', border: 'border-pink-400' };
+    default:
+      return { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-400' };
+  }
+}
+
+/**
+ * Format date for display (DD/MM/YYYY)
+ */
+export function formatDateForDisplay(dateString: string): string {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Patient } from '../types';
-import { generateMonthlyReport, generateMortalityReview } from '../services/geminiService';
+import { generateMonthlyReport, generateMortalityReview } from '../services/openaiService';
 
 interface AIReportGeneratorProps {
   patients: Patient[];

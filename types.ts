@@ -54,6 +54,85 @@ export enum ModeOfDelivery {
   VBAC = "VBAC (Vaginal Birth After Cesarean)"
 }
 
+export enum BloodGroup {
+  APositive = "A+",
+  ANegative = "A-",
+  BPositive = "B+",
+  BNegative = "B-",
+  ABPositive = "AB+",
+  ABNegative = "AB-",
+  OPositive = "O+",
+  ONegative = "O-",
+  Unknown = "Unknown"
+}
+
+export enum MaternalRiskFactor {
+  GDM = "Gestational Diabetes (GDM)",
+  PIH = "Pregnancy Induced Hypertension (PIH)",
+  Preeclampsia = "Pre-eclampsia",
+  Eclampsia = "Eclampsia",
+  Hypothyroidism = "Hypothyroidism",
+  Hyperthyroidism = "Hyperthyroidism",
+  PROM = "Premature Rupture of Membranes (PROM)",
+  PPROM = "Preterm PROM (PPROM)",
+  Oligohydramnios = "Oligohydramnios",
+  Polyhydramnios = "Polyhydramnios",
+  APH = "Antepartum Hemorrhage (APH)",
+  Chorioamnionitis = "Chorioamnionitis / Maternal Fever",
+  MultipleGestation = "Multiple Gestation (Twins/Triplets)",
+  Anemia = "Maternal Anemia",
+  UTI = "Urinary Tract Infection",
+  HeartDisease = "Heart Disease",
+  RhNegative = "Rh Negative Mother",
+  PreviousCSection = "Previous C-Section",
+  BadObstetricHistory = "Bad Obstetric History (BOH)"
+}
+
+export interface MaternalHistory {
+  // Obstetric Formula (G_P_A_L)
+  gravida?: number; // Total pregnancies
+  para?: number; // Deliveries after 20 weeks
+  abortion?: number; // Pregnancies lost before 20 weeks
+  living?: number; // Currently living children
+
+  // LMP & EDD (Critical for Gestational Age)
+  lmp?: string; // Last Menstrual Period - ISO date string
+  edd?: string; // Expected Date of Delivery - ISO date string (auto-calculated or manual)
+  menstrualCycleLength?: number; // Cycle length in days (default 28)
+
+  // Maternal Blood Group
+  bloodGroup?: BloodGroup;
+
+  // Maternal Age
+  maternalAge?: number; // Mother's age in years
+
+  // Antenatal Care
+  ancReceived?: boolean; // Whether ANC was received
+  ancVisits?: number; // Number of ANC visits
+  ancPlace?: string; // Where ANC was received
+
+  // Antenatal Steroid Coverage (Critical for preterm)
+  antenatalSteroidsGiven?: boolean;
+  steroidDoses?: number; // Number of doses (typically 1-2)
+  lastSteroidToDeliveryHours?: number; // Hours between last dose and delivery
+
+  // Risk Factors (multiple can be selected)
+  riskFactors?: MaternalRiskFactor[];
+  otherRiskFactors?: string; // Free text for other conditions
+
+  // Intrapartum Risk Factors
+  prolongedRupture?: boolean; // PROM > 18 hours
+  ruptureToDeliveryHours?: number; // Hours from rupture to delivery
+  meconiumStainedLiquor?: boolean; // MSL present
+  fetalDistress?: boolean; // Signs of fetal distress
+  maternalFever?: boolean; // Fever during labor (>100.4°F / 38°C)
+
+  // Previous Pregnancy Outcomes
+  previousNICUAdmissions?: number;
+  previousNeonatalDeaths?: number;
+  previousStillbirths?: number;
+}
+
 export interface AdmissionIndication {
   id: string;
   name: string;
@@ -218,6 +297,14 @@ export interface Patient {
   birthWeight?: number; // Birth Weight in Kg
   modeOfDelivery?: ModeOfDelivery; // How the baby was delivered
 
+  // Gestational Age at Birth (calculated from LMP and DOB)
+  gestationalAgeWeeks?: number; // Completed weeks at birth
+  gestationalAgeDays?: number; // Remaining days after completed weeks
+  gestationalAgeCategory?: 'Extremely Preterm' | 'Very Preterm' | 'Moderate to Late Preterm' | 'Early Term' | 'Full Term' | 'Late Term' | 'Post Term';
+
+  // Maternal History
+  maternalHistory?: MaternalHistory;
+
   // Admission Details
   admissionDateTime?: string; // ISO string with time
   ageOnAdmission?: number; // Age on admission
@@ -243,12 +330,18 @@ export interface Patient {
   // PICU Step Down functionality
   stepDownDate?: string; // ISO string when stepped down
   stepDownFrom?: Unit; // Which unit they were stepped down from
+  stepDownLocation?: string; // Where the patient was stepped down to (e.g., Mother Side, Ward)
   isStepDown?: boolean; // Currently in step down status
   readmissionFromStepDown?: boolean; // Was readmitted from step down
   finalDischargeDate?: string; // For step down patients who are finally discharged
   // Referral information
   referralReason?: string; // Reason for referring patient to another facility
   referredTo?: string; // Name of facility patient was referred to
+
+  // Saved Discharge Summary (stored when discharge is finalized)
+  savedDischargeSummary?: DischargeSummary; // The complete discharge summary saved to patient record
+  dischargeSavedAt?: string; // ISO string when discharge was saved
+  dischargeSavedBy?: string; // Name of who saved the discharge
 
   // Death Information (Mandatory when outcome is Deceased)
   diagnosisAtDeath?: string; // Full diagnosis written by doctor at time of death
@@ -451,4 +544,253 @@ export interface Referral {
   lastUpdatedAt: string;
   isRead?: boolean; // Has receiving institution seen this referral
   priority?: 'Low' | 'Medium' | 'High' | 'Critical';
+}
+
+// ==================== DISCHARGE SUMMARY TYPES ====================
+
+export enum DischargeType {
+  Normal = "Normal Discharge",
+  DOR = "Discharge on Request",
+  DAMA = "Discharge Against Medical Advice",
+  LAMA = "Left Against Medical Advice",
+  Referred = "Referred to Higher Center",
+  Expired = "Expired"
+}
+
+export enum FeedingType {
+  ExclusiveBreastfeeding = "Exclusive Breastfeeding",
+  ExpressedBreastMilk = "Expressed Breast Milk (EBM)",
+  Formula = "Formula Feeding",
+  Mixed = "Mixed Feeding",
+  NGTube = "NG Tube Feeding",
+  OGTube = "OG Tube Feeding",
+  Spoon = "Spoon Feeding",
+  Paladai = "Paladai/Katori Feeding"
+}
+
+export enum VaccinationType {
+  BCG = "BCG",
+  OPV0 = "OPV-0 (Birth dose)",
+  HepB0 = "Hepatitis B-0 (Birth dose)",
+  VitaminK = "Vitamin K Injection"
+}
+
+export enum ScreeningStatus {
+  Passed = "Passed",
+  Referred = "Referred for further evaluation",
+  NotDone = "Not Done",
+  Pending = "Pending"
+}
+
+export interface DischargeScreenings {
+  // Hearing Screen
+  hearingScreenDone?: boolean;
+  hearingScreenResult?: ScreeningStatus;
+  hearingScreenDate?: string;
+  hearingScreenNotes?: string;
+
+  // Metabolic/Newborn Screen
+  metabolicScreenDone?: boolean;
+  metabolicScreenResult?: ScreeningStatus;
+  metabolicScreenDate?: string;
+  metabolicScreenNotes?: string;
+
+  // ROP Screening (Retinopathy of Prematurity)
+  ropScreeningDone?: boolean;
+  ropScreeningResult?: string;
+  ropScreeningDate?: string;
+  nextRopScreeningDate?: string;
+
+  // Car Seat Test (for preterm)
+  carSeatTestDone?: boolean;
+  carSeatTestResult?: ScreeningStatus;
+}
+
+export interface DischargeVitals {
+  weight: number; // in kg
+  length?: number; // in cm
+  headCircumference?: number; // in cm
+  temperature?: string;
+  heartRate?: string;
+  respiratoryRate?: string;
+  spo2?: string;
+  bloodPressure?: string;
+}
+
+export interface DischargeFeeding {
+  feedingType: FeedingType;
+  feedingVolume?: string; // e.g., "60ml"
+  feedingFrequency?: string; // e.g., "3 hourly"
+  calories?: string; // e.g., "24 kcal/oz"
+  specialInstructions?: string;
+}
+
+export interface DischargeMedication {
+  name: string;
+  frequency: string;
+  duration?: string; // e.g., "7 days", "until follow-up", "Up to 1 year of age"
+  instructions?: string;
+}
+
+// NHM Follow-up Schedule for NICU/SNCU discharged babies
+export interface NHMFollowUpSchedule {
+  // Home visits by ASHA (HBNC Program)
+  homeVisits: {
+    day3: boolean;
+    day7: boolean;
+    day14: boolean;
+    day21: boolean;
+    day28: boolean;
+    day42: boolean;
+  };
+  // Facility follow-up visits
+  facilityVisits: {
+    month3: boolean;
+    month6: boolean;
+    month9: boolean;
+    year1: boolean;
+  };
+  // Additional notes
+  specialFollowUp?: string; // For ROP, hearing, etc.
+  additionalInstructions?: string;
+}
+
+// Legacy - kept for backward compatibility
+export interface FollowUpAppointment {
+  specialty: string;
+  doctorName?: string;
+  hospital?: string;
+  date?: string;
+  instructions?: string;
+}
+
+export interface DischargeSummary {
+  // Patient Identification
+  patientId: string;
+  patientName: string;
+  ntid?: string;
+  hospitalName: string;
+  hospitalAddress?: string;
+
+  // Patient Address
+  patientAddress?: string;
+  patientVillage?: string;
+  patientDistrict?: string;
+  patientState?: string;
+  patientPinCode?: string;
+
+  // Admission Type
+  admissionType?: 'Inborn' | 'Outborn';
+
+  // Discharge Type
+  dischargeType?: DischargeType;
+  damaReason?: string; // Reason given by patient party for DAMA/DOR
+  damaWitnessName?: string; // Witness for DAMA
+  damaAcknowledgement?: boolean; // Patient party acknowledged risks
+
+  // Admission & Discharge Dates
+  admissionDate: string;
+  admissionTime?: string;
+  dischargeDate: string;
+  dischargeTime?: string;
+  totalStayDays: number;
+
+  // Demographics
+  dateOfBirth?: string;
+  gender: string;
+  birthWeight?: number;
+  gestationalAge?: string; // e.g., "32+4 weeks"
+  gestationalAgeCategory?: string;
+
+  // Maternal History (for NICU/SNCU)
+  motherName?: string;
+  fatherName?: string;
+  maternalAge?: number;
+  bloodGroup?: string;
+  modeOfDelivery?: string;
+  placeOfDelivery?: string;
+  apgarScore?: string; // e.g., "7/9"
+  resuscitationRequired?: boolean;
+  resuscitationDetails?: string;
+
+  // Diagnoses
+  primaryDiagnosis: string; // Initial/admission diagnosis
+  finalDiagnosis?: string; // AI-generated or manually entered final diagnosis at discharge
+  secondaryDiagnoses?: string[];
+  icd10Codes?: string[];
+
+  // Condition at Admission
+  conditionAtAdmission?: string;
+  indicationsForAdmission?: string[];
+
+  // Clinical Course Summary
+  clinicalCourseSummary: string; // AI-generated or manual
+  significantEvents?: string[];
+  proceduresPerformed?: string[];
+  investigationsResults?: string;
+
+  // Discharge Vitals & Anthropometry
+  dischargeVitals: DischargeVitals;
+  weightGain?: number; // Total weight gain during stay
+
+  // Condition at Discharge
+  conditionAtDischarge: 'Stable' | 'Improved' | 'Guarded' | 'Critical';
+  generalCondition?: string;
+  activity?: string; // e.g., "Active, Alert"
+  suckingReflex?: 'Good' | 'Fair' | 'Poor';
+
+  // Feeding at Discharge
+  dischargeFeeding: DischargeFeeding;
+
+  // Treatment Received During Hospital Stay
+  treatmentReceived?: string[]; // List of treatments/medications given during stay
+
+  // Follow-up Medications (to take home)
+  dischargeMedications: DischargeMedication[];
+
+  // Vaccinations
+  vaccinationsGiven: VaccinationType[];
+  vaccinationDates?: Record<VaccinationType, string>;
+  pendingVaccinations?: string[];
+
+  // Screenings
+  screenings: DischargeScreenings;
+
+  // Follow-up Plan (NHM Schedule)
+  nhmFollowUpSchedule?: NHMFollowUpSchedule;
+  followUpAppointments?: FollowUpAppointment[]; // Legacy - for specialist referrals
+  nextImmunizationDue?: string;
+  nextImmunizationDate?: string;
+
+  // Parent Education & Counseling
+  parentEducationTopics?: string[];
+  warningSignsCounseled?: boolean;
+  feedingDemonstrated?: boolean;
+  medicationDemonstrated?: boolean;
+  emergencyContactProvided?: boolean;
+
+  // Equipment Needs
+  homeEquipment?: string[]; // e.g., ["Oxygen concentrator", "Pulse oximeter"]
+  equipmentInstructions?: string;
+
+  // Special Instructions
+  dischargeAdvice: string[];
+  dietaryRestrictions?: string;
+  activityRestrictions?: string;
+  warningSignsToWatch: string[];
+
+  // Contact Information
+  emergencyContact?: string;
+  hospitalHelpline?: string;
+  primaryCarePhysician?: string;
+
+  // Document Metadata
+  preparedBy: string;
+  preparedByRole: string;
+  verifiedBy?: string;
+  verifiedByRole?: string;
+  generatedAt: string;
+
+  // For PICU specific
+  isPICU?: boolean;
 }

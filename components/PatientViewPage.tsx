@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Patient, ProgressNote } from '../types';
-import { generatePatientSummary } from '../services/geminiService';
+import { Patient, ProgressNote, Unit, MaternalRiskFactor } from '../types';
+import { generatePatientSummary } from '../services/openaiService';
 import ClinicalNotesNavigator from './ClinicalNotesNavigator';
 import ProgressNoteForm from './ProgressNoteFormEnhanced';
 import MedicationManagement from './MedicationManagement';
+import DischargeSummaryModal from './DischargeSummaryModal';
 import { getFormattedAge } from '../utils/ageCalculator';
 import { useBackgroundSave } from '../contexts/BackgroundSaveContext';
 
@@ -31,6 +32,7 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'meds' | 'ai'>('overview');
   const [localPatient, setLocalPatient] = useState(patient);
   const [showNoteForm, setShowNoteForm] = useState(false);
+  const [showDischargeSummary, setShowDischargeSummary] = useState(false);
   const [summary, setSummary] = useState('');
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -160,6 +162,16 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${getOutcomeBadge(localPatient.outcome)}`}>
               {localPatient.outcome}
             </span>
+            {/* Discharge Summary Button - Only show for discharged patients or any patient for planning */}
+            <button
+              onClick={() => setShowDischargeSummary(true)}
+              className="p-1.5 hover:bg-emerald-100 rounded-lg group relative"
+              title="Generate Discharge Summary"
+            >
+              <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </button>
             {canEdit && (
               <button onClick={() => onEdit?.(localPatient)} className="p-1.5 hover:bg-slate-100 rounded-lg">
                 <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,6 +245,105 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
                 <DataItem label="NTID" value={localPatient.ntid} mono highlight />
               </div>
             </div>
+
+            {/* Maternal History - Only for NICU/SNCU */}
+            {(localPatient.unit === Unit.NICU || localPatient.unit === Unit.SNCU) && localPatient.maternalHistory && (
+              <div className="bg-white rounded-xl p-3 shadow-sm border border-pink-200">
+                <SectionTitle icon="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" title="Maternal History" color="pink" />
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2 mt-2">
+                  {/* LMP, EDD, Gestational Age */}
+                  <DataItem label="LMP" value={formatDate(localPatient.maternalHistory.lmp)} />
+                  <DataItem label="EDD" value={formatDate(localPatient.maternalHistory.edd)} />
+                  <DataItem
+                    label="Gestational Age at Birth"
+                    value={localPatient.gestationalAgeWeeks !== undefined && localPatient.gestationalAgeDays !== undefined
+                      ? `${localPatient.gestationalAgeWeeks}w ${localPatient.gestationalAgeDays}d`
+                      : null}
+                    highlight
+                  />
+                  {localPatient.gestationalAgeCategory && (
+                    <DataItem label="GA Category" value={localPatient.gestationalAgeCategory} />
+                  )}
+
+                  {/* Obstetric History */}
+                  {(localPatient.maternalHistory.gravida !== undefined || localPatient.maternalHistory.para !== undefined) && (
+                    <DataItem
+                      label="Obstetric History"
+                      value={`G${localPatient.maternalHistory.gravida || 0} P${localPatient.maternalHistory.para || 0} A${localPatient.maternalHistory.abortion || 0} L${localPatient.maternalHistory.living || 0}`}
+                    />
+                  )}
+
+                  {/* Maternal Details */}
+                  <DataItem label="Maternal Age" value={localPatient.maternalHistory.maternalAge ? `${localPatient.maternalHistory.maternalAge} years` : null} />
+                  <DataItem label="Blood Group" value={localPatient.maternalHistory.bloodGroup} />
+
+                  {/* ANC Details */}
+                  <DataItem label="ANC Received" value={localPatient.maternalHistory.ancReceived !== undefined ? (localPatient.maternalHistory.ancReceived ? 'Yes' : 'No') : null} />
+                  <DataItem label="ANC Visits" value={localPatient.maternalHistory.ancVisits} />
+                  <DataItem label="ANC Place" value={localPatient.maternalHistory.ancPlace} />
+
+                  {/* Steroid Coverage */}
+                  <DataItem
+                    label="Antenatal Steroids"
+                    value={localPatient.maternalHistory.antenatalSteroidsGiven !== undefined
+                      ? (localPatient.maternalHistory.antenatalSteroidsGiven
+                        ? `Yes${localPatient.maternalHistory.steroidDoses ? ` (${localPatient.maternalHistory.steroidDoses} doses)` : ''}`
+                        : 'No')
+                      : null}
+                  />
+                  {localPatient.maternalHistory.lastSteroidToDeliveryHours && (
+                    <DataItem label="Steroid-Delivery Interval" value={`${localPatient.maternalHistory.lastSteroidToDeliveryHours} hrs`} />
+                  )}
+
+                  {/* Intrapartum Risk Factors */}
+                  {localPatient.maternalHistory.prolongedRupture && (
+                    <DataItem label="PROM" value={localPatient.maternalHistory.ruptureToDeliveryHours ? `${localPatient.maternalHistory.ruptureToDeliveryHours} hrs` : 'Yes'} />
+                  )}
+                  {localPatient.maternalHistory.meconiumStainedLiquor && (
+                    <DataItem label="Meconium Stained Liquor" value="Yes" />
+                  )}
+                  {localPatient.maternalHistory.fetalDistress && (
+                    <DataItem label="Fetal Distress" value="Yes" />
+                  )}
+                  {localPatient.maternalHistory.maternalFever && (
+                    <DataItem label="Maternal Fever" value="Yes" />
+                  )}
+
+                  {/* Previous Outcomes */}
+                  {localPatient.maternalHistory.previousNICUAdmissions !== undefined && localPatient.maternalHistory.previousNICUAdmissions > 0 && (
+                    <DataItem label="Previous NICU Admissions" value={localPatient.maternalHistory.previousNICUAdmissions} />
+                  )}
+                  {localPatient.maternalHistory.previousNeonatalDeaths !== undefined && localPatient.maternalHistory.previousNeonatalDeaths > 0 && (
+                    <DataItem label="Previous Neonatal Deaths" value={localPatient.maternalHistory.previousNeonatalDeaths} />
+                  )}
+                  {localPatient.maternalHistory.previousStillbirths !== undefined && localPatient.maternalHistory.previousStillbirths > 0 && (
+                    <DataItem label="Previous Stillbirths" value={localPatient.maternalHistory.previousStillbirths} />
+                  )}
+                </div>
+
+                {/* Risk Factors - displayed as tags */}
+                {localPatient.maternalHistory.riskFactors && localPatient.maternalHistory.riskFactors.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-pink-100">
+                    <span className="text-[10px] text-pink-600 font-medium uppercase">Risk Factors</span>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {localPatient.maternalHistory.riskFactors.map((rf, i) => (
+                        <span key={i} className="px-2 py-0.5 bg-pink-50 text-pink-700 text-xs rounded-lg border border-pink-200">
+                          {rf}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Other Risk Factors */}
+                {localPatient.maternalHistory.otherRiskFactors && (
+                  <div className="mt-2 pt-2 border-t border-pink-100">
+                    <span className="text-[10px] text-pink-600 font-medium uppercase">Other Risk Factors</span>
+                    <p className="text-xs text-slate-700 mt-0.5">{localPatient.maternalHistory.otherRiskFactors}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Family & Contact */}
             <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-200">
@@ -511,6 +622,17 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* Discharge Summary Modal */}
+      {showDischargeSummary && (
+        <DischargeSummaryModal
+          patient={localPatient}
+          onClose={() => setShowDischargeSummary(false)}
+          userName={userName || userEmail}
+          userRole={userRole || 'Doctor'}
+          onPatientUpdate={onPatientUpdate}
+        />
+      )}
     </div>
   );
 };
@@ -523,6 +645,7 @@ const SectionTitle: React.FC<{ icon: string; title: string; color?: string }> = 
     purple: 'text-purple-600',
     amber: 'text-amber-600',
     slate: 'text-slate-600',
+    pink: 'text-pink-600',
   };
 
   return (

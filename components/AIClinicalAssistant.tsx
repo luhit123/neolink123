@@ -16,7 +16,7 @@ import {
   explainDiagnosis,
   suggestClinicalGuidelines,
   answerClinicalQuestion
-} from '../services/geminiService';
+} from '../services/openaiService';
 import { SparklesIcon, XIcon, ChatBubbleLeftRightIcon, ClipboardDocumentCheckIcon, ShieldExclamationIcon } from './common/Icons';
 
 interface AIClinicalAssistantProps {

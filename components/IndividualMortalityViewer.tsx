@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Patient } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { analyzeIndividualMortality } from '../services/geminiService';
+import { analyzeIndividualMortality } from '../services/openaiService';
 import { generateIndividualMortalityPDF } from '../services/mortalityPdfService';
 
 interface IndividualMortalityViewerProps {

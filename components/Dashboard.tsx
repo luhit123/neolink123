@@ -1079,7 +1079,18 @@ const Dashboard: React.FC<DashboardProps> = ({
     return (
       <PatientViewPage
         patient={patientToView}
-        onBack={() => window.history.back()}
+        onBack={() => {
+          // Mark that we handled this locally so App.tsx doesn't close the patient list
+          (window as any).__patientViewBackHandled = true;
+          setShowPatientViewPage(false);
+          setPatientToView(null);
+          // Go back in history to remove the 'patientView' state
+          window.history.back();
+          // Reset flag after a delay to ensure popstate handler in App sees it
+          setTimeout(() => {
+            (window as any).__patientViewBackHandled = false;
+          }, 300);
+        }}
         onEdit={handleEditPatient}
         canEdit={hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)}
         userEmail={userEmail || ''}

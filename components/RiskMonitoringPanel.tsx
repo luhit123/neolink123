@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Patient } from '../types';
-import { predictRisk } from '../services/geminiService';
+import { predictRisk } from '../services/openaiService';
 
 interface RiskMonitoringPanelProps {
   patients: Patient[];

@@ -126,7 +126,7 @@ export const generateClinicalNote = async (prompt: string): Promise<string> => {
   console.log('🤖 Full cached config:', JSON.stringify(cachedConfig));
 
   if (provider === 'gpt4o') {
-    console.log('🤖 Using GPT-4o for generation');
+    console.log('🤖 Using GPT-5.2 for generation');
     return generateWithGPT4o(prompt);
   } else {
     console.log('🤖 Using Gemini for generation');
@@ -135,18 +135,18 @@ export const generateClinicalNote = async (prompt: string): Promise<string> => {
 };
 
 /**
- * Generate clinical note using OpenAI GPT-4o
+ * Generate clinical note using OpenAI GPT-5.2
  */
 const generateWithGPT4o = async (prompt: string): Promise<string> => {
-  console.log('🟢 GPT-4o: Starting generation...');
-  console.log('🟢 GPT-4o: API Key exists:', !!OPENAI_API_KEY);
+  console.log('🟢 GPT-5.2: Starting generation...');
+  console.log('🟢 GPT-5.2: API Key exists:', !!OPENAI_API_KEY);
 
   if (!OPENAI_API_KEY) {
-    console.error('🔴 GPT-4o: API key not configured!');
+    console.error('🔴 GPT-5.2: API key not configured!');
     throw new Error('OpenAI API key not configured');
   }
 
-  console.log('🟢 GPT-4o: Making API request to OpenAI...');
+  console.log('🟢 GPT-5.2: Making API request to OpenAI...');
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -154,7 +154,7 @@ const generateWithGPT4o = async (prompt: string): Promise<string> => {
       'Authorization': `Bearer ${OPENAI_API_KEY}`
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       messages: [
         {
           role: 'system',
@@ -166,29 +166,29 @@ const generateWithGPT4o = async (prompt: string): Promise<string> => {
         }
       ],
       temperature: 0.3,
-      max_tokens: 4000
+      max_completion_tokens: 4000
     })
   });
 
-  console.log('🟢 GPT-4o: Response status:', response.status);
+  console.log('🟢 GPT-5.2: Response status:', response.status);
 
   if (!response.ok) {
     const error = await response.json();
-    console.error('🔴 GPT-4o API error:', error);
-    throw new Error(error.error?.message || 'GPT-4o API request failed');
+    console.error('🔴 GPT-5.2 API error:', error);
+    throw new Error(error.error?.message || 'GPT-5.2 API request failed');
   }
 
   const data = await response.json();
-  console.log('🟢 GPT-4o: Response received, model used:', data.model);
-  console.log('🟢 GPT-4o: Tokens used:', data.usage);
+  console.log('🟢 GPT-5.2: Response received, model used:', data.model);
+  console.log('🟢 GPT-5.2: Tokens used:', data.usage);
 
   const noteText = data.choices?.[0]?.message?.content?.trim();
 
   if (!noteText) {
-    throw new Error('Empty response from GPT-4o');
+    throw new Error('Empty response from GPT-5.2');
   }
 
-  console.log('🟢 GPT-4o: Generated note length:', noteText.length, 'characters');
+  console.log('🟢 GPT-5.2: Generated note length:', noteText.length, 'characters');
   return noteText;
 };
 

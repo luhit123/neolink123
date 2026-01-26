@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { explainChartData } from '../services/geminiService';
+import { explainChartData } from '../services/openaiService';
 
 interface DataPoint {
     label: string;

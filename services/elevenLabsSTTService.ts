@@ -239,12 +239,31 @@ export const transcribeWithElevenLabs = async (
 let mediaRecorder: MediaRecorder | null = null;
 let recordedChunks: Blob[] = [];
 let mediaStream: MediaStream | null = null;
+let websocket: WebSocket | null = null;
+let audioContext: AudioContext | null = null;
+let scriptProcessor: ScriptProcessorNode | null = null;
+let sourceNode: MediaStreamAudioSourceNode | null = null;
+
+// WebSocket streaming endpoint (Scribe v2 Realtime)
+const ELEVENLABS_WS_URL = 'wss://api.elevenlabs.io/v1/speech-to-text/realtime';
 
 /**
- * Start live streaming transcription with ElevenLabs
- * Records audio locally and transcribes on stop (ElevenLabs batch mode)
+ * Convert Float32Array to Int16Array for streaming
+ */
+const float32ToInt16 = (float32Array: Float32Array): Int16Array => {
+  const int16Array = new Int16Array(float32Array.length);
+  for (let i = 0; i < float32Array.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32Array[i]));
+    int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return int16Array;
+};
+
+/**
+ * Start REAL-TIME streaming transcription with ElevenLabs WebSocket
+ * Audio is sent live as you speak, transcription appears instantly
  *
- * @param onTranscript - Callback for real-time transcript updates (not used in batch mode)
+ * @param onTranscript - Callback for real-time transcript updates
  * @param onError - Callback for errors
  * @param onReady - Callback when ready to record
  * @returns Promise with the MediaStream (for visualization)
@@ -257,54 +276,192 @@ export const startLiveTranscription = async (
   // Reset state
   recordedChunks = [];
 
+  const apiKey = getElevenLabsApiKey();
+
   // Get microphone
   console.log('🎤 Requesting microphone access...');
   mediaStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: true,
       noiseSuppression: true,
-      autoGainControl: true
+      autoGainControl: true,
+      sampleRate: 16000
     }
   });
   console.log('✅ Microphone access granted');
 
-  // Start recording - NO timeslice to get a valid single file
+  // Also start MediaRecorder as fallback
   mediaRecorder = new MediaRecorder(mediaStream, {
     mimeType: 'audio/webm;codecs=opus'
   });
-
   mediaRecorder.ondataavailable = (event) => {
     if (event.data.size > 0) {
       recordedChunks.push(event.data);
-      console.log('📦 Audio chunk received:', event.data.size, 'bytes');
     }
   };
-
-  // Start recording WITHOUT timeslice - this creates a valid audio file
   mediaRecorder.start();
-  console.log('🎙️ Recording started (will transcribe on stop)');
 
-  // Ready immediately - no WebSocket needed for batch mode
-  onReady?.();
+  // Setup WebSocket for real-time streaming
+  console.log('🔌 Connecting to ElevenLabs Realtime WebSocket...');
+
+  try {
+    // Connect with API key as query parameter (for browser-side auth)
+    const wsUrl = `${ELEVENLABS_WS_URL}?xi-api-key=${apiKey}`;
+    websocket = new WebSocket(wsUrl);
+
+    websocket.onopen = () => {
+      console.log('✅ WebSocket connected to ElevenLabs Realtime');
+      // Start audio processing immediately - no config message needed
+      setupAudioProcessing(onTranscript, onError);
+      onReady?.();
+    };
+
+    websocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('📥 WebSocket message:', data.message_type);
+
+        if (data.message_type === 'session_started') {
+          console.log('✅ Session started:', data.session_id);
+        } else if (data.message_type === 'partial_transcript') {
+          // Real-time partial results as user speaks
+          const text = data.text || '';
+          if (text) {
+            console.log(`📝 Partial: ${text}`);
+            onTranscript(text, false);
+          }
+        } else if (data.message_type === 'committed_transcript' || data.message_type === 'committed_transcript_with_timestamps') {
+          // Final committed transcript
+          const text = data.text || '';
+          if (text) {
+            console.log(`📝 Final: ${text}`);
+            onTranscript(text, true);
+          }
+        } else if (data.message_type === 'error' || data.message_type?.includes('error')) {
+          console.error('❌ WebSocket error from server:', data);
+          onError?.(data.message || data.error || 'Transcription error');
+        }
+      } catch (e) {
+        console.log('📥 WebSocket non-JSON message:', event.data);
+      }
+    };
+
+    websocket.onerror = (error) => {
+      console.error('❌ WebSocket error:', error);
+      onError?.('WebSocket connection error');
+    };
+
+    websocket.onclose = (event) => {
+      console.log('🔌 WebSocket closed:', event.code, event.reason);
+    };
+
+  } catch (wsError) {
+    console.error('❌ Failed to create WebSocket:', wsError);
+    // Fall back to batch mode - still return stream for recording
+    onReady?.();
+  }
 
   return mediaStream;
 };
 
 /**
- * Stop recording and return audio blob for batch transcription
- * @returns Promise<Blob | null> - Returns audio blob for transcription
+ * Setup audio processing to stream audio chunks to WebSocket
+ */
+const setupAudioProcessing = (
+  onTranscript: (text: string, isFinal: boolean) => void,
+  onError?: (error: string) => void
+) => {
+  if (!mediaStream || !websocket) return;
+
+  try {
+    audioContext = new AudioContext({ sampleRate: 16000 });
+    sourceNode = audioContext.createMediaStreamSource(mediaStream);
+
+    // Use ScriptProcessorNode for audio processing (deprecated but widely supported)
+    // Buffer size of 4096 at 16kHz = 256ms chunks
+    scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    scriptProcessor.onaudioprocess = (event) => {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        const inputData = event.inputBuffer.getChannelData(0);
+        const pcmData = float32ToInt16(inputData);
+
+        // Send audio chunk in ElevenLabs Realtime format
+        const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+
+        const audioMessage = {
+          message_type: 'input_audio_chunk',
+          audio_base_64: base64Audio,
+          sample_rate: 16000
+        };
+
+        websocket.send(JSON.stringify(audioMessage));
+      }
+    };
+
+    sourceNode.connect(scriptProcessor);
+    scriptProcessor.connect(audioContext.destination);
+
+    console.log('🎙️ Real-time audio streaming started');
+
+  } catch (error) {
+    console.error('❌ Audio processing setup failed:', error);
+    onError?.('Failed to setup audio processing');
+  }
+};
+
+/**
+ * Stop real-time transcription and cleanup
+ * @returns Promise<Blob | null> - Returns audio blob as fallback
  */
 export const stopLiveTranscription = async (): Promise<Blob | null> => {
   return new Promise((resolve) => {
     try {
+      // Close WebSocket
+      if (websocket) {
+        if (websocket.readyState === WebSocket.OPEN) {
+          // Send final commit signal to get remaining transcript
+          websocket.send(JSON.stringify({
+            message_type: 'input_audio_chunk',
+            audio_base_64: '',
+            commit: true
+          }));
+        }
+        // Give a moment for final response, then close
+        setTimeout(() => {
+          websocket?.close();
+          websocket = null;
+          console.log('🔌 WebSocket closed');
+        }, 500);
+      }
+
+      // Cleanup audio processing
+      if (scriptProcessor) {
+        scriptProcessor.disconnect();
+        scriptProcessor = null;
+      }
+      if (sourceNode) {
+        sourceNode.disconnect();
+        sourceNode = null;
+      }
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+
+      // Stop MediaRecorder
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
         console.log('No active recording to stop');
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => track.stop());
+          mediaStream = null;
+        }
         resolve(null);
         return;
       }
 
       mediaRecorder.onstop = () => {
-        // Create a single valid audio blob from all chunks
+        // Create fallback audio blob
         const audioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
         console.log(`📦 Recording complete: ${recordedChunks.length} chunks, total size: ${audioBlob.size} bytes`);
 
@@ -317,16 +474,18 @@ export const stopLiveTranscription = async (): Promise<Blob | null> => {
         mediaRecorder = null;
         recordedChunks = [];
 
-        // Return the blob for batch transcription
         resolve(audioBlob);
       };
 
-      // Stop recording - this triggers ondataavailable with the final chunk
       mediaRecorder.stop();
       console.log('🎤 Stopping recording...');
 
     } catch (error) {
       console.error('Error stopping recording:', error);
+      if (websocket) {
+        websocket.close();
+        websocket = null;
+      }
       if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
         mediaStream = null;

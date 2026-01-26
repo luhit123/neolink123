@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { Patient } from '../types';
 import { AppContext, ChatMessage } from '../types/chat';
-import { answerClinicalQuestion } from './geminiService';
+import { answerClinicalQuestion } from './openaiService';
 
 const getApiKey = () => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;

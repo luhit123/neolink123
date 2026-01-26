@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Patient } from '../types';
-import { generateHandoffNote, generateRoundingSheet } from '../services/geminiService';
+import { generateHandoffNote, generateRoundingSheet } from '../services/openaiService';
 
 interface SmartHandoffProps {
   patients: Patient[];

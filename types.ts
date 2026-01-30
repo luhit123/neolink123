@@ -145,6 +145,18 @@ export interface AdmissionIndication {
   lastModifiedBy?: string;
 }
 
+export interface ObservationIndication {
+  id: string;
+  name: string;
+  applicableUnits: Unit[]; // Which units this indication applies to
+  isActive: boolean;
+  order: number; // For sorting
+  createdAt: string;
+  createdBy: string; // SuperAdmin email
+  lastModifiedAt?: string;
+  lastModifiedBy?: string;
+}
+
 export interface VitalSigns {
   temperature?: string; // Temperature in °C or °F
   hr?: string; // Heart Rate (bpm)
@@ -257,6 +269,9 @@ export interface EditHistory {
   changes: string; // Description of changes
 }
 
+// Patient outcome status
+export type PatientOutcome = 'In Progress' | 'Discharged' | 'Referred' | 'Deceased' | 'Step Down';
+
 export interface Patient {
   id: string;
   ntid?: string; // Neolink Tracking ID - unique ID for each child (format: ABC202501xxxx)
@@ -268,11 +283,17 @@ export interface Patient {
   releaseDate?: string; // ISO string
   diagnosis: string;
   progressNotes: ProgressNote[];
-  outcome: 'In Progress' | 'Discharged' | 'Referred' | 'Deceased' | 'Step Down';
+  outcome: PatientOutcome;
   unit: Unit;
   // Institution tracking
   institutionId: string; // Which institution this patient belongs to
   institutionName: string; // Institution name for display
+
+  // Hybrid Architecture - Supabase Integration
+  supabaseId?: string; // Link to Supabase record for analytics/reporting
+  admissionYearMonth?: string; // Indexed field for queries (format: "2025-01")
+  dischargeYearMonth?: string; // Indexed field for queries (format: "2025-01")
+  currentUnit?: Unit; // Current unit (may differ from admission unit for step-downs)
 
   // SNCU/NICU Administrative & Demographic Information
   sncuRegNo?: string; // SNCU Registration Number
@@ -343,6 +364,15 @@ export interface Patient {
   dischargeSavedAt?: string; // ISO string when discharge was saved
   dischargeSavedBy?: string; // Name of who saved the discharge
 
+  // Saved Death Certificate (MCCD Form 4 - stored when death certificate is finalized)
+  savedDeathCertificate?: DeathCertificate; // The complete death certificate saved to patient record
+  deathCertificateSavedAt?: string; // ISO string when death certificate was saved
+  deathCertificateSavedBy?: string; // Name of who saved the death certificate
+
+  // Death Certificate Deletion Tracking (Max 2 deletions allowed for audit compliance)
+  deletedDeathCertificates?: DeletedDeathCertificate[]; // Archive of deleted certificates for audit trail
+  deathCertificateDeletionCount?: number; // Number of times certificate has been deleted (max 2)
+
   // Death Information (Mandatory when outcome is Deceased)
   diagnosisAtDeath?: string; // Full diagnosis written by doctor at time of death
   aiInterpretedDeathDiagnosis?: string; // AI-generated concise diagnosis
@@ -391,6 +421,8 @@ export interface ObservationPatient {
   babyName: string;
   motherName: string;
   dateOfBirth: string;
+  gender?: 'Male' | 'Female' | 'Ambiguous';
+  birthWeight?: number; // in grams
   reasonForObservation: string;
   unit: Unit;
   admissionType?: 'Inborn' | 'Outborn';
@@ -398,6 +430,8 @@ export interface ObservationPatient {
   outcome: ObservationOutcome;
   convertedToPatientId?: string; // If converted to admission, reference to Patient ID
   dischargedAt?: string; // When handed over to mother
+  observationDurationHours?: number; // Tracked when handed over
+  observationDurationMinutes?: number; // Tracked when handed over
   institutionId: string;
   createdBy: string; // Doctor/Nurse email
   createdAt: string;
@@ -427,6 +461,9 @@ export interface Institution {
   state?: string; // State name
 
   institutionType?: string; // Type of institution (Medical College, PHC, etc.)
+
+  // Discharge Settings
+  dischargeLanguage?: string; // Regional language for discharge advice (default: 'english')
 }
 
 // Password Reset Request
@@ -793,4 +830,328 @@ export interface DischargeSummary {
 
   // For PICU specific
   isPICU?: boolean;
+}
+
+// ==================== DEATH CERTIFICATE (MCCD Form 4) ====================
+
+/**
+ * MCCD Form 4 - Medical Certificate of Cause of Death
+ * As per Registration of Births and Deaths Act, 1969 (India)
+ * Following WHO ICD-10 Guidelines
+ */
+
+// Cause of Death - Part I (Causal Sequence)
+export interface CauseOfDeathPartI {
+  // Line (a) - Immediate/Direct Cause
+  immediateCause: string;
+  immediateCauseICD10?: string; // ICD-10 code
+  immediateCauseDuration?: string; // Time interval between onset and death
+
+  // Line (b) - Antecedent Cause (due to)
+  antecedentCause?: string;
+  antecedentCauseICD10?: string;
+  antecedentCauseDuration?: string;
+
+  // Line (c) - Underlying Cause (due to)
+  underlyingCause?: string;
+  underlyingCauseICD10?: string;
+  underlyingCauseDuration?: string;
+
+  // Line (d) - Additional underlying cause if needed
+  additionalCause?: string;
+  additionalCauseICD10?: string;
+  additionalCauseDuration?: string;
+}
+
+// Cause of Death - Part II (Contributory Conditions)
+export interface CauseOfDeathPartII {
+  contributingConditions: Array<{
+    condition: string;
+    icd10Code?: string;
+    duration?: string;
+  }>;
+}
+
+// Manner of Death
+export enum MannerOfDeath {
+  Natural = 'Natural',
+  Accident = 'Accident',
+  Suicide = 'Suicide',
+  Homicide = 'Homicide',
+  PendingInvestigation = 'Pending Investigation',
+  Unknown = 'Could not be determined'
+}
+
+// Death Type for Perinatal
+export enum PerinatalDeathType {
+  Stillbirth = 'Stillbirth',
+  EarlyNeonatal = 'Early Neonatal Death (0-6 days)',
+  LateNeonatal = 'Late Neonatal Death (7-27 days)',
+  PostNeonatal = 'Post Neonatal Death (28 days - 1 year)',
+  ChildDeath = 'Child Death (1-5 years)',
+  Infant = 'Infant Death (< 1 year)'
+}
+
+// Death Classification
+export enum DeathClassification {
+  ExpectedDeath = 'Expected Death',
+  UnexpectedDeath = 'Unexpected Death',
+  SuddenDeath = 'Sudden Death',
+  TraumaticDeath = 'Traumatic Death',
+  PerinatalDeath = 'Perinatal Death'
+}
+
+// Autopsy Status
+export enum AutopsyStatus {
+  Performed = 'Performed',
+  NotPerformed = 'Not Performed',
+  Pending = 'Pending',
+  Declined = 'Declined by Family',
+  NotRequired = 'Not Required'
+}
+
+// NHM Child Death Review Categories
+export enum NHMDeathCategory {
+  // Neonatal Categories
+  BirthAsphyxia = 'Birth Asphyxia',
+  PrematurityLBW = 'Prematurity/Low Birth Weight',
+  NeonatalSepsis = 'Neonatal Sepsis',
+  CongenitalAnomalies = 'Congenital Anomalies',
+  RespiratoryDistressSyndrome = 'Respiratory Distress Syndrome',
+  MeconiumAspirationSyndrome = 'Meconium Aspiration Syndrome',
+  NeonatalJaundice = 'Severe Neonatal Jaundice',
+  Hypothermia = 'Hypothermia',
+  FeedingProblems = 'Feeding Problems',
+
+  // Pediatric Categories
+  Pneumonia = 'Pneumonia',
+  Diarrhea = 'Diarrhea with Dehydration',
+  Malaria = 'Severe Malaria',
+  Measles = 'Measles',
+  Meningitis = 'Meningitis/Encephalitis',
+  Malnutrition = 'Severe Acute Malnutrition',
+  Dengue = 'Dengue Shock Syndrome',
+  Sepsis = 'Sepsis/Septic Shock',
+  Trauma = 'Trauma/Injury',
+  Drowning = 'Drowning',
+  Poisoning = 'Poisoning',
+  CongenitalHeartDisease = 'Congenital Heart Disease',
+  Other = 'Other'
+}
+
+// Place of Death
+export enum PlaceOfDeath {
+  Hospital = 'Hospital',
+  NICU = 'NICU',
+  PICU = 'PICU',
+  SNCU = 'SNCU',
+  HDU = 'HDU',
+  OperationTheatre = 'Operation Theatre',
+  EmergencyRoom = 'Emergency Room',
+  TransitToHospital = 'In Transit to Hospital'
+}
+
+// Main Death Certificate Interface (MCCD Form 4)
+export interface DeathCertificate {
+  // Certificate Identification
+  certificateNumber?: string;
+  registrationNumber?: string;
+
+  // Hospital/Institution Details
+  hospitalName: string;
+  hospitalAddress?: string;
+  hospitalPhone?: string;
+  hospitalEmail?: string;
+  hospitalRegistrationNo?: string;
+
+  // Patient Identification
+  patientId: string;
+  patientName: string;
+  ntid?: string; // Newborn Tracking ID
+  uhid?: string; // Unique Health ID
+  ipNumber?: string;
+
+  // Patient Demographics
+  gender: string;
+  dateOfBirth?: string;
+  timeOfBirth?: string;
+  ageAtDeath: string; // Formatted age
+  ageInDays?: number;
+  ageInHours?: number; // For neonatal deaths
+
+  // Address Details
+  permanentAddress?: string;
+  village?: string;
+  tehsil?: string;
+  district?: string;
+  state?: string;
+  pinCode?: string;
+
+  // Parent/Guardian Details (for pediatric)
+  motherName?: string;
+  fatherName?: string;
+  guardianName?: string;
+  guardianRelation?: string;
+  parentContact?: string;
+
+  // Admission Details
+  dateOfAdmission: string;
+  timeOfAdmission?: string;
+  admissionType?: 'Inborn' | 'Outborn';
+  referringHospital?: string;
+  referringDistrict?: string;
+
+  // Death Details
+  dateOfDeath: string;
+  timeOfDeath: string;
+  placeOfDeath: PlaceOfDeath;
+  totalStayDuration: string; // e.g., "5 days 3 hours"
+  totalStayHours?: number;
+
+  // Classification
+  deathClassification?: DeathClassification;
+  perinatalDeathType?: PerinatalDeathType;
+  nhmDeathCategory?: NHMDeathCategory;
+  mannerOfDeath: MannerOfDeath;
+
+  // Medical History
+  admissionDiagnosis: string;
+  primaryDiagnosis: string;
+  finalDiagnosis: string;
+  comorbidities?: string[];
+  significantFindings?: string;
+
+  // For Neonatal Deaths
+  birthWeight?: number;
+  gestationalAge?: string;
+  gestationalAgeWeeks?: number;
+  apgarScore?: string;
+  modeOfDelivery?: string;
+  placeOfDelivery?: string;
+  resuscitationAtBirth?: boolean;
+  resuscitationDetails?: string;
+  maternalHistory?: string;
+  antenatalComplications?: string[];
+
+  // Cause of Death (WHO ICD-10 Format)
+  causeOfDeathPartI: CauseOfDeathPartI;
+  causeOfDeathPartII?: CauseOfDeathPartII;
+
+  // AI-Generated Analysis
+  aiCauseOfDeathAnalysis?: string;
+  aiSuggestedICD10Codes?: Array<{
+    code: string;
+    description: string;
+    confidence: number;
+  }>;
+  aiDeathSummary?: string;
+
+  // Clinical Course Summary
+  clinicalCourseSummary: string;
+  treatmentProvided: string[];
+  proceduresPerformed?: string[];
+  investigationsDone?: string[];
+
+  // Final Events
+  terminalEvents?: string;
+  resuscitationAttempted?: boolean;
+  resuscitationDuration?: string;
+  timeOfResuscitationStart?: string;
+  reasonForStoppingResuscitation?: string;
+
+  // Autopsy
+  autopsyStatus: AutopsyStatus;
+  autopsyFindings?: string;
+  autopsyNumber?: string;
+
+  // Certification
+  certifiedBy: string;
+  certifierDesignation: string;
+  certifierRegistrationNo?: string;
+  certificationDate: string;
+  certificationTime?: string;
+
+  // Witness (for medicolegal cases)
+  witnessName?: string;
+  witnessRelation?: string;
+  witnessSignature?: boolean;
+
+  // Death Summary Acknowledgement
+  deathSummaryGivenTo?: string;
+  relationToDeceased?: string;
+  acknowledgedDate?: string;
+
+  // NHM Child Death Review
+  nhmCDRFormCompleted?: boolean;
+  nhmCDRFormNumber?: string;
+  deathNotifiedToASHA?: boolean;
+  deathNotifiedToCMO?: boolean;
+
+  // Metadata
+  createdAt: string;
+  updatedAt?: string;
+  createdBy: string;
+  updatedBy?: string;
+
+  // Status
+  isDraft?: boolean;
+  isFinalized?: boolean;
+  finalizedAt?: string;
+  finalizedBy?: string;
+}
+
+// Deleted Death Certificate - For audit trail (max 2 deletions allowed)
+export interface DeletedDeathCertificate {
+  certificate: DeathCertificate; // The full deleted certificate
+  deletedAt: string; // ISO timestamp of deletion
+  deletedBy: string; // Name of person who deleted
+  deletedByEmail?: string; // Email of person who deleted
+  deletionReason: string; // Mandatory reason for deletion
+  deletionNumber: number; // 1 or 2 (max 2 deletions allowed)
+}
+
+// Death Certificate Form Options
+export interface DeathCertificateOptions {
+  hospitalName: string;
+  hospitalAddress?: string;
+  hospitalPhone?: string;
+  hospitalRegistrationNo?: string;
+
+  certifiedBy: string;
+  certifierDesignation: string;
+  certifierRegistrationNo?: string;
+
+  causeOfDeathPartI: CauseOfDeathPartI;
+  causeOfDeathPartII?: CauseOfDeathPartII;
+
+  clinicalCourseSummary: string;
+  treatmentProvided: string[];
+
+  mannerOfDeath?: MannerOfDeath;
+  placeOfDeath?: PlaceOfDeath;
+  deathClassification?: DeathClassification;
+  perinatalDeathType?: PerinatalDeathType;
+  nhmDeathCategory?: NHMDeathCategory;
+
+  terminalEvents?: string;
+  resuscitationAttempted?: boolean;
+  resuscitationDuration?: string;
+
+  autopsyStatus?: AutopsyStatus;
+  autopsyFindings?: string;
+
+  aiCauseOfDeathAnalysis?: string;
+  aiSuggestedICD10Codes?: Array<{
+    code: string;
+    description: string;
+    confidence: number;
+  }>;
+  aiDeathSummary?: string;
+
+  deathSummaryGivenTo?: string;
+  relationToDeceased?: string;
+
+  nhmCDRFormCompleted?: boolean;
+  deathNotifiedToASHA?: boolean;
+  deathNotifiedToCMO?: boolean;
 }

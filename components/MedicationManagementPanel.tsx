@@ -7,10 +7,11 @@ import { seedMedications, getMedicationCount } from '../utils/medicationSeeder';
 
 interface MedicationManagementPanelProps {
   userEmail: string;
-  onClose: () => void;
+  onClose?: () => void;
+  isEmbedded?: boolean; // When true, renders as inline panel instead of modal
 }
 
-const MedicationManagementPanel: React.FC<MedicationManagementPanelProps> = ({ userEmail, onClose }) => {
+const MedicationManagementPanel: React.FC<MedicationManagementPanelProps> = ({ userEmail, onClose, isEmbedded = false }) => {
   const [medications, setMedications] = useState<MedicationDatabase[]>([]);
   const [filteredMedications, setFilteredMedications] = useState<MedicationDatabase[]>([]);
   const [loading, setLoading] = useState(true);
@@ -242,14 +243,31 @@ const MedicationManagementPanel: React.FC<MedicationManagementPanelProps> = ({ u
   };
 
   if (loading) {
+    if (isEmbedded) {
+      return (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500 mx-auto"></div>
+          <p className="text-slate-400 mt-4">Loading medications...</p>
+        </div>
+      );
+    }
     return <LoadingOverlay message="Loading medications..." />;
   }
 
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
-      {saving && <LoadingOverlay message={saveMessage} />}
+  // Embedded panel content (for SuperAdmin Dashboard)
+  const panelContent = (
+    <>
+      {saving && !isEmbedded && <LoadingOverlay message={saveMessage} />}
+      {saving && isEmbedded && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 shadow-xl">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500 mx-auto"></div>
+            <p className="text-slate-600 mt-3">{saveMessage}</p>
+          </div>
+        </div>
+      )}
 
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[95vh] overflow-hidden flex flex-col">
+      <div className={isEmbedded ? "bg-white rounded-2xl shadow-lg overflow-hidden" : "bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[95vh] overflow-hidden flex flex-col"}>
         {/* Header */}
         <div className="bg-gradient-to-r from-sky-500 to-blue-600 px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -263,14 +281,16 @@ const MedicationManagementPanel: React.FC<MedicationManagementPanelProps> = ({ u
               <p className="text-xs sm:text-sm text-sky-100">Manage NICU/PICU medication database</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white/20 rounded-xl transition-all"
-          >
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          {!isEmbedded && onClose && (
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/20 rounded-xl transition-all"
+            >
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* Search and Filter Bar */}
@@ -828,6 +848,18 @@ const MedicationManagementPanel: React.FC<MedicationManagementPanelProps> = ({ u
           )}
         </div>
       </div>
+    </>
+  );
+
+  // Return embedded or modal version
+  if (isEmbedded) {
+    return <div className="space-y-6">{panelContent}</div>;
+  }
+
+  // Modal version
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+      {panelContent}
     </div>
   );
 };

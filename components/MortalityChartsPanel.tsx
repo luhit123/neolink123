@@ -118,24 +118,24 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
             Top 8
           </span>
         </div>
-        <ResponsiveContainer width="100%" height={280} className="sm:!h-[400px]">
+        <ResponsiveContainer width="100%" height={320} className="sm:!h-[400px]">
           <BarChart
             data={topCausesData}
             layout="vertical"
-            margin={{ top: 5, right: 10, left: 5, bottom: 5 }}
+            margin={{ top: 5, right: 15, left: 10, bottom: 5 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis type="number" stroke="#64748b" tick={{ fontSize: 10 }} />
+            <XAxis type="number" stroke="#64748b" tick={{ fontSize: 11 }} />
             <YAxis
               type="category"
               dataKey="name"
-              width={100}
+              width={120}
               stroke="#64748b"
-              tick={{ fontSize: 9 }}
-              tickFormatter={(value) => value.length > 18 ? value.substring(0, 18) + '...' : value}
+              tick={{ fontSize: 10 }}
+              tickFormatter={(value) => value.length > 20 ? value.substring(0, 20) + '...' : value}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="count" fill="#ef4444" radius={[0, 4, 4, 0]} />
+            <Bar dataKey="count" fill="#ef4444" radius={[0, 6, 6, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </motion.div>
@@ -159,22 +159,22 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
               12 months
             </span>
           </div>
-          <ResponsiveContainer width="100%" height={200} className="sm:!h-[300px]">
+          <ResponsiveContainer width="100%" height={250} className="sm:!h-[300px]">
             <LineChart
               data={timeSeriesData}
-              margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
+              margin={{ top: 5, right: 15, left: 0, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="month" stroke="#64748b" tick={{ fontSize: 9 }} />
-              <YAxis stroke="#64748b" tick={{ fontSize: 9 }} />
+              <XAxis dataKey="month" stroke="#64748b" tick={{ fontSize: 10 }} />
+              <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
               <Tooltip content={<CustomTooltip />} />
               <Line
                 type="monotone"
                 dataKey="deaths"
                 stroke="#8b5cf6"
-                strokeWidth={2}
-                dot={{ fill: '#8b5cf6', r: 3 }}
-                activeDot={{ r: 5 }}
+                strokeWidth={3}
+                dot={{ fill: '#8b5cf6', r: 4 }}
+                activeDot={{ r: 6 }}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -195,16 +195,16 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
               By Unit
             </h3>
           </div>
-          <ResponsiveContainer width="100%" height={200} className="sm:!h-[300px]">
+          <ResponsiveContainer width="100%" height={250} className="sm:!h-[300px]">
             <BarChart
               data={unitDistributionData}
-              margin={{ top: 5, right: 10, left: -10, bottom: 5 }}
+              margin={{ top: 5, right: 15, left: 0, bottom: 5 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 9 }} />
-              <YAxis stroke="#64748b" tick={{ fontSize: 9 }} />
+              <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
+              <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="value" fill="#10b981" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </motion.div>

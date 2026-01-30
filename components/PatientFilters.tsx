@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type OutcomeFilter = 'All' | 'Admission' | 'In Progress' | 'Discharged' | 'Referred' | 'Deceased' | 'Step Down';
+export type OutcomeFilter = 'All' | 'Admission' | 'In Progress' | 'Discharged' | 'Referred' | 'Deceased' | 'Step Down' | 'Observation';
 
 interface PatientFiltersProps {
   selectedOutcome: OutcomeFilter;

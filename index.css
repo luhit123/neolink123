@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/* Ensure box-sizing is set properly */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Base reset - allow natural scrolling */
+html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+#root {
+  min-height: 100%;
+}
+
 /* Custom theme configuration */
 @theme {
   --color-medical-teal: #0EA5E9;
@@ -178,5 +201,43 @@
   /* Mobile touch devices */
   button, a, [role="button"] {
     -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Skeleton loading shimmer animation */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Fade in animation */
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+/* Loading spinner for inline use */
+.inline-spinner {
+  border: 2px solid rgba(20, 184, 166, 0.2);
+  border-top-color: #14b8a6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }

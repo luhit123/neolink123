@@ -1,16 +1,18 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Patient, Unit, UserRole, ObservationPatient, ObservationOutcome, ProgressNote } from '../types';
+import { Patient, Unit, UserRole, ObservationPatient, ObservationOutcome, ProgressNote, PatientOutcome } from '../types';
 import VirtualizedPatientList from './VirtualizedPatientList';
 import DateFilter, { DateFilterValue } from './DateFilter';
 import ShiftFilter, { ShiftFilterConfigs } from './ShiftFilter';
 import { OutcomeFilter } from './PatientFilters';
 import NicuViewSelection from './NicuViewSelection';
 import DischargeSummaryModal from './DischargeSummaryModal';
+import DeathCertificateModal from './DeathCertificateModal';
 import { downloadDischargeSummaryPDF, previewDischargeSummaryPDF } from '../services/dischargeSummaryService';
 import { db } from '../firebaseConfig';
 import { doc, updateDoc } from 'firebase/firestore';
 import { deleteMultiplePatients } from '../services/firestoreService';
+import { syncPatientToSupabase } from '../services/supabaseSyncService';
 import { X, Filter, Search, ChevronLeft, Users, Calendar, Clock, Stethoscope, TrendingUp, AlertCircle, Mic, Activity, ArrowDownCircle, Send, CheckCircle, UserX } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import ProgressNoteForm from './ProgressNoteFormEnhanced';
@@ -25,7 +27,12 @@ interface PatientDetailsPageProps {
   userRole: UserRole;
   allRoles?: UserRole[];
   observationPatients?: ObservationPatient[];
+  completedObservationPatients?: ObservationPatient[]; // History of completed observations
+  onLoadObservationHistory?: () => void; // Load history on demand
+  loadingObservationHistory?: boolean;
+  observationHistoryLoaded?: boolean;
   onConvertObservationToAdmission?: (observationPatient: ObservationPatient) => void;
+  onHandoverObservation?: (observationPatient: ObservationPatient) => void;
   isLazyLoaded?: boolean;
   onLoadAllPatients?: () => void;
   institutionId?: string;
@@ -33,6 +40,7 @@ interface PatientDetailsPageProps {
   userEmail?: string;
   userName?: string;
   onPatientUpdate?: (patient: Patient) => void;
+  doctors?: string[]; // List of doctors for dropdown selection
 }
 
 const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
@@ -44,17 +52,47 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   userRole,
   allRoles,
   observationPatients = [],
+  completedObservationPatients = [],
+  onLoadObservationHistory,
+  loadingObservationHistory = false,
+  observationHistoryLoaded = false,
   onConvertObservationToAdmission,
+  onHandoverObservation,
   isLazyLoaded = true,
   onLoadAllPatients,
   institutionId,
   onPatientsDeleted,
   userEmail = '',
   userName = '',
-  onPatientUpdate
+  onPatientUpdate,
+  doctors = []
 }) => {
   const hasRole = (role: UserRole) => {
     return userRole === role || (allRoles && allRoles.includes(role));
+  };
+
+  // Helper function to calculate observation duration
+  const calculateObservationDuration = (dateOfObservation: string) => {
+    const start = new Date(dateOfObservation);
+    const now = new Date();
+    const diffMs = now.getTime() - start.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (diffHours > 0) {
+      return `${diffHours}h ${diffMinutes}m`;
+    }
+    return `${diffMinutes}m`;
+  };
+
+  // Format observation start time
+  const formatObservationTime = (dateOfObservation: string) => {
+    const date = new Date(dateOfObservation);
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
   };
 
   // State
@@ -73,14 +111,18 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [quickRecordPatient, setQuickRecordPatient] = useState<Patient | null>(null);
+  const [showObservationSection, setShowObservationSection] = useState(true);
+  const [observationView, setObservationView] = useState<'active' | 'history'>('active');
 
   // Action modal states
   const [showDischargeModal, setShowDischargeModal] = useState(false);
   const [dischargePatient, setDischargePatient] = useState<Patient | null>(null);
   const [dischargeViewMode, setDischargeViewMode] = useState(false); // true when viewing existing certificate
+  const [showDeathCertificateModal, setShowDeathCertificateModal] = useState(false);
+  const [deathCertificatePatient, setDeathCertificatePatient] = useState<Patient | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [statusPatient, setStatusPatient] = useState<Patient | null>(null);
-  const [pendingStatus, setPendingStatus] = useState<ObservationOutcome | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<PatientOutcome | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [showStepDownModal, setShowStepDownModal] = useState(false);
   const [stepDownPatient, setStepDownPatient] = useState<Patient | null>(null);
@@ -132,6 +174,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   // Status filter options with colors and icons
   const statusOptions: Array<{ value: OutcomeFilter; label: string; color: string; bgColor: string; icon: string }> = [
     { value: 'All', label: 'All', color: 'text-slate-700', bgColor: 'bg-slate-100 border-slate-300', icon: '📊' },
+    { value: 'Observation', label: 'Observation', color: 'text-orange-700', bgColor: 'bg-orange-100 border-orange-300', icon: '👁️' },
     { value: 'Admission', label: 'New Admission', color: 'text-cyan-700', bgColor: 'bg-cyan-100 border-cyan-300', icon: '🏥' },
     { value: 'In Progress', label: 'Active', color: 'text-blue-700', bgColor: 'bg-blue-100 border-blue-300', icon: '🔵' },
     { value: 'Discharged', label: 'Discharged', color: 'text-green-700', bgColor: 'bg-green-100 border-green-300', icon: '✅' },
@@ -333,6 +376,201 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
     };
   }, [unitPatients]);
 
+  // Filter observation history based on date and shift filters
+  const filteredObservationHistory = useMemo(() => {
+    let filtered = completedObservationPatients;
+
+    // Apply date filter
+    if (dateFilter.period !== 'All Time') {
+      let startDate: Date;
+      let endDate: Date;
+
+      const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
+
+      if (periodIsMonth) {
+        const [year, month] = dateFilter.period.split('-').map(Number);
+        startDate = new Date(Date.UTC(year, month - 1, 1));
+        endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      } else {
+        const now = new Date();
+        switch (dateFilter.period) {
+          case 'Today':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Week':
+            const firstDayOfWeek = new Date(now);
+            firstDayOfWeek.setDate(now.getDate() - now.getDay());
+            startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
+
+            const lastDayOfWeek = new Date(firstDayOfWeek);
+            lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+            endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+            break;
+          case 'Custom':
+            if (!dateFilter.startDate || !dateFilter.endDate) {
+              startDate = new Date(0);
+              endDate = new Date();
+            } else {
+              startDate = new Date(dateFilter.startDate);
+              startDate.setHours(0, 0, 0, 0);
+              endDate = new Date(dateFilter.endDate);
+              endDate.setHours(23, 59, 59, 999);
+            }
+            break;
+          default:
+            startDate = new Date(0);
+            endDate = new Date();
+            break;
+        }
+      }
+
+      if (dateFilter.period === 'Custom' && (!dateFilter.startDate || !dateFilter.endDate)) {
+        // keep filtered as is
+      } else {
+        filtered = filtered.filter(obs => {
+          // Use dischargedAt for completed observations, or dateOfObservation as fallback
+          const eventDate = obs.dischargedAt
+            ? new Date(obs.dischargedAt)
+            : new Date(obs.dateOfObservation);
+          return eventDate >= startDate && eventDate <= endDate;
+        });
+      }
+    }
+
+    // Apply shift filter
+    if (shiftFilter.enabled && shiftFilter.startTime && shiftFilter.endTime) {
+      filtered = filtered.filter(obs => {
+        const eventDate = obs.dischargedAt
+          ? new Date(obs.dischargedAt)
+          : new Date(obs.dateOfObservation);
+
+        const eventTime = eventDate.getHours() * 60 + eventDate.getMinutes();
+        const [startHour, startMinute] = shiftFilter.startTime.split(':').map(Number);
+        const [endHour, endMinute] = shiftFilter.endTime.split(':').map(Number);
+        const startTime = startHour * 60 + startMinute;
+        const endTime = endHour * 60 + endMinute;
+
+        if (startTime <= endTime) {
+          return eventTime >= startTime && eventTime <= endTime;
+        } else {
+          return eventTime >= startTime || eventTime <= endTime;
+        }
+      });
+    }
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(obs =>
+        obs.babyName.toLowerCase().includes(query) ||
+        obs.motherName.toLowerCase().includes(query) ||
+        obs.reasonForObservation?.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [completedObservationPatients, dateFilter, shiftFilter, searchQuery]);
+
+  // Filter active observations based on date, shift, and search filters
+  const filteredActiveObservations = useMemo(() => {
+    let filtered = observationPatients;
+
+    // Apply date filter
+    if (dateFilter.period !== 'All Time') {
+      let startDate: Date;
+      let endDate: Date;
+
+      const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
+
+      if (periodIsMonth) {
+        const [year, month] = dateFilter.period.split('-').map(Number);
+        startDate = new Date(Date.UTC(year, month - 1, 1));
+        endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+      } else {
+        const now = new Date();
+        switch (dateFilter.period) {
+          case 'Today':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Week':
+            const firstDayOfWeek = new Date(now);
+            firstDayOfWeek.setDate(now.getDate() - now.getDay());
+            startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
+
+            const lastDayOfWeek = new Date(firstDayOfWeek);
+            lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+            endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
+            break;
+          case 'This Month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+            break;
+          case 'Custom':
+            if (!dateFilter.startDate || !dateFilter.endDate) {
+              startDate = new Date(0);
+              endDate = new Date();
+            } else {
+              startDate = new Date(dateFilter.startDate);
+              startDate.setHours(0, 0, 0, 0);
+              endDate = new Date(dateFilter.endDate);
+              endDate.setHours(23, 59, 59, 999);
+            }
+            break;
+          default:
+            startDate = new Date(0);
+            endDate = new Date();
+            break;
+        }
+      }
+
+      if (dateFilter.period === 'Custom' && (!dateFilter.startDate || !dateFilter.endDate)) {
+        // keep filtered as is
+      } else {
+        filtered = filtered.filter(obs => {
+          const eventDate = new Date(obs.dateOfObservation);
+          return eventDate >= startDate && eventDate <= endDate;
+        });
+      }
+    }
+
+    // Apply shift filter
+    if (shiftFilter.enabled && shiftFilter.startTime && shiftFilter.endTime) {
+      filtered = filtered.filter(obs => {
+        const eventDate = new Date(obs.dateOfObservation);
+
+        const eventTime = eventDate.getHours() * 60 + eventDate.getMinutes();
+        const [startHour, startMinute] = shiftFilter.startTime.split(':').map(Number);
+        const [endHour, endMinute] = shiftFilter.endTime.split(':').map(Number);
+        const startTime = startHour * 60 + startMinute;
+        const endTime = endHour * 60 + endMinute;
+
+        if (startTime <= endTime) {
+          return eventTime >= startTime && eventTime <= endTime;
+        } else {
+          return eventTime >= startTime || eventTime <= endTime;
+        }
+      });
+    }
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(obs =>
+        obs.babyName.toLowerCase().includes(query) ||
+        obs.motherName.toLowerCase().includes(query) ||
+        obs.reasonForObservation?.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [observationPatients, dateFilter, shiftFilter, searchQuery]);
+
   // Quick record handlers
   const handleQuickRecord = useCallback((patient: Patient) => {
     setQuickRecordPatient(patient);
@@ -428,6 +666,12 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
         const patientRef = doc(db, 'patients', patientId);
         await updateDoc(patientRef, updateData);
 
+        // Sync to Supabase (background, non-blocking)
+        if (institutionId) {
+          syncPatientToSupabase(patientId, updatedPatient as Patient, institutionId)
+            .catch(err => console.warn('⚠️ Supabase sync failed (non-critical):', err));
+        }
+
         // Update local state
         if (onPatientUpdate) {
           await onPatientUpdate(updatedPatient);
@@ -507,44 +751,31 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   const hasActiveFilters = dateFilter.period !== 'All Time' || shiftFilter.enabled || nicuView !== 'All';
 
   // Action Menu Handlers
-  const handleUpdateStatus = useCallback(async (patient: Patient, status: ObservationOutcome) => {
-    // If marking as Discharged, update status and open discharge modal with notification
-    if (status === 'Discharged') {
-      const saveId = startProcessing(patient.id, patient.name, 'discharge', 'Discharged');
+  const handleUpdateStatus = useCallback(async (patient: Patient, status: PatientOutcome) => {
+    // CHECK: If patient is currently Discharged and trying to revert to In Progress
+    // Only allow within 24 hours of discharge
+    if (patient.outcome === 'Discharged' && status === 'In Progress') {
+      const dischargeDate = patient.releaseDate || patient.finalDischargeDate;
+      if (dischargeDate) {
+        const dischargTime = new Date(dischargeDate).getTime();
+        const now = Date.now();
+        const hoursSinceDischarge = (now - dischargTime) / (1000 * 60 * 60);
 
-      try {
-        const now = new Date().toISOString();
-        const updateData: Partial<Patient> = {
-          outcome: 'Discharged',
-          releaseDate: now,
-          finalDischargeDate: now
-        };
-
-        // Update Firebase
-        const patientRef = doc(db, 'patients', patient.id);
-        await updateDoc(patientRef, updateData);
-
-        // Update local state
-        const updatedPatient = { ...patient, ...updateData };
-        if (onPatientUpdate) {
-          onPatientUpdate(updatedPatient);
+        if (hoursSinceDischarge > 24) {
+          showToast('error', 'Cannot revert discharge after 24 hours. Please create a new admission if needed.');
+          return;
         }
-
-        // Update notification to ready and open modal
-        updateNoteStatus(saveId, 'saved');
-        setDischargeViewMode(false); // Not viewing existing, generating new
-        setDischargePatient(updatedPatient);
-        setShowDischargeModal(true);
-      } catch (error) {
-        console.error('Error updating status:', error);
-        updateNoteStatus(saveId, 'error', 'Failed to update status');
-        showToast('error', 'Failed to discharge patient');
       }
+    }
+
+    // CHECK: If patient is Deceased, cannot change status
+    if (patient.outcome === 'Deceased') {
+      showToast('error', 'Cannot change status of a deceased patient.');
       return;
     }
 
-    // For Deceased, we may want to prompt for date/time later
-    // For now, show confirmation modal for other statuses
+    // For Discharged or Deceased - show polite confirmation modal
+    // (Discharged status now also goes through the modal for confirmation)
     setStatusPatient(patient);
     setPendingStatus(status);
     setShowStatusModal(true);
@@ -558,9 +789,14 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
       const now = new Date().toISOString();
       const updateData: Partial<Patient> = { outcome: pendingStatus };
 
-      // Set release date for terminal outcomes
-      if (['Deceased', 'Referred'].includes(pendingStatus)) {
+      // Set release date for Discharged, Deceased, and Referred
+      if (['Discharged', 'Deceased', 'Referred'].includes(pendingStatus)) {
         updateData.releaseDate = now;
+      }
+
+      // Set final discharge date for Discharged
+      if (pendingStatus === 'Discharged') {
+        updateData.finalDischargeDate = now;
       }
 
       // Set step down date
@@ -568,16 +804,45 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
         updateData.stepDownDate = now;
       }
 
+      // Set death date for Deceased
+      if (pendingStatus === 'Deceased') {
+        updateData.dateOfDeath = now;
+      }
+
       const patientRef = doc(db, 'patients', statusPatient.id);
       await updateDoc(patientRef, updateData);
 
       const updatedPatient = { ...statusPatient, ...updateData };
+
+      // Sync to Supabase (background, non-blocking)
+      if (institutionId) {
+        syncPatientToSupabase(statusPatient.id, updatedPatient as Patient, institutionId)
+          .catch(err => console.warn('⚠️ Supabase sync failed (non-critical):', err));
+      }
+
       if (onPatientUpdate) {
         onPatientUpdate(updatedPatient);
       }
 
-      showToast('success', `Patient status updated to ${pendingStatus}`);
       setShowStatusModal(false);
+
+      // For Discharged - open discharge certificate modal
+      if (pendingStatus === 'Discharged') {
+        showToast('success', 'Patient marked as discharged. Please complete the discharge summary.');
+        setDischargeViewMode(false);
+        setDischargePatient(updatedPatient);
+        setShowDischargeModal(true);
+      }
+      // For Deceased - open death certificate modal
+      else if (pendingStatus === 'Deceased') {
+        showToast('success', 'Patient marked as deceased. Please complete the death certificate.');
+        setDeathCertificatePatient(updatedPatient);
+        setShowDeathCertificateModal(true);
+      }
+      else {
+        showToast('success', `Patient status updated to ${pendingStatus}`);
+      }
+
       setStatusPatient(null);
       setPendingStatus(null);
     } catch (error) {
@@ -603,14 +868,14 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   }, []);
 
   // Direct preview for discharged patients with saved discharge
-  const handlePreviewDischarge = useCallback((patient: Patient) => {
+  const handlePreviewDischarge = useCallback(async (patient: Patient) => {
     if (!patient.savedDischargeSummary) {
       showToast('warning', 'No saved discharge summary found');
       return;
     }
 
     try {
-      const url = previewDischargeSummaryPDF(patient.savedDischargeSummary, patient);
+      const url = await previewDischargeSummaryPDF(patient.savedDischargeSummary, patient);
       // Open in new tab for preview
       window.open(url, '_blank');
     } catch (error) {
@@ -620,14 +885,14 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   }, []);
 
   // Direct download for discharged patients with saved discharge
-  const handleDownloadDischarge = useCallback((patient: Patient) => {
+  const handleDownloadDischarge = useCallback(async (patient: Patient) => {
     if (!patient.savedDischargeSummary) {
       showToast('warning', 'No saved discharge summary found');
       return;
     }
 
     try {
-      downloadDischargeSummaryPDF(patient.savedDischargeSummary, patient);
+      await downloadDischargeSummaryPDF(patient.savedDischargeSummary, patient);
       showToast('success', 'Discharge certificate downloaded');
     } catch (error) {
       console.error('Error downloading discharge:', error);
@@ -657,6 +922,13 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
       await updateDoc(patientRef, updateData);
 
       const updatedPatient = { ...stepDownPatient, ...updateData };
+
+      // Sync to Supabase (background, non-blocking)
+      if (institutionId) {
+        syncPatientToSupabase(stepDownPatient.id, updatedPatient as Patient, institutionId)
+          .catch(err => console.warn('⚠️ Supabase sync failed (non-critical):', err));
+      }
+
       if (onPatientUpdate) {
         onPatientUpdate(updatedPatient);
       }
@@ -697,6 +969,13 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
       await updateDoc(patientRef, updateData);
 
       const updatedPatient = { ...referPatient, ...updateData };
+
+      // Sync to Supabase (background, non-blocking)
+      if (institutionId) {
+        syncPatientToSupabase(referPatient.id, updatedPatient as Patient, institutionId)
+          .catch(err => console.warn('⚠️ Supabase sync failed (non-critical):', err));
+      }
+
       if (onPatientUpdate) {
         onPatientUpdate(updatedPatient);
       }
@@ -715,19 +994,18 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   }, [referPatient, referLocation, referReason, onPatientUpdate]);
 
   const handleDeathCertificate = useCallback((patient: Patient) => {
-    // For now, just show a toast - death certificate feature will be implemented later
-    showToast('info', 'Death certificate feature coming soon');
-    // TODO: Implement death certificate modal/PDF generation
+    setDeathCertificatePatient(patient);
+    setShowDeathCertificateModal(true);
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-50">
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 overflow-hidden">
       {/* Header */}
-      <div className="flex-shrink-0 bg-white border-b border-slate-200 shadow-sm">
-        <div className="px-4 py-3">
-          <div className="flex items-center justify-between">
+      <header className="flex-shrink-0 bg-white border-b border-slate-200 shadow-sm w-full overflow-hidden">
+        <div className="px-4 py-3 w-full max-w-full overflow-hidden">
+          <div className="flex items-center justify-between w-full overflow-hidden">
             {/* Left: Back + Title */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <button
                 onClick={onBack}
                 className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-slate-700"
@@ -746,7 +1024,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
             </div>
 
             {/* Right: Actions */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               {/* Filter Button */}
               <button
                 onClick={() => setShowFilterDrawer(true)}
@@ -777,7 +1055,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Selection Mode Toolbar */}
       <AnimatePresence>
@@ -833,10 +1111,10 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
       </AnimatePresence>
 
       {/* Main Content */}
-      <div className="flex-1 flex lg:flex-row overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0 w-full max-w-full">
         {/* Left Sidebar - Desktop Filters */}
-        <aside className="hidden lg:flex lg:flex-col w-72 xl:w-80 bg-white border-r border-slate-200">
-          <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        <aside className="hidden lg:flex lg:flex-col w-72 xl:w-80 flex-shrink-0 bg-white border-r border-slate-200 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-4 space-y-6 min-h-0">
             {/* Stats Summary */}
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-4 text-white">
               <h3 className="text-sm font-semibold text-slate-300 mb-3">Patient Overview</h3>
@@ -868,6 +1146,18 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                   <p className="text-xs text-amber-300">Step Down</p>
                 </div>
               </div>
+              {/* Observation Patients */}
+              {observationPatients.length > 0 && (
+                <div className="mt-3 bg-orange-500/20 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xl font-bold text-orange-400">{observationPatients.length}</p>
+                      <p className="text-xs text-orange-300">Under Observation</p>
+                    </div>
+                    <Clock className="w-6 h-6 text-orange-400 opacity-60" />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Date Filter */}
@@ -916,7 +1206,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
         </aside>
 
         {/* Main Patient List Area */}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0 min-h-0">
           {/* Search and Filter Bar */}
           <div className="flex-shrink-0 bg-white border-b border-slate-200 px-4 py-3">
             {/* Search */}
@@ -945,6 +1235,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                 const getCount = () => {
                   switch (status.value) {
                     case 'All': return stats.all;
+                    case 'Observation': return observationPatients.length;
                     case 'Admission': return stats.admission;
                     case 'In Progress': return stats.inProgress;
                     case 'Discharged': return stats.discharged;
@@ -996,9 +1287,277 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
             </div>
           )}
 
-          {/* Patient List */}
-          <div className="flex-1 overflow-hidden">
-            {filteredPatients.length > 0 ? (
+          {/* Patient List / Observation Content */}
+          <div className="flex-1 min-h-0 overflow-x-hidden">
+            {outcomeFilter === 'Observation' ? (
+              // Observation Patients View
+              <div className="h-full flex flex-col">
+                {/* Active/History Sub-tabs */}
+                <div className="flex-shrink-0 px-4 py-3 bg-white border-b border-slate-200">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setObservationView('active')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                        observationView === 'active'
+                          ? 'bg-orange-500 text-white shadow-md'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <Clock className="w-4 h-4" />
+                      Active
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                        observationView === 'active' ? 'bg-white/30' : 'bg-slate-200'
+                      }`}>
+                        {filteredActiveObservations.length}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setObservationView('history');
+                        if (!observationHistoryLoaded && onLoadObservationHistory) {
+                          onLoadObservationHistory();
+                        }
+                      }}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                        observationView === 'history'
+                          ? 'bg-slate-700 text-white shadow-md'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      History
+                    </button>
+                  </div>
+                </div>
+
+                {/* Observation Content */}
+                <div className="flex-1 overflow-y-auto p-4">
+                  {observationView === 'active' ? (
+                    // Active Observations
+                    filteredActiveObservations.length > 0 ? (
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {filteredActiveObservations.map((obs) => (
+                          <motion.div
+                            key={obs.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="bg-white rounded-xl border-2 border-orange-200 shadow-sm hover:shadow-md transition-all overflow-hidden"
+                          >
+                            {/* Card Header */}
+                            <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-white">
+                              <div className="flex items-center justify-between">
+                                <div className="min-w-0 flex-1">
+                                  <h4 className="font-bold truncate">{obs.babyName}</h4>
+                                  <p className="text-xs text-orange-100">Mother: {obs.motherName}</p>
+                                </div>
+                                <div className="flex-shrink-0 ml-2">
+                                  <div className="bg-white/20 rounded-lg px-2 py-1">
+                                    <div className="text-xs text-orange-100">Duration</div>
+                                    <div className="font-bold text-sm">{calculateObservationDuration(obs.dateOfObservation)}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Card Body */}
+                            <div className="p-4 space-y-3">
+                              {/* Info Grid */}
+                              <div className="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                  <span className="text-slate-500 text-xs">DOB</span>
+                                  <p className="font-medium text-slate-700">
+                                    {new Date(obs.dateOfBirth).toLocaleDateString()}
+                                  </p>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500 text-xs">Started</span>
+                                  <p className="font-medium text-slate-700">
+                                    {formatObservationTime(obs.dateOfObservation)}
+                                  </p>
+                                </div>
+                                {obs.gender && (
+                                  <div>
+                                    <span className="text-slate-500 text-xs">Gender</span>
+                                    <p className="font-medium text-slate-700">{obs.gender}</p>
+                                  </div>
+                                )}
+                                {obs.birthWeight && (
+                                  <div>
+                                    <span className="text-slate-500 text-xs">Weight</span>
+                                    <p className="font-medium text-slate-700">{obs.birthWeight}g</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Reason */}
+                              <div className="bg-orange-50 rounded-lg p-2">
+                                <span className="text-xs text-orange-600 font-medium">Reason</span>
+                                <p className="text-sm text-slate-700 mt-0.5 line-clamp-2">{obs.reasonForObservation}</p>
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div className="flex gap-2 pt-2">
+                                <button
+                                  onClick={() => onConvertObservationToAdmission?.(obs)}
+                                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium text-sm transition-colors"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                  </svg>
+                                  Admit
+                                </button>
+                                <button
+                                  onClick={() => onHandoverObservation?.(obs)}
+                                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium text-sm transition-colors"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                  </svg>
+                                  Handover
+                                </button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="h-full flex items-center justify-center">
+                        <div className="text-center max-w-md">
+                          <div className="flex justify-center mb-6">
+                            <div className="p-6 bg-orange-100 rounded-3xl">
+                              <Clock className="w-16 h-16 text-orange-400" />
+                            </div>
+                          </div>
+                          <h3 className="text-2xl font-bold text-slate-900 mb-3">No Active Observations</h3>
+                          <p className="text-slate-500 mb-4">
+                            {searchQuery
+                              ? `No results matching "${searchQuery}"`
+                              : hasActiveFilters
+                              ? 'No active observations match the current filters'
+                              : 'No babies are currently under observation in this unit.'}
+                          </p>
+                          {(searchQuery || hasActiveFilters) && (
+                            <button
+                              onClick={() => {
+                                setSearchQuery('');
+                                setDateFilter({ period: 'All Time' });
+                                setShiftFilter({ enabled: false, startTime: '08:00', endTime: '20:00' });
+                              }}
+                              className="px-4 py-2 bg-orange-200 hover:bg-orange-300 text-orange-700 rounded-lg font-medium text-sm transition-colors"
+                            >
+                              Clear Filters
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  ) : (
+                    // Observation History
+                    loadingObservationHistory ? (
+                      <div className="h-full flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="w-12 h-12 border-4 border-slate-200 border-t-slate-600 rounded-full animate-spin mx-auto mb-4"></div>
+                          <p className="text-slate-500">Loading observation history...</p>
+                        </div>
+                      </div>
+                    ) : filteredObservationHistory.length > 0 ? (
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {filteredObservationHistory.map((obs) => (
+                          <motion.div
+                            key={obs.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+                          >
+                            {/* Card Header */}
+                            <div className={`px-4 py-3 text-white ${
+                              obs.outcome === ObservationOutcome.HandedOverToMother
+                                ? 'bg-gradient-to-r from-emerald-500 to-green-500'
+                                : 'bg-gradient-to-r from-blue-500 to-cyan-500'
+                            }`}>
+                              <div className="flex items-center justify-between">
+                                <div className="min-w-0 flex-1">
+                                  <h4 className="font-bold truncate">{obs.babyName}</h4>
+                                  <p className="text-xs opacity-80">Mother: {obs.motherName}</p>
+                                </div>
+                                <div className="flex-shrink-0 ml-2">
+                                  <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
+                                    obs.outcome === ObservationOutcome.HandedOverToMother
+                                      ? 'bg-white/20'
+                                      : 'bg-white/20'
+                                  }`}>
+                                    {obs.outcome === ObservationOutcome.HandedOverToMother ? 'Handed Over' : 'Admitted'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Card Body */}
+                            <div className="p-4 space-y-2 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">Duration</span>
+                                <span className="font-medium text-slate-700">
+                                  {obs.observationDurationHours ? `${obs.observationDurationHours}h ` : ''}
+                                  {obs.observationDurationMinutes ? `${obs.observationDurationMinutes}m` : '< 1m'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">Observation Date</span>
+                                <span className="font-medium text-slate-700">
+                                  {new Date(obs.dateOfObservation).toLocaleDateString()}
+                                </span>
+                              </div>
+                              {obs.dischargedAt && (
+                                <div className="flex justify-between">
+                                  <span className="text-slate-500">Completed</span>
+                                  <span className="font-medium text-slate-700">
+                                    {new Date(obs.dischargedAt).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="h-full flex items-center justify-center">
+                        <div className="text-center max-w-md">
+                          <div className="flex justify-center mb-6">
+                            <div className="p-6 bg-slate-100 rounded-3xl">
+                              <svg className="w-16 h-16 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <h3 className="text-2xl font-bold text-slate-900 mb-3">No Observation History</h3>
+                          <p className="text-slate-500 mb-4">
+                            {searchQuery
+                              ? `No results matching "${searchQuery}"`
+                              : hasActiveFilters
+                              ? 'No completed observations match the current filters'
+                              : 'No completed observation records found.'}
+                          </p>
+                          {(searchQuery || hasActiveFilters) && (
+                            <button
+                              onClick={() => {
+                                setSearchQuery('');
+                                setDateFilter({ period: 'All Time' });
+                                setShiftFilter({ enabled: false, startTime: '08:00', endTime: '20:00' });
+                              }}
+                              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-medium text-sm transition-colors"
+                            >
+                              Clear Filters
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            ) : filteredPatients.length > 0 ? (
               <VirtualizedPatientList
                   patients={filteredPatients}
                   onView={onViewDetails}
@@ -1107,6 +1666,15 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                       <p className="text-[10px] text-green-300">Discharged</p>
                     </div>
                   </div>
+                  {observationPatients.length > 0 && (
+                    <div className="mt-2 bg-orange-500/20 rounded-lg p-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-orange-400" />
+                        <p className="text-[10px] text-orange-300">Observation</p>
+                      </div>
+                      <p className="text-lg font-bold text-orange-400">{observationPatients.length}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Date Filter */}
@@ -1274,8 +1842,8 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                   onProcessingComplete={handleProcessingComplete}
                   onProcessingError={handleProcessingError}
                   onUpdatePatient={(updatedPatient) => {
-                    // Update medications in local state and parent
-                    setQuickRecordPatient(updatedPatient);
+                    // Only update parent - don't call setQuickRecordPatient here
+                    // as it causes the modal to reopen after saving
                     if (onPatientUpdate) {
                       onPatientUpdate(updatedPatient);
                     }
@@ -1332,14 +1900,32 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                 pendingStatus === 'Step Down' ? 'bg-amber-50 border border-amber-200' :
                 pendingStatus === 'Referred' ? 'bg-purple-50 border border-purple-200' : 'bg-blue-50 border border-blue-200'
               }`}>
-                <p className={`font-medium text-sm ${
-                  pendingStatus === 'Deceased' ? 'text-red-800' :
-                  pendingStatus === 'Discharged' ? 'text-green-800' :
-                  pendingStatus === 'Step Down' ? 'text-amber-800' :
-                  pendingStatus === 'Referred' ? 'text-purple-800' : 'text-blue-800'
-                }`}>
-                  Change status from <span className="font-bold">{statusPatient.outcome}</span> to <span className="font-bold">{pendingStatus}</span>?
-                </p>
+                {pendingStatus === 'Discharged' ? (
+                  <div className="space-y-2">
+                    <p className="font-medium text-sm text-green-800">
+                      Are you sure you want to discharge <span className="font-bold">{statusPatient.name}</span>?
+                    </p>
+                    <p className="text-xs text-green-700">
+                      This will mark the baby as discharged and you will be asked to complete the discharge summary.
+                    </p>
+                  </div>
+                ) : pendingStatus === 'Deceased' ? (
+                  <div className="space-y-2">
+                    <p className="font-medium text-sm text-red-800">
+                      We are sorry to hear this. Are you confirming that <span className="font-bold">{statusPatient.name}</span> has passed away?
+                    </p>
+                    <p className="text-xs text-red-700">
+                      You will be asked to complete the death certificate (MCCD Form 4).
+                    </p>
+                  </div>
+                ) : (
+                  <p className={`font-medium text-sm ${
+                    pendingStatus === 'Step Down' ? 'text-amber-800' :
+                    pendingStatus === 'Referred' ? 'text-purple-800' : 'text-blue-800'
+                  }`}>
+                    Change status from <span className="font-bold">{statusPatient.outcome}</span> to <span className="font-bold">{pendingStatus}</span>?
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-3">
@@ -1534,6 +2120,23 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
           userName={userName}
           userRole={userRole}
           viewMode={dischargeViewMode}
+        />
+      )}
+
+      {/* Death Certificate Modal (MCCD Form 4) */}
+      {showDeathCertificateModal && deathCertificatePatient && (
+        <DeathCertificateModal
+          patient={deathCertificatePatient}
+          onClose={() => {
+            setShowDeathCertificateModal(false);
+            setDeathCertificatePatient(null);
+          }}
+          onPatientUpdate={onPatientUpdate}
+          userName={userName}
+          userDesignation={userRole}
+          institutionName={deathCertificatePatient.institutionName}
+          doctors={doctors}
+          viewMode={!!deathCertificatePatient.savedDeathCertificate}
         />
       )}
     </div>

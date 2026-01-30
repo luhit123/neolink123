@@ -9,6 +9,14 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      // Security headers for development server
+      headers: {
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-XSS-Protection': '1; mode=block',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'Permissions-Policy': 'camera=(), microphone=(self), geolocation=()',
+      },
       proxy: {
         // Proxy RunPod API to bypass CORS (note: domain is api.runpod.AI)
         '/api/runpod': {
@@ -83,7 +91,7 @@ export default defineConfig(({ mode }) => {
         registerType: 'prompt', // Changed to 'prompt' for immediate update notification
         includeAssets: ['pwa-192.png', 'pwa-512.png', 'apple-touch-icon.png'],
         devOptions: {
-          enabled: true, // Enable in development
+          enabled: false, // Disabled to fix Firestore offline issue
         },
         manifest: {
           name: 'NeoLink PICU/NICU Records',
@@ -129,30 +137,42 @@ export default defineConfig(({ mode }) => {
           clientsClaim: true,
           // Clean up old caches
           cleanupOutdatedCaches: true,
-          // Cache Firebase auth and API calls appropriately
+          // IMPORTANT: Exclude Firebase/Google APIs from service worker
+          // Firestore uses streaming connections that break with caching
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /firestore\.googleapis\.com/,
+            /identitytoolkit\.googleapis\.com/,
+            /securetoken\.googleapis\.com/
+          ],
+          // Don't intercept any Google/Firebase API calls
+          // CRITICAL: Do NOT cache Firestore, Auth, or any Firebase APIs
           runtimeCaching: [
             {
+              // CRITICAL: NetworkOnly for ALL Firestore connections
+              // This prevents service worker from interfering with streaming
               urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'firestore-cache',
-                expiration: {
-                  maxEntries: 50,
-                  maxAgeSeconds: 60 * 60 * 24 // 24 hours
-                },
-                cacheableResponse: {
-                  statuses: [0, 200]
-                }
-              }
+              handler: 'NetworkOnly',
             },
             {
-              urlPattern: /^https:\/\/.*\.googleapis\.com\/.*/i,
-              handler: 'NetworkFirst',
+              // NetworkOnly for Firebase Auth endpoints
+              urlPattern: /^https:\/\/(identitytoolkit|securetoken)\.googleapis\.com\/.*/i,
+              handler: 'NetworkOnly',
+            },
+            {
+              // NetworkOnly for any googleapis that's not fonts
+              urlPattern: /^https:\/\/(?!fonts\.).*\.googleapis\.com\/.*/i,
+              handler: 'NetworkOnly',
+            },
+            {
+              // Only cache static assets like fonts
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'CacheFirst',
               options: {
-                cacheName: 'google-apis-cache',
+                cacheName: 'google-fonts-cache',
                 expiration: {
-                  maxEntries: 50,
-                  maxAgeSeconds: 60 * 60 * 24 // 24 hours
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
                 }
               }
             }

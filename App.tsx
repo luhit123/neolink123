@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, addDoc, onSnapshot } from 'firebase/firestore';
 import { MotionConfig, motion } from 'framer-motion';
 import { auth, db, authReady } from './firebaseConfig';
 import { handleRedirectResult } from './services/authService';
@@ -14,10 +14,11 @@ import { ChatProvider } from './contexts/ChatContext';
 import { BackgroundSaveProvider } from './contexts/BackgroundSaveContext';
 import BackgroundSaveIndicator from './components/BackgroundSaveIndicator';
 import AutoUpdatePrompt from './components/AutoUpdatePrompt';
+import { QueryProvider } from './providers/QueryProvider';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./components/Dashboard'));
-const SuperAdminDashboard = lazy(() => import('./components/SuperAdminDashboard'));
+const SuperAdminDashboard = lazy(() => import('./components/SuperAdminDashboardEnhanced'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const DistrictAdminDashboard = lazy(() => import('./components/DistrictAdminDashboard'));
 const ReferralManagementPage = lazy(() => import('./components/ReferralManagementPage'));
@@ -25,6 +26,42 @@ const PatientForm = lazy(() => import('./components/PatientForm'));
 
 // Module-level flag to ensure redirect is handled only once per page load
 let redirectHandled = false;
+
+// Helper to get document using onSnapshot (handles offline gracefully)
+const getDocWithSnapshot = (docRef: any): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    const unsubscribe = onSnapshot(
+      docRef,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        unsubscribe(); // Only need first result
+        if (snapshot.metadata.fromCache) {
+          console.log('📦 Got document from cache:', docRef.path);
+        } else {
+          console.log('🌐 Got document from server:', docRef.path);
+        }
+        resolve(snapshot);
+      },
+      (error) => {
+        unsubscribe();
+        // For "unavailable" errors, don't reject - return empty doc
+        if (error.code === 'unavailable') {
+          console.warn('⚠️ Firestore temporarily offline for:', docRef.path);
+          resolve({ exists: () => false, data: () => null, metadata: { fromCache: true } });
+        } else {
+          reject(error);
+        }
+      }
+    );
+
+    // Timeout fallback - if no response in 10s, return empty
+    setTimeout(() => {
+      unsubscribe();
+      console.warn('⚠️ Timeout waiting for document:', docRef.path);
+      resolve({ exists: () => false, data: () => null, metadata: { fromCache: true } });
+    }, 10000);
+  });
+};
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -54,6 +91,7 @@ function App() {
   const [showPatientList, setShowPatientList] = useState(false);
   const [triggerAnalyticsScroll, setTriggerAnalyticsScroll] = useState(0);
   const [triggerQuickActions, setTriggerQuickActions] = useState(0);
+  const [institutionDoctors, setInstitutionDoctors] = useState<string[]>([]);
 
   // Refs for checking state inside popstate listener without re-binding
   const stateRef = React.useRef({
@@ -78,6 +116,27 @@ function App() {
       showPatientList
     };
   }, [showSuperAdminPanel, showAdminPanel, showReferralManagement, showAddPatientPage, superAdminViewingInstitution, districtAdminViewingInstitution, showPatientList]);
+
+  // Load institution doctors when user profile is available
+  useEffect(() => {
+    const loadDoctors = async () => {
+      if (userProfile?.institutionId) {
+        try {
+          const institutionDoc = await getDoc(doc(db, 'institutions', userProfile.institutionId));
+          if (institutionDoc.exists()) {
+            const data = institutionDoc.data();
+            if (data.doctors && Array.isArray(data.doctors)) {
+              setInstitutionDoctors(data.doctors);
+              console.log('✅ Loaded institution doctors:', data.doctors.length);
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error loading doctors:', error);
+        }
+      }
+    };
+    loadDoctors();
+  }, [userProfile?.institutionId]);
 
   // Smart back navigation
   useEffect(() => {
@@ -286,40 +345,114 @@ function App() {
         throw new Error('User email is missing');
       }
 
-      // Parallel check: users collection AND approved_users collection
-      const [userDoc, approvedSnapshot] = await Promise.all([
-        getDoc(doc(db, 'users', firebaseUser.uid)),
-        getDocs(
+      // Initial SuperAdmin emails (hardcoded for first-time setup)
+      const INITIAL_SUPER_ADMINS = [
+        'luhitdhungel6@gmail.com'
+      ];
+
+      // Parallel check: users collection, superAdmins collection, AND approved_users collection
+      console.log('🔍 Loading profile for email:', email);
+
+      let userDoc, superAdminDoc, approvedSnapshot;
+
+      // Fetch documents using onSnapshot (handles offline gracefully)
+      console.log('📡 Fetching user documents...');
+
+      try {
+        // Fetch user doc and superAdmin doc in parallel
+        [userDoc, superAdminDoc] = await Promise.all([
+          getDocWithSnapshot(doc(db, 'users', firebaseUser.uid)),
+          getDocWithSnapshot(doc(db, 'superAdmins', email))
+        ]);
+        console.log('✅ User doc exists:', userDoc.exists(), '| SuperAdmin doc exists:', superAdminDoc.exists());
+      } catch (e: any) {
+        // Only warn for offline - it's a temporary state
+        if (e.code === 'unavailable') {
+          console.warn('⚠️ Firestore temporarily offline, using defaults');
+          userDoc = { exists: () => false, data: () => null };
+          superAdminDoc = { exists: () => false, data: () => null };
+        } else {
+          console.error('❌ Failed to fetch user docs:', e.code, e.message);
+          throw e;
+        }
+      }
+
+      try {
+        console.log('📡 Fetching approved_users...');
+        approvedSnapshot = await getDocs(
           query(
             collection(db, 'approved_users'),
-            where('email', '==', email),
-            where('enabled', '==', true)
+            where('email', '==', email)
           )
-        )
-      ]);
-
-      // Step 1: Quick check if SuperAdmin (single doc read)
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        if (userData.role === UserRole.SuperAdmin) {
-          const profile: UserProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName || 'SuperAdmin',
-            role: UserRole.SuperAdmin,
-            createdAt: userData.createdAt || new Date().toISOString(),
-            lastLoginAt: new Date().toISOString()
-          };
-          setUserProfile(profile);
-          setAccessDenied(false);
-          setShowSuperAdminPanel(true); // Automatically show SuperAdmin dashboard
-          console.log('✅ SuperAdmin login - showing SuperAdmin dashboard');
-
-          // Update last login
-          setDoc(doc(db, 'users', firebaseUser.uid), { lastLoginAt: new Date().toISOString() }, { merge: true });
-          setLoading(false); // Important: Set loading to false for SuperAdmin
-          return;
+        );
+        console.log('✅ Approved users fetched:', approvedSnapshot.size);
+      } catch (e: any) {
+        // Offline is temporary - don't crash, just warn and return
+        if (e.code === 'unavailable' || e.message?.includes('offline')) {
+          console.warn('⚠️ Firestore temporarily offline for approved_users query');
+          // Set loading false and let Firestore auto-recover
+          setLoading(false);
+          return; // Exit early - Firestore will call onAuthStateChanged again when back online
         }
+        console.error('❌ Failed to fetch approved_users:', e.code, e.message);
+        throw new Error(`Failed to fetch approved_users: ${e.message}`);
+      }
+
+      console.log('📋 Query results - users:', userDoc.exists(), 'superAdmin:', superAdminDoc.exists(), 'approved_users:', approvedSnapshot.size);
+
+      // Debug logging
+      console.log('📋 SuperAdmin doc exists:', superAdminDoc.exists());
+      if (superAdminDoc.exists()) {
+        console.log('📋 SuperAdmin doc data:', superAdminDoc.data());
+      }
+
+      // Check if email is in initial super admins list
+      const isInitialSuperAdmin = INITIAL_SUPER_ADMINS.includes(email);
+      console.log('🔐 Is initial SuperAdmin:', isInitialSuperAdmin);
+
+      // Auto-create superAdmin document if in initial list but doesn't exist
+      if (isInitialSuperAdmin && !superAdminDoc.exists()) {
+        console.log('📝 Creating SuperAdmin document for initial admin...');
+        await setDoc(doc(db, 'superAdmins', email), {
+          email: email,
+          name: firebaseUser.displayName || 'Super Admin',
+          enabled: true,
+          createdAt: new Date().toISOString(),
+          autoCreated: true
+        });
+        console.log('✅ SuperAdmin document created!');
+      }
+
+      // Step 1: Quick check if SuperAdmin (check both users collection, superAdmins collection, or initial list)
+      const isSuperAdminInUsers = userDoc.exists() && userDoc.data()?.role === UserRole.SuperAdmin;
+      const isSuperAdminInCollection = superAdminDoc.exists() && superAdminDoc.data()?.enabled !== false;
+
+      console.log('🔐 isSuperAdminInUsers:', isSuperAdminInUsers);
+      console.log('🔐 isSuperAdminInCollection:', isSuperAdminInCollection);
+
+      if (isSuperAdminInUsers || isSuperAdminInCollection || isInitialSuperAdmin) {
+        const superAdminData = superAdminDoc.exists() ? superAdminDoc.data() : {};
+        const profile: UserProfile = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          displayName: superAdminData.name || firebaseUser.displayName || 'SuperAdmin',
+          role: UserRole.SuperAdmin,
+          createdAt: superAdminData.createdAt || new Date().toISOString(),
+          lastLoginAt: new Date().toISOString()
+        };
+        setUserProfile(profile);
+        setAccessDenied(false);
+        setShowSuperAdminPanel(true); // Automatically show SuperAdmin dashboard
+        console.log('✅ SuperAdmin login - showing SuperAdmin dashboard');
+
+        // Update users collection with SuperAdmin role
+        setDoc(doc(db, 'users', firebaseUser.uid), {
+          ...profile,
+          role: UserRole.SuperAdmin,
+          lastLoginAt: new Date().toISOString()
+        }, { merge: true });
+        setLoading(false); // Important: Set loading to false for SuperAdmin
+        return;
       }
 
       // Step 2: Check approved_users for District Admin
@@ -327,13 +460,14 @@ function App() {
         query(
           collection(db, 'approved_users'),
           where('email', '==', firebaseUser.email?.toLowerCase()),
-          where('role', '==', UserRole.DistrictAdmin),
-          where('enabled', '==', true)
+          where('role', '==', UserRole.DistrictAdmin)
         )
       );
 
-      if (!districtAdminSnapshot.empty) {
-        const adminData = districtAdminSnapshot.docs[0].data();
+      // Check if found and enabled
+      const districtAdminDoc = districtAdminSnapshot.docs.find(d => d.data().enabled !== false);
+      if (districtAdminDoc) {
+        const adminData = districtAdminDoc.data();
         const profile: UserProfile = {
           uid: firebaseUser.uid,
           email: firebaseUser.email || '',
@@ -357,7 +491,7 @@ function App() {
         }, { merge: true });
 
         if (!adminData.uid) {
-          updateDoc(doc(db, 'approved_users', districtAdminSnapshot.docs[0].id), { uid: firebaseUser.uid });
+          updateDoc(doc(db, 'approved_users', districtAdminDoc.id), { uid: firebaseUser.uid });
         }
         return;
       }
@@ -366,7 +500,7 @@ function App() {
 
       // Check if user found
       if (approvedSnapshot.empty) {
-        console.log('❌ No approved user found');
+        console.log('❌ No approved user found for email:', email);
         setAccessDenied(true);
         setAccessMessage(
           `Your email (${firebaseUser.email}) is not authorized to access any institution.\n\n` +
@@ -377,11 +511,26 @@ function App() {
         return;
       }
 
-      // Get all enabled institutions (already filtered in query)
-      const enabledInstitutions = approvedSnapshot.docs.map(doc => ({
+      // Get all institutions and filter out disabled ones (enabled !== false means enabled)
+      const allInstitutions = approvedSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       } as any));
+
+      console.log('📋 Found', allInstitutions.length, 'institution(s) for user');
+
+      // Filter to only enabled institutions (enabled field missing or true)
+      const enabledInstitutions = allInstitutions.filter((inst: any) => inst.enabled !== false);
+
+      if (enabledInstitutions.length === 0) {
+        console.log('❌ All institutions are disabled for this user');
+        setAccessDenied(true);
+        setAccessMessage(
+          `Your account has been disabled. Please contact your institution administrator.`
+        );
+        setUserProfile(null);
+        return;
+      }
 
       console.log('✅ Found', enabledInstitutions.length, 'enabled institution(s)');
 
@@ -463,9 +612,31 @@ function App() {
       }
 
     } catch (error: any) {
+      // Offline/unavailable is temporary - don't treat as error
+      if (error.code === 'unavailable' || error.message?.includes('offline')) {
+        console.warn('⚠️ Firestore temporarily offline - will auto-recover');
+        // Don't set accessDenied - just wait for auto-recovery
+        setLoading(false);
+        return;
+      }
+
       console.error('❌ Error loading user profile:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
       setAccessDenied(true);
-      setAccessMessage('Error loading user profile. Please try again or contact support.');
+
+      // Show specific error for real errors (not offline)
+      let errorMsg = 'Error loading user profile. ';
+      if (error.code === 'permission-denied') {
+        errorMsg += 'Permission denied - check Firestore rules.';
+      } else if (error.code === 'failed-precondition') {
+        errorMsg += 'Missing Firestore index - check console for link.';
+      } else if (error.message) {
+        errorMsg += error.message;
+      } else {
+        errorMsg += 'Please try again or contact support.';
+      }
+      setAccessMessage(errorMsg);
       setUserProfile(null);
     } finally {
       setLoading(false);
@@ -752,6 +923,9 @@ function App() {
                 allRoles={[UserRole.DistrictAdmin]}
                 setShowSuperAdminPanel={() => { }} // No-op
                 setShowAdminPanel={() => { }} // No-op
+                showPatientList={showPatientList}
+                setShowPatientList={setShowPatientList}
+                doctors={institutionDoctors}
               />
             </Suspense>
           </div>
@@ -894,6 +1068,7 @@ function App() {
               userEmail={user.email || ''}
               userName={userProfile.displayName}
               availableUnits={undefined}
+              doctors={institutionDoctors}
             />
           </Suspense>
         </main>
@@ -901,8 +1076,9 @@ function App() {
     );
   }
 
-  // Main Application - Wrapped with ErrorBoundary and MotionConfig
+  // Main Application - Wrapped with QueryProvider, ErrorBoundary and MotionConfig
   return (
+    <QueryProvider>
     <BackgroundSaveProvider>
     <ChatProvider>
       {/* Auto-update prompt for instant updates */}
@@ -958,6 +1134,7 @@ function App() {
                     setShowPatientList={setShowPatientList}
                     triggerAnalyticsScroll={triggerAnalyticsScroll}
                     triggerQuickActions={triggerQuickActions}
+                    doctors={institutionDoctors}
                   />
                 </Suspense>
               </div>
@@ -979,6 +1156,7 @@ function App() {
       </ErrorBoundary>
     </ChatProvider>
     </BackgroundSaveProvider>
+    </QueryProvider>
   );
 }
 

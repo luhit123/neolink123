@@ -1,5 +1,5 @@
 import React from 'react';
-import { Patient, ObservationOutcome } from '../types';
+import { Patient, PatientOutcome } from '../types';
 import { getFormattedAge } from '../utils/ageCalculator';
 import PatientActionMenu from './PatientActionMenu';
 
@@ -7,7 +7,7 @@ interface SimplePatientRowProps {
   patient: Patient;
   onClick: () => void;
   onQuickRecord?: (patient: Patient) => void;
-  onUpdateStatus?: (patient: Patient, status: ObservationOutcome) => void;
+  onUpdateStatus?: (patient: Patient, status: PatientOutcome) => void;
   onGenerateDischarge?: (patient: Patient) => void;
   onViewDischargeCertificate?: (patient: Patient) => void;
   onPreviewDischarge?: (patient: Patient) => void;
@@ -76,7 +76,7 @@ const SimplePatientRow: React.FC<SimplePatientRowProps> = ({
       className={`
         flex items-center gap-2 sm:gap-3 p-3 sm:p-4
         bg-white hover:bg-slate-50 border-b border-slate-100
-        cursor-pointer transition-colors
+        cursor-pointer transition-colors w-full max-w-full overflow-hidden
         ${isSelected ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500' : ''}
       `}
     >

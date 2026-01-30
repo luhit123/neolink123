@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 import {
   Patient,
   DischargeSummary,
@@ -15,6 +16,92 @@ import {
   DischargeType
 } from '../types';
 import { getFormattedAge } from '../utils/ageCalculator';
+
+// ==================== UNICODE DETECTION HELPER ====================
+// Check if text contains non-Latin characters (Indic scripts, etc.)
+function containsNonLatinCharacters(text: string): boolean {
+  // Regex to detect Devanagari and other Indic scripts
+  const indicScriptRegex = /[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0B00-\u0B7F\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F\u0D80-\u0DFF\u0E00-\u0E7F\u0E80-\u0EFF\u1000-\u109F\u1780-\u17FF\u0600-\u06FF\u0750-\u077F]/;
+  return indicScriptRegex.test(text);
+}
+
+// ==================== BILINGUAL TEXT RENDERER ====================
+// Renders bilingual text (English + Indic script) as an image using html2canvas
+async function renderBilingualTextAsImage(
+  items: string[],
+  title: string,
+  isWarning: boolean = false
+): Promise<HTMLCanvasElement | null> {
+  // Create a temporary container
+  const container = document.createElement('div');
+  container.style.cssText = `
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    width: 540px;
+    padding: 16px;
+    background: ${isWarning ? '#FEF2F2' : '#FFFFFF'};
+    font-family: 'Noto Sans', 'Noto Sans Devanagari', 'Arial Unicode MS', system-ui, -apple-system, sans-serif;
+    font-size: 11px;
+    line-height: 1.5;
+    color: ${isWarning ? '#991B1B' : '#1E293B'};
+  `;
+
+  // Add title
+  const titleEl = document.createElement('div');
+  titleEl.style.cssText = `
+    font-weight: bold;
+    font-size: 12px;
+    margin-bottom: 12px;
+    padding: 6px 10px;
+    background: ${isWarning ? '#DC2626' : '#F59E0B'};
+    color: white;
+    border-radius: 4px;
+  `;
+  titleEl.textContent = title;
+  container.appendChild(titleEl);
+
+  // Add items
+  items.forEach((item, index) => {
+    const itemEl = document.createElement('div');
+    itemEl.style.cssText = `
+      margin-bottom: 10px;
+      padding-left: 8px;
+      border-left: 2px solid ${isWarning ? '#DC2626' : '#F59E0B'};
+    `;
+
+    // Split by newline to separate English and regional text
+    const lines = item.split('\n');
+    lines.forEach((line, lineIndex) => {
+      const lineEl = document.createElement('div');
+      lineEl.style.cssText = lineIndex === 0
+        ? 'font-weight: 500; color: #1E293B;'
+        : 'color: #475569; margin-top: 2px;';
+      lineEl.textContent = isWarning ? `• ${line}` : `${index + 1}. ${line}`;
+      if (lineIndex > 0) lineEl.textContent = `   ${line}`;
+      itemEl.appendChild(lineEl);
+    });
+
+    container.appendChild(itemEl);
+  });
+
+  document.body.appendChild(container);
+
+  try {
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: isWarning ? '#FEF2F2' : '#FFFFFF',
+    });
+    return canvas;
+  } catch (error) {
+    console.error('Error rendering bilingual text:', error);
+    return null;
+  } finally {
+    document.body.removeChild(container);
+  }
+}
 
 // Extend jsPDF type to include autoTable
 declare module 'jspdf' {
@@ -175,7 +262,7 @@ function checkPageBreak(doc: jsPDF, currentY: number, requiredSpace: number = 40
 
 // ==================== MAIN PDF GENERATION ====================
 
-export function generateDischargeSummaryPDF(summary: DischargeSummary, patient: Patient): jsPDF {
+export async function generateDischargeSummaryPDF(summary: DischargeSummary, patient: Patient): Promise<jsPDF> {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -656,52 +743,105 @@ export function generateDischargeSummaryPDF(summary: DischargeSummary, patient: 
   }
 
   // ==================== DISCHARGE ADVICE & WARNING SIGNS ====================
-  y = checkPageBreak(doc, y, 50);
-  y = addSectionHeader(doc, 'Discharge Advice', y, COLORS.warning);
+  // Check if any text contains non-Latin characters (Hindi, Bengali, etc.)
+  const adviceHasNonLatin = summary.dischargeAdvice?.some(a => containsNonLatinCharacters(a)) || false;
+  const warningsHasNonLatin = summary.warningSignsToWatch?.some(w => containsNonLatinCharacters(w)) || false;
 
+  y = checkPageBreak(doc, y, 50);
+
+  // Render discharge advice
   if (summary.dischargeAdvice && summary.dischargeAdvice.length > 0) {
-    summary.dischargeAdvice.forEach((advice, index) => {
-      y = checkPageBreak(doc, y);
-      doc.setFontSize(FONTS.body);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...COLORS.dark);
-      const adviceText = doc.splitTextToSize(`${index + 1}. ${advice}`, pageWidth - MARGINS.left - MARGINS.right - 10);
-      doc.text(adviceText, col1X + 3, y);
-      y += adviceText.length * 4;
-    });
-    y += 3;
+    if (adviceHasNonLatin) {
+      // Use html2canvas for bilingual text (supports Indic scripts)
+      const adviceCanvas = await renderBilingualTextAsImage(
+        summary.dischargeAdvice,
+        'DISCHARGE ADVICE',
+        false
+      );
+      if (adviceCanvas) {
+        const imgWidth = pageWidth - MARGINS.left - MARGINS.right;
+        const imgHeight = (adviceCanvas.height * imgWidth) / adviceCanvas.width;
+
+        // Check if we need a new page
+        if (y + imgHeight > doc.internal.pageSize.getHeight() - MARGINS.bottom) {
+          doc.addPage();
+          y = MARGINS.top;
+        }
+
+        const imgData = adviceCanvas.toDataURL('image/png');
+        doc.addImage(imgData, 'PNG', MARGINS.left, y, imgWidth, imgHeight);
+        y += imgHeight + 5;
+      }
+    } else {
+      // Standard rendering for English-only text
+      y = addSectionHeader(doc, 'Discharge Advice', y, COLORS.warning);
+      summary.dischargeAdvice.forEach((advice, index) => {
+        y = checkPageBreak(doc, y);
+        doc.setFontSize(FONTS.body);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...COLORS.dark);
+        const adviceText = doc.splitTextToSize(`${index + 1}. ${advice}`, pageWidth - MARGINS.left - MARGINS.right - 10);
+        doc.text(adviceText, col1X + 3, y);
+        y += adviceText.length * 4;
+      });
+      y += 3;
+    }
   }
 
-  // Warning Signs Box
+  // Render warning signs
   if (summary.warningSignsToWatch && summary.warningSignsToWatch.length > 0) {
-    y = checkPageBreak(doc, y, 40);
+    if (warningsHasNonLatin) {
+      // Use html2canvas for bilingual text (supports Indic scripts)
+      const warningsCanvas = await renderBilingualTextAsImage(
+        summary.warningSignsToWatch,
+        'WARNING SIGNS - BRING BABY IMMEDIATELY IF:',
+        true
+      );
+      if (warningsCanvas) {
+        const imgWidth = pageWidth - MARGINS.left - MARGINS.right;
+        const imgHeight = (warningsCanvas.height * imgWidth) / warningsCanvas.width;
 
-    // Red warning box
-    doc.setFillColor(...COLORS.danger);
-    doc.rect(MARGINS.left, y, pageWidth - MARGINS.left - MARGINS.right, 7, 'F');
+        // Check if we need a new page
+        if (y + imgHeight > doc.internal.pageSize.getHeight() - MARGINS.bottom) {
+          doc.addPage();
+          y = MARGINS.top;
+        }
 
-    doc.setTextColor(...COLORS.white);
-    doc.setFontSize(FONTS.heading);
-    doc.setFont('helvetica', 'bold');
-    doc.text('WARNING SIGNS - BRING BABY IMMEDIATELY IF:', MARGINS.left + 3, y + 5);
-    y += 10;
+        const imgData = warningsCanvas.toDataURL('image/png');
+        doc.addImage(imgData, 'PNG', MARGINS.left, y, imgWidth, imgHeight);
+        y += imgHeight + 5;
+      }
+    } else {
+      // Standard rendering for English-only text
+      y = checkPageBreak(doc, y, 40);
 
-    // Warning signs list with red border
-    doc.setDrawColor(...COLORS.danger);
-    doc.setLineWidth(0.5);
-    const warningStartY = y;
+      // Red warning box
+      doc.setFillColor(...COLORS.danger);
+      doc.rect(MARGINS.left, y, pageWidth - MARGINS.left - MARGINS.right, 7, 'F');
 
-    summary.warningSignsToWatch.forEach((sign, index) => {
-      doc.setFontSize(FONTS.body);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...COLORS.danger);
-      doc.text(`• ${sign}`, MARGINS.left + 5, y);
-      y += 4;
-    });
+      doc.setTextColor(...COLORS.white);
+      doc.setFontSize(FONTS.heading);
+      doc.setFont('helvetica', 'bold');
+      doc.text('WARNING SIGNS - BRING BABY IMMEDIATELY IF:', MARGINS.left + 3, y + 5);
+      y += 10;
 
-    y += 2;
-    doc.rect(MARGINS.left, warningStartY - 3, pageWidth - MARGINS.left - MARGINS.right, y - warningStartY + 3, 'S');
-    y += 5;
+      // Warning signs list with red border
+      doc.setDrawColor(...COLORS.danger);
+      doc.setLineWidth(0.5);
+      const warningStartY = y;
+
+      summary.warningSignsToWatch.forEach((sign, index) => {
+        doc.setFontSize(FONTS.body);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...COLORS.danger);
+        doc.text(`• ${sign}`, MARGINS.left + 5, y);
+        y += 4;
+      });
+
+      y += 2;
+      doc.rect(MARGINS.left, warningStartY - 3, pageWidth - MARGINS.left - MARGINS.right, y - warningStartY + 3, 'S');
+      y += 5;
+    }
   }
 
   // ==================== EMERGENCY CONTACT ====================
@@ -722,7 +862,7 @@ export function generateDischargeSummaryPDF(summary: DischargeSummary, patient: 
   }
 
   // ==================== SIGNATURE SECTION ====================
-  y = checkPageBreak(doc, y, 35);
+  y = checkPageBreak(doc, y, 50);
 
   // Horizontal line
   doc.setDrawColor(...COLORS.secondary);
@@ -730,36 +870,63 @@ export function generateDischargeSummaryPDF(summary: DischargeSummary, patient: 
   doc.line(MARGINS.left, y, pageWidth - MARGINS.right, y);
   y += 8;
 
-  // Prepared By
+  // Doctor In Charge (from admission form)
+  if (patient.doctorInCharge) {
+    doc.setFontSize(FONTS.body);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...COLORS.dark);
+    doc.text('Doctor In Charge:', col1X, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(patient.doctorInCharge, col1X + 35, y);
+    y += 6;
+  }
+
+  // Generated By
   doc.setFontSize(FONTS.body);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...COLORS.dark);
-  doc.text('Prepared By:', col1X, y);
+  doc.text('Generated By:', col1X, y);
   doc.setFont('helvetica', 'normal');
-  doc.text(`${summary.preparedBy} (${summary.preparedByRole})`, col1X + 25, y);
-
-  // Verified By
-  if (summary.verifiedBy) {
-    doc.setFont('helvetica', 'bold');
-    doc.text('Verified By:', col2X, y);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`${summary.verifiedBy} (${summary.verifiedByRole || 'Doctor'})`, col2X + 22, y);
-  }
-
-  y += 12;
-
-  // Signature lines
-  doc.setDrawColor(...COLORS.dark);
-  doc.line(col1X, y, col1X + 50, y);
-  doc.line(col2X, y, col2X + 50, y);
-
-  y += 4;
-  doc.setFontSize(FONTS.small);
-  doc.setTextColor(...COLORS.secondary);
-  doc.text('Signature of Attending Doctor', col1X, y);
-  doc.text('Signature of Receiving Guardian', col2X, y);
+  doc.text(`${summary.preparedBy} (${summary.preparedByRole})`, col1X + 28, y);
 
   y += 10;
+
+  // Signature section - Two columns
+  // Left: Doctor on Duty (blank for signature)
+  doc.setFontSize(FONTS.body);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...COLORS.dark);
+  doc.text('Name & Signature of Doctor on Duty:', col1X, y);
+  y += 6;
+
+  // Blank line for name
+  doc.setDrawColor(...COLORS.dark);
+  doc.line(col1X, y + 6, col1X + 60, y + 6);
+  doc.setFontSize(FONTS.small);
+  doc.setTextColor(...COLORS.secondary);
+  doc.text('Name', col1X, y + 10);
+
+  // Blank line for signature
+  doc.line(col1X, y + 20, col1X + 60, y + 20);
+  doc.text('Signature', col1X, y + 24);
+
+  // Right: Guardian signature
+  doc.setFontSize(FONTS.body);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...COLORS.dark);
+  doc.text('Signature of Receiving Guardian:', col2X, y - 6);
+
+  // Blank line for guardian signature
+  doc.setDrawColor(...COLORS.dark);
+  doc.line(col2X, y + 6, col2X + 60, y + 6);
+  doc.setFontSize(FONTS.small);
+  doc.setTextColor(...COLORS.secondary);
+  doc.text('Name', col2X, y + 10);
+
+  doc.line(col2X, y + 20, col2X + 60, y + 20);
+  doc.text('Signature', col2X, y + 24);
+
+  y += 30;
 
   // Generated timestamp and branding
   doc.setFontSize(FONTS.small);
@@ -1072,16 +1239,16 @@ export function createDischargeSummaryFromPatient(
 
 // ==================== DOWNLOAD PDF ====================
 
-export function downloadDischargeSummaryPDF(summary: DischargeSummary, patient: Patient): void {
-  const doc = generateDischargeSummaryPDF(summary, patient);
+export async function downloadDischargeSummaryPDF(summary: DischargeSummary, patient: Patient): Promise<void> {
+  const doc = await generateDischargeSummaryPDF(summary, patient);
   const fileName = `Discharge_Summary_${patient.name.replace(/\s+/g, '_')}_${patient.ntid || patient.id.slice(0, 8)}.pdf`;
   doc.save(fileName);
 }
 
 // ==================== PREVIEW PDF (Returns blob URL) ====================
 
-export function previewDischargeSummaryPDF(summary: DischargeSummary, patient: Patient): string {
-  const doc = generateDischargeSummaryPDF(summary, patient);
+export async function previewDischargeSummaryPDF(summary: DischargeSummary, patient: Patient): Promise<string> {
+  const doc = await generateDischargeSummaryPDF(summary, patient);
   const blob = doc.output('blob');
   return URL.createObjectURL(blob);
 }

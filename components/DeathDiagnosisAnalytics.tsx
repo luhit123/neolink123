@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Patient, Unit } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Patient, Unit, DeathCertificate, NHMDeathCategory, DeathClassification } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeDeathDiagnosisPatterns } from '../services/openaiService';
 import MortalityChartsPanel from './MortalityChartsPanel';
 import IndividualMortalityViewer from './IndividualMortalityViewer';
-import CustomizableExportModal from './CustomizableExportModal';
 import AdvancedMortalityCharts from './analytics/cards/AdvancedMortalityCharts';
 import RiskFactorAnalysis from './analytics/cards/RiskFactorAnalysis';
 import KeyMetricsDashboard from './analytics/cards/KeyMetricsDashboard';
@@ -46,15 +45,28 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
   const [showFullAnalysis, setShowFullAnalysis] = useState(false);
   const [causeStats, setCauseStats] = useState<CauseOfDeath[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [filteredExportData, setFilteredExportData] = useState<{
-    patients: Patient[];
-    filterName: string;
-    analysisData?: any;
-    timeRange?: string;
-    startDate?: string;
-    endDate?: string;
-  } | null>(null);
+
+  // Helper function to extract primary cause from death certificate or patient data
+  const extractPrimaryCause = (patient: Patient): string => {
+    // Priority 1: Use savedDeathCertificate immediate cause (WHO ICD-10 format)
+    if (patient.savedDeathCertificate?.causeOfDeathPartI?.immediateCause) {
+      return patient.savedDeathCertificate.causeOfDeathPartI.immediateCause;
+    }
+    // Priority 2: Use AI interpreted diagnosis
+    if (patient.aiInterpretedDeathDiagnosis) {
+      return patient.aiInterpretedDeathDiagnosis.replace(/^(Primary\s*Cause\s*[:\-]\s*)/i, '').trim();
+    }
+    // Priority 3: Use manual diagnosis at death
+    if (patient.diagnosisAtDeath) {
+      return patient.diagnosisAtDeath.split('.')[0].split(',')[0].trim();
+    }
+    return 'Unknown';
+  };
+
+  // Extract ICD-10 code from death certificate
+  const extractICD10Code = (patient: Patient): string | null => {
+    return patient.savedDeathCertificate?.causeOfDeathPartI?.immediateCauseICD10 || null;
+  };
 
   useEffect(() => {
     const deceased = patients.filter(p => p.outcome === 'Deceased');
@@ -64,13 +76,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
     const causesMap = new Map<string, CauseOfDeath>();
 
     deceased.forEach(patient => {
-      let diagnosis = patient.aiInterpretedDeathDiagnosis || patient.diagnosisAtDeath || 'Unknown';
-
-      // Remove "Primary Cause:" prefix if present
-      diagnosis = diagnosis.replace(/^(Primary\s*Cause\s*[:\-]\s*)/i, '').trim();
-
-      // Simple cause extraction (first sentence or first major phrase)
-      const primaryCause = diagnosis.split('.')[0].split(',')[0].trim();
+      const primaryCause = extractPrimaryCause(patient);
 
       if (!causesMap.has(primaryCause)) {
         causesMap.set(primaryCause, {
@@ -87,9 +93,9 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
 
       // Track age groups
       const ageGroup = patient.ageUnit === 'days' ? 'Neonates (0-28 days)' :
-                       patient.ageUnit === 'weeks' ? 'Infants (weeks)' :
-                       patient.ageUnit === 'months' ? 'Infants (months)' :
-                       'Children (years)';
+        patient.ageUnit === 'weeks' ? 'Infants (weeks)' :
+          patient.ageUnit === 'months' ? 'Infants (months)' :
+            'Children (years)';
       causeData.ageGroups[ageGroup] = (causeData.ageGroups[ageGroup] || 0) + 1;
 
       // Track units
@@ -198,6 +204,104 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
     return acc;
   }, {} as { [key: string]: number });
 
+  // ==================== NEW: Death Certificate Analytics ====================
+
+  // Death Certificate completion status
+  const certificateStats = useMemo(() => {
+    const withCertificate = deceasedPatients.filter(p => p.savedDeathCertificate).length;
+    const withICD10 = deceasedPatients.filter(p =>
+      p.savedDeathCertificate?.causeOfDeathPartI?.immediateCauseICD10
+    ).length;
+    const withNHMCategory = deceasedPatients.filter(p =>
+      p.savedDeathCertificate?.nhmDeathCategory
+    ).length;
+    return {
+      total: deceasedPatients.length,
+      withCertificate,
+      withoutCertificate: deceasedPatients.length - withCertificate,
+      withICD10,
+      withNHMCategory,
+      completionRate: deceasedPatients.length > 0
+        ? ((withCertificate / deceasedPatients.length) * 100).toFixed(1)
+        : '0'
+    };
+  }, [deceasedPatients]);
+
+  // ICD-10 Code Distribution (from death certificates)
+  const icd10Distribution = useMemo(() => {
+    const distribution: { [code: string]: { count: number; description: string } } = {};
+
+    deceasedPatients.forEach(patient => {
+      const cert = patient.savedDeathCertificate;
+      if (cert?.causeOfDeathPartI) {
+        // Immediate cause ICD-10
+        if (cert.causeOfDeathPartI.immediateCauseICD10) {
+          const code = cert.causeOfDeathPartI.immediateCauseICD10;
+          if (!distribution[code]) {
+            distribution[code] = { count: 0, description: cert.causeOfDeathPartI.immediateCause || '' };
+          }
+          distribution[code].count++;
+        }
+        // Underlying cause ICD-10
+        if (cert.causeOfDeathPartI.underlyingCauseICD10) {
+          const code = cert.causeOfDeathPartI.underlyingCauseICD10;
+          if (!distribution[code]) {
+            distribution[code] = { count: 0, description: cert.causeOfDeathPartI.underlyingCause || '' };
+          }
+          distribution[code].count++;
+        }
+      }
+    });
+
+    return Object.entries(distribution)
+      .map(([code, data]) => ({ code, ...data }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [deceasedPatients]);
+
+  // NHM Death Category Distribution
+  const nhmCategoryDistribution = useMemo(() => {
+    const distribution: { [category: string]: number } = {};
+
+    deceasedPatients.forEach(patient => {
+      const category = patient.savedDeathCertificate?.nhmDeathCategory || 'Not Classified';
+      distribution[category] = (distribution[category] || 0) + 1;
+    });
+
+    return Object.entries(distribution)
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [deceasedPatients]);
+
+  // Death Classification Distribution (Expected/Unexpected)
+  const deathClassificationDistribution = useMemo(() => {
+    const distribution: { [classification: string]: number } = {};
+
+    deceasedPatients.forEach(patient => {
+      const classification = patient.savedDeathCertificate?.deathClassification || 'Not Classified';
+      distribution[classification] = (distribution[classification] || 0) + 1;
+    });
+
+    return distribution;
+  }, [deceasedPatients]);
+
+  // Underlying Cause Analysis (from death certificates)
+  const underlyingCauseDistribution = useMemo(() => {
+    const distribution: { [cause: string]: number } = {};
+
+    deceasedPatients.forEach(patient => {
+      const underlyingCause = patient.savedDeathCertificate?.causeOfDeathPartI?.underlyingCause;
+      if (underlyingCause) {
+        distribution[underlyingCause] = (distribution[underlyingCause] || 0) + 1;
+      }
+    });
+
+    return Object.entries(distribution)
+      .map(([cause, count]) => ({ cause, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [deceasedPatients]);
+
   const formatMarkdown = (text: string) => {
     return text
       .replace(/## (.*?)$/gm, '<h3 class="text-lg font-bold text-slate-900 mt-6 mb-3">$1</h3>')
@@ -206,111 +310,25 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
       .replace(/\n/g, '<br/>');
   };
 
-  const handleAnalyticsExport = (analysisType: string) => {
-    // This will export comprehensive analysis report with all categories
-    let analysisData: any = {};
-    let filterName = '';
-
-    if (analysisType === 'birthWeight') {
-      analysisData = {
-        type: 'birthWeight',
-        distribution: birthWeightDistribution,
-        allPatients,
-        title: 'Death Analysis as per Birth Weight'
-      };
-      filterName = 'Death Analysis as per Birth Weight';
-    } else if (analysisType === 'durationOfStay') {
-      analysisData = {
-        type: 'durationOfStay',
-        distribution: durationOfStayDistribution,
-        allPatients,
-        title: 'Death Analysis as per Duration of Stay'
-      };
-      filterName = 'Death Analysis as per Duration of Stay';
-    } else if (analysisType === 'birthToAdmission') {
-      analysisData = {
-        type: 'birthToAdmission',
-        distribution: birthToAdmissionGap,
-        allPatients,
-        title: 'Death Analysis as per Birth to Admission Gap'
-      };
-      filterName = 'Death Analysis as per Birth to Admission Gap';
-    } else if (analysisType === 'referralSource') {
-      analysisData = {
-        type: 'referralSource',
-        distribution: referralSourceDistribution,
-        allPatients,
-        title: 'Death Analysis as per Referral Source'
-      };
-      filterName = 'Death Analysis as per Referral Source';
-    } else if (analysisType === 'diagnosis') {
-      analysisData = {
-        type: 'diagnosis',
-        distribution: causeStats.reduce((acc, stat) => {
-          acc[stat.cause] = stat.count;
-          return acc;
-        }, {} as { [key: string]: number }),
-        allPatients,
-        title: 'Death Analysis as per Diagnosis'
-      };
-      filterName = 'Death Analysis as per Diagnosis';
-    } else if (analysisType === 'gender') {
-      const genderDist = deceasedPatients.reduce((acc, p) => {
-        acc[p.gender] = (acc[p.gender] || 0) + 1;
-        return acc;
-      }, {} as { [key: string]: number });
-      analysisData = {
-        type: 'gender',
-        distribution: genderDist,
-        allPatients,
-        title: 'Death Analysis as per Gender'
-      };
-      filterName = 'Death Analysis as per Gender';
-    }
-
-    // Store analysis data for PDF generation
-    setFilteredExportData({
-      patients: deceasedPatients,
-      filterName,
-      analysisData,
-      timeRange: timeRangeLabel,
-      startDate,
-      endDate
-    });
-    setShowExportModal(true);
-  };
-
   return (
     <div className="space-y-6">
-      {/* Header - Mobile Optimized */}
-      <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-2xl">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-          <div className="flex items-center gap-3 sm:gap-4">
-            <div className="w-10 h-10 sm:w-16 sm:h-16 bg-white/20 backdrop-blur-xl rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
-              <svg className="w-6 h-6 sm:w-10 sm:h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      {/* Compact Header */}
+      <div className="bg-gradient-to-r from-slate-700 to-slate-800 rounded-xl p-4 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <div className="min-w-0">
-              <h2 className="text-lg sm:text-2xl font-bold text-white">Death Diagnosis Analytics</h2>
-              <p className="text-blue-100 text-xs sm:text-sm truncate">AI-Powered Analysis • {institutionName}</p>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-white">Diagnosis Analytics</h2>
+              <p className="text-slate-300 text-[10px] sm:text-xs">AI-Powered • {timeRangeLabel}</p>
             </div>
           </div>
-          {/* Stats & Export - Always visible */}
-          <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4">
-            <div className="text-left sm:text-right">
-              <div className="text-2xl sm:text-4xl font-bold text-white">{deceasedPatients.length}</div>
-              <div className="text-blue-100 text-xs sm:text-sm">Deceased</div>
-            </div>
-            <button
-              onClick={() => setShowExportModal(true)}
-              className="px-3 py-2 sm:px-6 sm:py-3 bg-white/20 hover:bg-white/30 backdrop-blur-xl text-white rounded-lg sm:rounded-xl font-bold flex items-center gap-1.5 sm:gap-2 transition-all shadow-lg border border-white/30 text-xs sm:text-base"
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span className="hidden sm:inline">Export</span>
-            </button>
+          <div className="text-right">
+            <div className="text-xl sm:text-2xl font-bold text-white">{deceasedPatients.length}</div>
+            <div className="text-slate-300 text-[10px] sm:text-xs">Cases</div>
           </div>
         </div>
       </div>
@@ -357,26 +375,173 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
           </div>
           <div className="space-y-1 sm:space-y-2">
             <div className="flex justify-between items-center">
-              <span className="text-xs sm:text-sm text-slate-600">AI</span>
+              <span className="text-xs sm:text-sm text-slate-600">MCCD</span>
+              <span className="text-xs sm:text-sm font-bold text-emerald-600">
+                {certificateStats.withCertificate}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs sm:text-sm text-slate-600">AI Dx</span>
               <span className="text-xs sm:text-sm font-bold text-green-600">
                 {deceasedPatients.filter(p => p.aiInterpretedDeathDiagnosis).length}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-xs sm:text-sm text-slate-600">Manual</span>
-              <span className="text-xs sm:text-sm font-bold text-slate-900">
-                {deceasedPatients.filter(p => !p.aiInterpretedDeathDiagnosis && p.diagnosisAtDeath).length}
+              <span className="text-xs sm:text-sm text-slate-600">ICD-10</span>
+              <span className="text-xs sm:text-sm font-bold text-cyan-600">
+                {certificateStats.withICD10}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs sm:text-sm text-slate-600">Missing</span>
               <span className="text-xs sm:text-sm font-bold text-red-600">
-                {deceasedPatients.filter(p => !p.diagnosisAtDeath).length}
+                {certificateStats.withoutCertificate}
               </span>
             </div>
           </div>
         </motion.div>
       </div>
+
+      {/* Death Certificate Analytics - NEW SECTION */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+        className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-xl"
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/10 rounded-xl flex items-center justify-center">
+            <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-lg sm:text-xl font-bold text-white">Death Certificate Analytics</h3>
+            <p className="text-slate-400 text-xs sm:text-sm">MCCD Form 4 & WHO ICD-10 Data</p>
+          </div>
+        </div>
+
+        {/* Certificate Status Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="bg-white/10 backdrop-blur rounded-xl p-3 text-center">
+            <div className="text-2xl sm:text-3xl font-bold text-white">{certificateStats.withCertificate}</div>
+            <div className="text-xs text-slate-300">Certificates</div>
+            <div className="text-[10px] text-emerald-400 mt-1">{certificateStats.completionRate}% Complete</div>
+          </div>
+          <div className="bg-white/10 backdrop-blur rounded-xl p-3 text-center">
+            <div className="text-2xl sm:text-3xl font-bold text-amber-400">{certificateStats.withoutCertificate}</div>
+            <div className="text-xs text-slate-300">Pending</div>
+          </div>
+          <div className="bg-white/10 backdrop-blur rounded-xl p-3 text-center">
+            <div className="text-2xl sm:text-3xl font-bold text-cyan-400">{certificateStats.withICD10}</div>
+            <div className="text-xs text-slate-300">With ICD-10</div>
+          </div>
+          <div className="bg-white/10 backdrop-blur rounded-xl p-3 text-center">
+            <div className="text-2xl sm:text-3xl font-bold text-purple-400">{certificateStats.withNHMCategory}</div>
+            <div className="text-xs text-slate-300">NHM Classified</div>
+          </div>
+        </div>
+
+        {/* ICD-10 & NHM Distribution */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* ICD-10 Codes */}
+          {icd10Distribution.length > 0 && (
+            <div className="bg-white/5 rounded-xl p-4">
+              <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 bg-cyan-400 rounded-full"></span>
+                Top ICD-10 Codes
+              </h4>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {icd10Distribution.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded font-mono text-[10px]">
+                        {item.code}
+                      </span>
+                      <span className="text-slate-400 truncate">{item.description.slice(0, 30)}</span>
+                    </div>
+                    <span className="text-white font-bold ml-2">{item.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* NHM Death Categories */}
+          <div className="bg-white/5 rounded-xl p-4">
+            <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+              <span className="w-2 h-2 bg-purple-400 rounded-full"></span>
+              NHM Death Categories
+            </h4>
+            <div className="space-y-2">
+              {nhmCategoryDistribution.map((item, idx) => {
+                const percentage = ((item.count / deceasedPatients.length) * 100).toFixed(1);
+                const colors = [
+                  'from-purple-500 to-purple-600',
+                  'from-pink-500 to-pink-600',
+                  'from-indigo-500 to-indigo-600',
+                  'from-blue-500 to-blue-600',
+                  'from-cyan-500 to-cyan-600'
+                ];
+                return (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-300 truncate">{item.category.replace(/_/g, ' ')}</span>
+                      <span className="text-white font-bold">{item.count}</span>
+                    </div>
+                    <div className="w-full bg-white/10 rounded-full h-1.5">
+                      <div
+                        className={`bg-gradient-to-r ${colors[idx % colors.length]} h-1.5 rounded-full`}
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Death Classification */}
+        {Object.keys(deathClassificationDistribution).length > 0 && (
+          <div className="mt-4 bg-white/5 rounded-xl p-4">
+            <h4 className="text-sm font-bold text-white mb-3">Death Classification</h4>
+            <div className="flex flex-wrap gap-3">
+              {Object.entries(deathClassificationDistribution).map(([classification, count]) => (
+                <div
+                  key={classification}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold ${classification.includes('Expected')
+                    ? 'bg-amber-500/20 text-amber-300'
+                    : classification.includes('Unexpected')
+                      ? 'bg-red-500/20 text-red-300'
+                      : 'bg-slate-500/20 text-slate-300'
+                    }`}
+                >
+                  {classification.replace(/_/g, ' ')}: <strong>{count}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Underlying Causes (from Death Certificates) */}
+        {underlyingCauseDistribution.length > 0 && (
+          <div className="mt-4 bg-white/5 rounded-xl p-4">
+            <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+              <span className="w-2 h-2 bg-rose-400 rounded-full"></span>
+              Underlying Causes (WHO Part I Line C)
+            </h4>
+            <div className="space-y-2">
+              {underlyingCauseDistribution.slice(0, 5).map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs bg-white/5 rounded-lg px-3 py-2">
+                  <span className="text-slate-300 truncate flex-1">{item.cause}</span>
+                  <span className="text-rose-400 font-bold ml-2">{item.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </motion.div>
 
       {/* Advanced Mortality Analytics */}
       <div className="bg-gradient-to-br from-sky-50 to-purple-50 rounded-xl sm:rounded-2xl p-3 sm:p-6 border border-sky-200">
@@ -400,25 +565,13 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             animate={{ opacity: 1, scale: 1 }}
             className="bg-white rounded-lg sm:rounded-xl p-2.5 sm:p-5 border border-sky-200 shadow-lg"
           >
-            <div className="flex items-center justify-between mb-2 sm:mb-4">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-purple-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
-                  <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
-                  </svg>
-                </div>
-                <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Birth Weight</h4>
-              </div>
-              <button
-                onClick={() => handleAnalyticsExport('birthWeight')}
-                className="p-1 sm:px-3 sm:py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded sm:rounded-lg text-[10px] sm:text-xs font-semibold transition-all flex items-center gap-0.5 sm:gap-1"
-                title="Export"
-              >
-                <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-4">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-purple-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
                 </svg>
-                <span className="hidden sm:inline">Export</span>
-              </button>
+              </div>
+              <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Birth Weight</h4>
             </div>
             <div className="space-y-1.5 sm:space-y-2">
               {Object.entries(birthWeightDistribution)
@@ -452,25 +605,13 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             transition={{ delay: 0.1 }}
             className="bg-white rounded-lg sm:rounded-xl p-2.5 sm:p-5 border border-sky-200 shadow-lg"
           >
-            <div className="flex items-center justify-between mb-2 sm:mb-4">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-blue-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
-                  <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Duration</h4>
-              </div>
-              <button
-                onClick={() => handleAnalyticsExport('durationOfStay')}
-                className="p-1 sm:px-3 sm:py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded sm:rounded-lg text-[10px] sm:text-xs font-semibold transition-all flex items-center gap-0.5 sm:gap-1"
-                title="Export"
-              >
-                <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-4">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-blue-100 rounded-md sm:rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="hidden sm:inline">Export</span>
-              </button>
+              </div>
+              <h4 className="font-bold text-slate-900 text-[11px] sm:text-base">Duration</h4>
             </div>
             <div className="space-y-1.5 sm:space-y-2">
               {Object.entries(durationOfStayDistribution)
@@ -687,31 +828,31 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="bg-white rounded-xl p-6 border-2 border-slate-200 shadow-lg"
+          className="bg-white rounded-xl p-4 sm:p-6 border-2 border-slate-200 shadow-lg"
         >
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+              <svg className="w-5 h-5 sm:w-6 sm:h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
               </svg>
             </div>
             <div>
-              <h3 className="text-xl font-bold text-slate-900">Top Causes of Death</h3>
-              <p className="text-sm text-slate-600">Ranked by frequency</p>
+              <h3 className="text-lg sm:text-xl font-bold text-slate-900">Top Causes of Death</h3>
+              <p className="text-xs sm:text-sm text-slate-600">Ranked by frequency</p>
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {causeStats.map((cause, index) => (
-              <div key={index} className="border-l-4 border-blue-400 bg-blue-50 rounded-r-lg p-4">
+              <div key={index} className="border-l-4 border-blue-400 bg-blue-50 rounded-r-lg p-3 sm:p-4">
                 <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-start gap-3 flex-1">
-                    <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">
+                  <div className="flex items-start gap-2 sm:gap-3 flex-1">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0">
                       {index + 1}
                     </div>
-                    <div className="flex-1">
-                      <h4 className="font-bold text-slate-900 mb-1">{cause.cause}</h4>
-                      <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-slate-900 mb-1 text-sm sm:text-base">{cause.cause}</h4>
+                      <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-slate-600">
                         <span><strong>{cause.count}</strong> cases</span>
                         <span><strong>{cause.percentage.toFixed(1)}%</strong> of total</span>
                       </div>
@@ -719,7 +860,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
                   </div>
                 </div>
 
-                <div className="mt-3 flex gap-6 text-xs">
+                <div className="mt-3 grid grid-cols-2 gap-4 text-xs">
                   <div>
                     <span className="font-semibold text-slate-700">Age Groups:</span>
                     <div className="mt-1 space-y-1">
@@ -756,26 +897,26 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
-        className="bg-gradient-to-br from-sky-50 to-purple-50 rounded-xl p-6 border-2 border-sky-300 shadow-lg"
+        className="bg-gradient-to-br from-sky-50 to-purple-50 rounded-xl p-4 sm:p-6 border-2 border-sky-300 shadow-lg"
       >
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-sky-500 to-purple-600 rounded-xl flex items-center justify-center">
-            <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="flex items-center gap-2 sm:gap-3 mb-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-sky-500 to-purple-600 rounded-xl flex items-center justify-center">
+            <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
             </svg>
           </div>
           <div className="flex-1">
-            <h3 className="text-xl font-bold text-slate-900">AI-Powered Pattern Analysis</h3>
-            <p className="text-sm text-slate-600">Comprehensive mortality trends and quality improvement insights</p>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900">AI-Powered Pattern Analysis</h3>
+            <p className="text-xs sm:text-sm text-slate-600">Comprehensive mortality trends and quality improvement insights</p>
           </div>
         </div>
 
         {!aiAnalysis && !isLoadingAnalysis && (
           <button
             onClick={handleGenerateAnalysis}
-            className="w-full bg-gradient-to-r from-sky-500 to-purple-600 hover:from-sky-600 hover:to-purple-700 text-white px-6 py-4 rounded-xl transition-all font-bold text-lg shadow-lg flex items-center justify-center gap-3"
+            className="w-full bg-gradient-to-r from-sky-500 to-purple-600 hover:from-sky-600 hover:to-purple-700 text-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl transition-all font-bold text-base sm:text-lg shadow-lg flex items-center justify-center gap-2 sm:gap-3 min-h-[48px]"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             Generate AI Analysis
@@ -783,17 +924,17 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
         )}
 
         {isLoadingAnalysis && (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex items-center justify-center py-8 sm:py-12">
             <div className="text-center">
-              <div className="w-16 h-16 border-4 border-sky-200 border-t-sky-600 rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-slate-600 font-semibold">AI is analyzing mortality patterns...</p>
-              <p className="text-sm text-slate-500 mt-2">This may take a few moments</p>
+              <div className="w-14 h-14 sm:w-16 sm:h-16 border-4 border-sky-200 border-t-sky-600 rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-slate-600 font-semibold text-sm sm:text-base">AI is analyzing mortality patterns...</p>
+              <p className="text-xs sm:text-sm text-slate-500 mt-2">This may take a few moments</p>
             </div>
           </div>
         )}
 
         {aiAnalysis && (
-          <div className="bg-white rounded-xl p-6 shadow-inner">
+          <div className="bg-white rounded-xl p-4 sm:p-6 shadow-inner">
             <div
               className="prose prose-sm max-w-none"
               dangerouslySetInnerHTML={{ __html: formatMarkdown(aiAnalysis) }}
@@ -801,7 +942,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
 
             <button
               onClick={() => setAiAnalysis('')}
-              className="mt-6 w-full bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg transition-all font-semibold text-sm"
+              className="mt-6 w-full bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2.5 rounded-lg transition-all font-semibold text-sm min-h-[44px]"
             >
               Close Analysis
             </button>
@@ -815,17 +956,17 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="bg-white rounded-xl p-6 border-2 border-slate-200 shadow-lg"
+          className="bg-white rounded-xl p-4 sm:p-6 border-2 border-slate-200 shadow-lg"
         >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-2 sm:gap-3 mb-4">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-slate-100 rounded-lg flex items-center justify-center">
+              <svg className="w-5 h-5 sm:w-6 sm:h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
             <div>
-              <h3 className="text-xl font-bold text-slate-900">Recent Cases</h3>
-              <p className="text-sm text-slate-600">Last 10 deceased patients</p>
+              <h3 className="text-lg sm:text-xl font-bold text-slate-900">Recent Cases</h3>
+              <p className="text-xs sm:text-sm text-slate-600">Last 10 deceased patients</p>
             </div>
           </div>
 
@@ -834,45 +975,80 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
               <div
                 key={patient.id}
                 onClick={() => setSelectedPatient(patient)}
-                className="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 hover:shadow-lg transition-all cursor-pointer group"
+                className="border border-slate-200 rounded-lg p-3 sm:p-4 hover:bg-slate-50 hover:shadow-lg transition-all cursor-pointer group min-h-[48px]"
               >
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-slate-900 group-hover:text-sky-600 transition-colors">
+                      <h4 className="font-bold text-slate-900 group-hover:text-sky-600 transition-colors text-sm sm:text-base">
                         {patient.name}
                       </h4>
                       <svg className="w-4 h-4 text-slate-400 group-hover:text-sky-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                       </svg>
                     </div>
-                    <p className="text-sm text-slate-600">
+                    <p className="text-xs sm:text-sm text-slate-600">
                       {patient.age} {patient.ageUnit} • {patient.unit}
                     </p>
                   </div>
                   {patient.dateOfDeath && (
-                    <div className="text-xs text-slate-500 text-right">
+                    <div className="text-[10px] sm:text-xs text-slate-500 text-right">
                       <div>{new Date(patient.dateOfDeath).toLocaleDateString()}</div>
                       <div>{new Date(patient.dateOfDeath).toLocaleTimeString()}</div>
                     </div>
                   )}
                 </div>
 
-                {patient.aiInterpretedDeathDiagnosis ? (
-                  <div className="bg-sky-50 border-l-4 border-sky-400 p-3 rounded-r">
-                    <p className="text-sm text-slate-700">
-                      <span className="font-semibold text-sky-700">AI Summary:</span> {patient.aiInterpretedDeathDiagnosis}
+                {/* Death Certificate Data (Priority 1) */}
+                {patient.savedDeathCertificate ? (
+                  <div className="bg-emerald-50 border-l-4 border-emerald-500 p-3 rounded-r">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">
+                        MCCD Generated
+                      </span>
+                      {patient.savedDeathCertificate.causeOfDeathPartI?.immediateCauseICD10 && (
+                        <span className="text-[10px] bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded-full font-mono">
+                          {patient.savedDeathCertificate.causeOfDeathPartI.immediateCauseICD10}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-700">
+                      <span className="font-semibold text-emerald-700">Cause:</span>{' '}
+                      {patient.savedDeathCertificate.causeOfDeathPartI?.immediateCause || 'Not specified'}
                     </p>
+                    {patient.savedDeathCertificate.causeOfDeathPartI?.underlyingCause && (
+                      <p className="text-[10px] sm:text-xs text-slate-500 mt-1">
+                        <span className="font-semibold">Underlying:</span>{' '}
+                        {patient.savedDeathCertificate.causeOfDeathPartI.underlyingCause}
+                      </p>
+                    )}
+                  </div>
+                ) : patient.aiInterpretedDeathDiagnosis ? (
+                  <div className="bg-sky-50 border-l-4 border-sky-400 p-3 rounded-r">
+                    <span className="text-[10px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-semibold mb-1 inline-block">
+                      AI Interpreted
+                    </span>
+                    <p className="text-xs sm:text-sm text-slate-700">{patient.aiInterpretedDeathDiagnosis}</p>
                   </div>
                 ) : patient.diagnosisAtDeath ? (
                   <div className="bg-slate-50 border-l-4 border-slate-400 p-3 rounded-r">
-                    <p className="text-sm text-slate-700">{patient.diagnosisAtDeath.slice(0, 150)}...</p>
+                    <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-semibold mb-1 inline-block">
+                      Manual Entry
+                    </span>
+                    <p className="text-xs sm:text-sm text-slate-700">{patient.diagnosisAtDeath.slice(0, 150)}...</p>
                   </div>
                 ) : (
-                  <p className="text-sm text-red-600 italic">No diagnosis recorded</p>
+                  <div className="bg-red-50 border-l-4 border-red-400 p-3 rounded-r">
+                    <p className="text-xs sm:text-sm text-red-600 italic flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      No death certificate - needs MCCD Form 4
+                    </p>
+                  </div>
                 )}
 
-                <div className="mt-3 text-xs text-slate-500 flex items-center gap-1">
+                <div className="mt-3 text-[10px] sm:text-xs text-slate-500 flex items-center gap-1">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -892,29 +1068,6 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             patient={selectedPatient}
             institutionName={institutionName}
             onClose={() => setSelectedPatient(null)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Customizable Export Modal */}
-      <AnimatePresence>
-        {showExportModal && (
-          <CustomizableExportModal
-            patients={filteredExportData?.patients || deceasedPatients}
-            institutionName={institutionName}
-            totalAdmissions={totalAdmissions}
-            timeRange={filteredExportData?.timeRange || timeRangeLabel}
-            unit={unitFilter}
-            birthType={birthTypeFilter}
-            startDate={filteredExportData?.startDate || startDate}
-            endDate={filteredExportData?.endDate || endDate}
-            analysisType={filteredExportData?.filterName}
-            analysisData={filteredExportData?.analysisData}
-            onClose={() => {
-              setShowExportModal(false);
-              setFilteredExportData(null);
-            }}
-            aiAnalysis={aiAnalysis}
           />
         )}
       </AnimatePresence>

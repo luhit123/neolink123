@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Seed Admission Indications</title>
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, writeBatch, doc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+    import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyDy4t2iOmLc_TxHBTcq1zInMmf8XrLMh1g",
+      authDomain: "medilink-f2b56.firebaseapp.com",
+      projectId: "medilink-f2b56",
+      storageBucket: "medilink-f2b56.firebasestorage.app",
+      messagingSenderId: "1093411535944",
+      appId: "1:1093411535944:web:4f0b01e1b98a6aca3f2ede"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app, 'neolink');
+    const auth = getAuth(app);
+
+    // Unit enum
+    const Unit = {
+      NICU: "Neonatal Intensive Care Unit",
+      PICU: "Pediatric Intensive Care Unit",
+      SNCU: "Special New Born Care Unit",
+      HDU: "High Dependency Unit",
+      GENERAL_WARD: "General Ward"
+    };
+
+    // All indications (abbreviated for browser - full list below)
+    const INDICATIONS = [
+      // PREMATURITY
+      { name: 'Prematurity (< 37 weeks gestation)', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 0 },
+      { name: 'Extreme Prematurity (< 28 weeks gestation)', applicableUnits: [Unit.NICU], isActive: true, order: 1 },
+      { name: 'Very Preterm (28-32 weeks gestation)', applicableUnits: [Unit.NICU], isActive: true, order: 2 },
+      { name: 'Moderate Preterm (32-34 weeks gestation)', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 3 },
+      { name: 'Late Preterm (34-37 weeks gestation)', applicableUnits: [Unit.SNCU], isActive: true, order: 4 },
+      { name: 'Low Birth Weight (< 2500 gm)', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 5 },
+      { name: 'Low Birth Weight (< 1800 gm) - SNCU Criteria', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 6 },
+      { name: 'Very Low Birth Weight (< 1500 gm)', applicableUnits: [Unit.NICU], isActive: true, order: 7 },
+      { name: 'Extremely Low Birth Weight (< 1000 gm)', applicableUnits: [Unit.NICU], isActive: true, order: 8 },
+      { name: 'Small for Gestational Age (SGA)', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 9 },
+      { name: 'Intrauterine Growth Restriction (IUGR)', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 10 },
+      { name: 'Large for Gestational Age (> 4 kg at term)', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 11 },
+      // BIRTH ASPHYXIA
+      { name: 'Birth Asphyxia / Perinatal Asphyxia', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 12 },
+      { name: 'APGAR Score < 7 at 1 minute', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 13 },
+      { name: 'APGAR Score < 6 at 5 minutes', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 14 },
+      { name: 'Delayed Cry > 5 minutes after birth', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 15 },
+      { name: 'Required Prolonged Resuscitation (Bag & Mask/Tube)', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 16 },
+      { name: 'Hypoxic Ischemic Encephalopathy (HIE) - Stage I', applicableUnits: [Unit.NICU, Unit.SNCU], isActive: true, order: 17 },
+      { name: 'Hypoxic Ischemic Encephalopathy (HIE) - Stage II', applicableUnits: [Unit.NICU], isActive: true, order: 18 },
+      { name: 'Hypoxic Ischemic Encephalopathy (HIE) - Stage III', applicableUnits: [Unit.NICU], isActive: true, order: 19 },
+      { name: 'Therapeutic Hypothermia Candidate', applicableUnits: [Unit.NICU], isActive: true, order: 20 },
+      { name: 'Post-resuscitation Encephalopathy', applicableUnits: [Unit.NICU], isActive: true, order: 21 },
+      // ... (continue with all 261 indications)
+    ];
+
+    window.seedIndications = async function() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const output = document.getElementById('output');
+
+      output.innerHTML = 'Authenticating...';
+
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        output.innerHTML += '\\n✅ Authenticated successfully\\n\\nChecking existing indications...';
+
+        const indicationsRef = collection(db, 'admissionIndications');
+        const existingSnap = await getDocs(query(indicationsRef, orderBy('order'), limit(1)));
+
+        if (!existingSnap.empty) {
+          output.innerHTML += '\\n⚠️ Indications already exist! Skipping.';
+          return;
+        }
+
+        output.innerHTML += '\\n🌱 Starting to seed indications...\\n';
+
+        let count = 0;
+        for (const ind of INDICATIONS) {
+          await addDoc(indicationsRef, {
+            ...ind,
+            createdAt: new Date().toISOString(),
+            createdBy: email
+          });
+          count++;
+          if (count % 10 === 0) {
+            output.innerHTML += `Added ${count} indications...\\n`;
+          }
+        }
+
+        output.innerHTML += `\\n✅ Successfully seeded ${count} indications!`;
+      } catch (error) {
+        output.innerHTML += `\\n❌ Error: ${error.message}`;
+      }
+    };
+  </script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+    input { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+    button { padding: 15px 30px; background: #4CAF50; color: white; border: none; cursor: pointer; font-size: 16px; margin-top: 10px; }
+    button:hover { background: #45a049; }
+    #output { background: #f5f5f5; padding: 15px; margin-top: 20px; white-space: pre-wrap; font-family: monospace; min-height: 200px; }
+  </style>
+</head>
+<body>
+  <h1>Seed Admission Indications</h1>
+  <p>Login with your SuperAdmin credentials to seed the indications to Firestore.</p>
+  <input type="email" id="email" placeholder="Email" />
+  <input type="password" id="password" placeholder="Password" />
+  <button onclick="seedIndications()">Seed Indications</button>
+  <div id="output">Ready to seed...</div>
+</body>
+</html>

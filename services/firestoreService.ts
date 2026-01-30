@@ -30,6 +30,13 @@ const isoToTimestamp = (isoString?: string): Timestamp | null => {
   return Timestamp.fromDate(new Date(isoString));
 };
 
+// Helper function to extract year-month from ISO date string (for indexing)
+const getYearMonth = (isoString?: string): string | null => {
+  if (!isoString) return null;
+  const date = new Date(isoString);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
+
 // Convert Patient object to Firestore format
 export const patientToFirestore = (patient: Patient, userId: string, userRole: UserRole) => {
   return {
@@ -43,6 +50,12 @@ export const patientToFirestore = (patient: Patient, userId: string, userRole: U
     diagnosis: patient.diagnosis,
     outcome: patient.outcome,
     unit: patient.unit,
+
+    // Indexed fields for efficient queries (Hybrid Architecture)
+    admissionYearMonth: getYearMonth(patient.admissionDate),
+    dischargeYearMonth: getYearMonth(patient.releaseDate),
+    currentUnit: patient.currentUnit || patient.unit, // Current unit for step-downs
+    supabaseId: patient.supabaseId || null, // Link to Supabase record
 
     // NICU specific
     nicuSpecific: {
@@ -99,6 +112,12 @@ export const firestoreToPatient = (docData: any): Patient => {
     outcome: docData.outcome,
     unit: docData.unit,
 
+    // Indexed fields (Hybrid Architecture)
+    admissionYearMonth: docData.admissionYearMonth || null,
+    dischargeYearMonth: docData.dischargeYearMonth || null,
+    currentUnit: docData.currentUnit || docData.unit,
+    supabaseId: docData.supabaseId || null,
+
     // NICU specific
     admissionType: docData.nicuSpecific?.admissionType,
     referringHospital: docData.nicuSpecific?.referringHospital,
@@ -119,7 +138,7 @@ export const firestoreToPatient = (docData: any): Patient => {
     isDraft: docData.metadata?.isDraft || false,
     createdBy: docData.metadata?.createdByRole,
     lastUpdatedBy: docData.metadata?.lastUpdatedByRole,
-  };
+  } as Patient;
 };
 
 // Get all patients for a college
@@ -362,6 +381,117 @@ export async function updateUserRole(userId: string, role: UserRole) {
     }, { merge: true });
   } catch (error) {
     console.error('Error updating user role:', error);
+    throw error;
+  }
+}
+
+// ==================== DOCTORS MANAGEMENT ====================
+
+/**
+ * Get list of doctors for an institution
+ * @param institutionId - The institution ID
+ * @returns Array of doctor names
+ */
+export async function getDoctors(institutionId: string): Promise<string[]> {
+  try {
+    const institutionRef = doc(db, 'institutions', institutionId);
+    const institutionDoc = await getDoc(institutionRef);
+
+    if (institutionDoc.exists()) {
+      const data = institutionDoc.data();
+      if (data.doctors && Array.isArray(data.doctors)) {
+        return data.doctors;
+      }
+    }
+    return [];
+  } catch (error) {
+    console.error('Error fetching doctors:', error);
+    return [];
+  }
+}
+
+/**
+ * Add a new doctor to an institution
+ * @param institutionId - The institution ID
+ * @param doctorName - The doctor's name
+ */
+export async function addDoctor(institutionId: string, doctorName: string): Promise<void> {
+  try {
+    const institutionRef = doc(db, 'institutions', institutionId);
+    const institutionDoc = await getDoc(institutionRef);
+
+    if (institutionDoc.exists()) {
+      const data = institutionDoc.data();
+      const currentDoctors = data.doctors || [];
+
+      // Check for duplicates
+      if (currentDoctors.some((d: string) => d.toLowerCase() === doctorName.toLowerCase())) {
+        throw new Error('Doctor already exists');
+      }
+
+      await updateDoc(institutionRef, {
+        doctors: [...currentDoctors, doctorName]
+      });
+    }
+  } catch (error) {
+    console.error('Error adding doctor:', error);
+    throw error;
+  }
+}
+
+/**
+ * Remove a doctor from an institution
+ * @param institutionId - The institution ID
+ * @param doctorName - The doctor's name to remove
+ */
+export async function removeDoctor(institutionId: string, doctorName: string): Promise<void> {
+  try {
+    const institutionRef = doc(db, 'institutions', institutionId);
+    const institutionDoc = await getDoc(institutionRef);
+
+    if (institutionDoc.exists()) {
+      const data = institutionDoc.data();
+      const currentDoctors = data.doctors || [];
+      const updatedDoctors = currentDoctors.filter((d: string) => d !== doctorName);
+
+      await updateDoc(institutionRef, {
+        doctors: updatedDoctors
+      });
+    }
+  } catch (error) {
+    console.error('Error removing doctor:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update a doctor's name in an institution
+ * @param institutionId - The institution ID
+ * @param oldName - The current doctor's name
+ * @param newName - The new doctor's name
+ */
+export async function updateDoctor(institutionId: string, oldName: string, newName: string): Promise<void> {
+  try {
+    const institutionRef = doc(db, 'institutions', institutionId);
+    const institutionDoc = await getDoc(institutionRef);
+
+    if (institutionDoc.exists()) {
+      const data = institutionDoc.data();
+      const currentDoctors = data.doctors || [];
+
+      // Check for duplicates (excluding old name)
+      if (currentDoctors.some((d: string) => d !== oldName && d.toLowerCase() === newName.toLowerCase())) {
+        throw new Error('Doctor with this name already exists');
+      }
+
+      const updatedDoctors = currentDoctors.map((d: string) => d === oldName ? newName : d);
+
+      await updateDoc(institutionRef, {
+        doctors: updatedDoctors
+      });
+    }
+  } catch (error) {
+    console.error('Error updating doctor:', error);
     throw error;
   }
 }

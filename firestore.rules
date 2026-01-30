@@ -1,11 +1,300 @@
 rules_version = '2';
+// Security rules for neolink database - Updated 2026-01-30
 service cloud.firestore {
   match /databases/{database}/documents {
-    // DEVELOPMENT MODE - COMPLETELY OPEN
-    // WARNING: This allows anyone to read/write all data
-    // TODO: Replace with proper security rules before production
+
+    // ==================== HELPER FUNCTIONS ====================
+
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Get user document
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Check if user is SuperAdmin (document ID is email, not uid)
+    function isSuperAdmin() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/superAdmins/$(request.auth.token.email));
+    }
+
+    // Check if user is Admin of specific institution (handles both 'admin' and 'Admin')
+    function isInstitutionAdmin(institutionId) {
+      return isAuthenticated() &&
+             (getUserData().role == 'admin' || getUserData().role == 'Admin') &&
+             getUserData().institutionId == institutionId;
+    }
+
+    // Check if user belongs to institution
+    function belongsToInstitution(institutionId) {
+      return isAuthenticated() &&
+             getUserData().institutionId == institutionId;
+    }
+
+    // Check if user has specific role (handles case variations)
+    function hasRole(role) {
+      return isAuthenticated() && (getUserData().role == role || getUserData().role.lower() == role.lower());
+    }
+
+    // Check if user is an admin (any case)
+    function isAdmin() {
+      return isAuthenticated() && (getUserData().role == 'admin' || getUserData().role == 'Admin');
+    }
+
+    // Check if user can access patient data (belongs to same institution)
+    function canAccessPatient(institutionId) {
+      return isSuperAdmin() || belongsToInstitution(institutionId);
+    }
+
+    // Validate required fields for audit trail
+    function hasAuditFields() {
+      return request.resource.data.keys().hasAll(['updatedAt', 'updatedBy']);
+    }
+
+    // ==================== SUPER ADMIN COLLECTION ====================
+    match /superAdmins/{adminId} {
+      // Allow authenticated users to check if they are a superadmin
+      // This is needed for the login flow to determine user role
+      allow read: if isAuthenticated();
+      allow write: if false; // Managed via Firebase Console or backend only
+    }
+
+    // ==================== INSTITUTIONS ====================
+    match /institutions/{institutionId} {
+      // Allow read for login lookup (query by userID) and authenticated users
+      allow read: if true; // Allow reads for login lookup flow
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin() || isInstitutionAdmin(institutionId);
+      allow delete: if isSuperAdmin();
+
+      // Bed capacity subcollection
+      match /bedCapacity/{docId} {
+        allow read: if canAccessPatient(institutionId);
+        allow write: if isSuperAdmin() || isInstitutionAdmin(institutionId);
+      }
+    }
+
+    // ==================== USERS ====================
+    match /users/{userId} {
+      // Users can read their own data, admins can read users in their institution
+      allow read: if isAuthenticated() &&
+                    (request.auth.uid == userId ||
+                     isSuperAdmin() ||
+                     (getUserData().role == 'admin' &&
+                      resource.data.institutionId == getUserData().institutionId));
+
+      // Users can create their own profile document (needed for first login)
+      // OR admins can create users for their institution
+      allow create: if isAuthenticated() &&
+                      (request.auth.uid == userId ||
+                       isSuperAdmin() ||
+                       (hasRole('admin') && request.resource.data.institutionId == getUserData().institutionId));
+
+      // Users can update their own non-critical fields, admins can update users
+      allow update: if isAuthenticated() &&
+                      (request.auth.uid == userId ||
+                       isSuperAdmin() ||
+                       (hasRole('admin') && resource.data.institutionId == getUserData().institutionId));
+
+      // Only SuperAdmins can delete users
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== PATIENTS (PHI - Protected Health Information) ====================
+    match /patients/{patientId} {
+      // Read: Must be authenticated and belong to same institution
+      allow read: if isAuthenticated() &&
+                    (isSuperAdmin() ||
+                     resource.data.institutionId == getUserData().institutionId);
+
+      // Create: Must be authenticated, belong to institution, and include audit fields
+      allow create: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       request.resource.data.institutionId == getUserData().institutionId) &&
+                      request.resource.data.keys().hasAll(['createdAt', 'createdBy', 'institutionId']);
+
+      // Update: Must be authenticated and belong to institution
+      // Note: updatedAt/updatedBy are recommended but not strictly required to allow status changes
+      allow update: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       resource.data.institutionId == getUserData().institutionId);
+
+      // Delete: Only admins can delete (soft delete preferred)
+      allow delete: if isSuperAdmin() ||
+                      (hasRole('admin') && resource.data.institutionId == getUserData().institutionId);
+
+      // Progress Notes subcollection
+      match /progressNotes/{noteId} {
+        allow read: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
+        allow create, update: if isAuthenticated() &&
+                                (isSuperAdmin() ||
+                                 get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
+        allow delete: if isSuperAdmin() || hasRole('admin');
+      }
+
+      // Clinical Notes subcollection
+      match /clinicalNotes/{noteId} {
+        allow read: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
+        allow create, update: if isAuthenticated() &&
+                                (isSuperAdmin() ||
+                                 get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
+        allow delete: if isSuperAdmin() || hasRole('admin');
+      }
+    }
+
+    // ==================== INSTITUTION-SCOPED PATIENTS ====================
+    match /institutions/{institutionId}/patients/{patientId} {
+      allow read: if canAccessPatient(institutionId);
+      allow create: if isAuthenticated() &&
+                      (isSuperAdmin() || belongsToInstitution(institutionId)) &&
+                      request.resource.data.keys().hasAll(['createdAt', 'createdBy']);
+      allow update: if isAuthenticated() &&
+                      (isSuperAdmin() || belongsToInstitution(institutionId));
+      allow delete: if isSuperAdmin() || isInstitutionAdmin(institutionId);
+
+      // Progress Notes
+      match /progressNotes/{noteId} {
+        allow read, write: if canAccessPatient(institutionId);
+      }
+
+      // Clinical Notes
+      match /clinicalNotes/{noteId} {
+        allow read, write: if canAccessPatient(institutionId);
+      }
+    }
+
+    // ==================== REFERRALS ====================
+    match /referrals/{referralId} {
+      // Users can read referrals to/from their institution
+      allow read: if isAuthenticated() &&
+                    (isSuperAdmin() ||
+                     resource.data.fromInstitutionId == getUserData().institutionId ||
+                     resource.data.toInstitutionId == getUserData().institutionId);
+
+      // Only authenticated users from sending institution can create
+      allow create: if isAuthenticated() &&
+                      request.resource.data.fromInstitutionId == getUserData().institutionId;
+
+      // Only receiving institution can update (accept/reject)
+      allow update: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       resource.data.toInstitutionId == getUserData().institutionId);
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== AUDIT LOGS (Immutable) ====================
+    match /auditLogs/{logId} {
+      // Only authenticated users can create audit logs
+      allow create: if isAuthenticated();
+
+      // SuperAdmins and institution admins can read logs for their institution
+      allow read: if isSuperAdmin() ||
+                    (hasRole('admin') && resource.data.institutionId == getUserData().institutionId);
+
+      // Audit logs are IMMUTABLE - no updates or deletes
+      allow update, delete: if false;
+    }
+
+    // ==================== APPROVED USERS (for login lookup) ====================
+    match /approved_users/{docId} {
+      // Allow reading for login lookup (query by userID or email)
+      // This is needed for the signInWithUserID flow
+      allow read: if true; // Allow unauthenticated reads for login lookup
+
+      // Only SuperAdmins and institution admins can create/update/delete
+      allow create: if isSuperAdmin() ||
+                      (hasRole('admin') && request.resource.data.institutionId == getUserData().institutionId);
+      allow update: if isSuperAdmin() ||
+                      (hasRole('admin') && resource.data.institutionId == getUserData().institutionId);
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== SYSTEM CONFIGURATION ====================
+    match /systemConfig/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // ==================== ANALYTICS (Read-only for most) ====================
+    match /analytics/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // ==================== ADMISSION INDICATIONS ====================
+    match /admissionIndications/{indicationId} {
+      // All authenticated users can read indications (needed for patient admission forms)
+      allow read: if isAuthenticated();
+      // Only SuperAdmins can create/update/delete indications
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    // ==================== OBSERVATION INDICATIONS ====================
+    match /observationIndications/{indicationId} {
+      // All authenticated users can read indications (needed for observation patient forms)
+      allow read: if isAuthenticated();
+      // Only SuperAdmins can create/update/delete indications
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    // ==================== MEDICATIONS DATABASE ====================
+    match /medications/{medicationId} {
+      // All authenticated users can read medications (needed for medication orders)
+      allow read: if isAuthenticated();
+      // Only SuperAdmins can create/update/delete medications
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    // ==================== PASSWORD RESET REQUESTS ====================
+    match /passwordResetRequests/{requestId} {
+      // Users can create their own password reset requests
+      allow create: if isAuthenticated() &&
+                      request.resource.data.userId == request.auth.uid;
+      // Users can read their own requests, admins can read for their institution
+      allow read: if isSuperAdmin() ||
+                    (isAuthenticated() && resource.data.userId == request.auth.uid) ||
+                    (hasRole('admin') && resource.data.institutionId == getUserData().institutionId);
+      // Only SuperAdmins can update (approve/reject)
+      allow update: if isSuperAdmin();
+      // Only SuperAdmins can delete
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== ANNOUNCEMENTS ====================
+    match /announcements/{announcementId} {
+      // All authenticated users can read announcements
+      allow read: if isAuthenticated();
+      // Only SuperAdmins can create/update/delete announcements
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    // ==================== OBSERVATION PATIENTS ====================
+    match /observationPatients/{patientId} {
+      allow read: if isAuthenticated() &&
+                    (isSuperAdmin() ||
+                     resource.data.institutionId == getUserData().institutionId);
+      allow create: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       request.resource.data.institutionId == getUserData().institutionId);
+      allow update: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       resource.data.institutionId == getUserData().institutionId);
+      allow delete: if isSuperAdmin() ||
+                      (hasRole('admin') && resource.data.institutionId == getUserData().institutionId);
+    }
+
+    // ==================== DEFAULT DENY ====================
+    // Any path not explicitly matched is denied
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

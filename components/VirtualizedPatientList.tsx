@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { motion } from 'framer-motion';
-import { Patient, ObservationOutcome } from '../types';
+import { Patient, PatientOutcome } from '../types';
 import SimplePatientRow from './SimplePatientRow';
 import { glassmorphism } from '../theme/glassmorphism';
 
@@ -11,7 +11,7 @@ export interface VirtualizedPatientListProps {
   onEdit?: (patient: Patient) => void;
   canEdit: boolean;
   onQuickRecord?: (patient: Patient) => void;
-  onUpdateStatus?: (patient: Patient, status: ObservationOutcome) => void;
+  onUpdateStatus?: (patient: Patient, status: PatientOutcome) => void;
   onGenerateDischarge?: (patient: Patient) => void;
   onViewDischargeCertificate?: (patient: Patient) => void;
   onPreviewDischarge?: (patient: Patient) => void;
@@ -57,7 +57,7 @@ export const VirtualizedPatientList: React.FC<VirtualizedPatientListProps> = mem
 
     return (
       <Virtuoso
-        style={{ height: '100%', width: '100%' }}
+        className="h-full w-full"
         data={patients}
         overscan={5}
         increaseViewportBy={{ top: 200, bottom: 200 }}

@@ -2,10 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { InstitutionUser, UserRole, BedCapacity, Unit } from '../types';
+import { SCHEDULED_LANGUAGES, ScheduledLanguage } from '../utils/dischargeLanguageService';
 import { generateUserID, getNextSequenceNumber } from '../utils/userIdGenerator';
 import { generateAlphanumericPassword } from '../utils/passwordUtils';
 import { signUpWithEmail } from '../services/authService';
 import CredentialsModal from './CredentialsModal';
+import ReportsPage from './ReportsPage';
+import DataExportPage from './DataExportPage';
+import DataMigrationPanel from './DataMigrationPanel';
 
 interface AdminDashboardProps {
   institutionId: string;
@@ -27,9 +31,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [success, setSuccess] = useState('');
 
   // Bed capacity state
-  const [bedCapacity, setBedCapacity] = useState<BedCapacity>({ PICU: 0, NICU: 0, SNCU: 0, HDU: 0, GENERAL_WARD: 0 });
+  const [bedCapacity, setBedCapacity] = useState<BedCapacity>({ PICU: 0, NICU: 0, NICU_INBORN: 0, NICU_OUTBORN: 0, SNCU: 0, HDU: 0, GENERAL_WARD: 0 });
   const [showBedManagement, setShowBedManagement] = useState(false);
   const [editingBeds, setEditingBeds] = useState(false);
+
+  // Doctors management state
+  const [doctors, setDoctors] = useState<string[]>([]);
+  const [showDoctorsManagement, setShowDoctorsManagement] = useState(false);
+  const [newDoctorName, setNewDoctorName] = useState('');
+  const [editingDoctorIndex, setEditingDoctorIndex] = useState<number | null>(null);
+  const [editDoctorName, setEditDoctorName] = useState('');
 
   // Form state
   const [newInstitutionName, setNewInstitutionName] = useState('');
@@ -56,6 +67,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Dashboard access control
   const [selectedDashboards, setSelectedDashboards] = useState<Unit[]>([Unit.NICU, Unit.PICU]);
+
+  // Supabase Reports & Analytics pages
+  const [showReportsPage, setShowReportsPage] = useState(false);
+  const [showExportPage, setShowExportPage] = useState(false);
+  const [showMigrationPanel, setShowMigrationPanel] = useState(false);
+
+  // Institution Settings
+  const [showInstitutionSettings, setShowInstitutionSettings] = useState(false);
+  const [dischargeLanguage, setDischargeLanguage] = useState<string>('english');
 
   // Auto-generate UserID and Password when Add User form opens
   useEffect(() => {
@@ -124,9 +144,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
 
     loadBedCapacity();
+    loadDoctors();
+    loadDischargeLanguage();
 
     return () => unsubscribe();
   }, [institutionId]);
+
+  const loadDischargeLanguage = async () => {
+    try {
+      const institutionDoc = await getDoc(doc(db, 'institutions', institutionId));
+      if (institutionDoc.exists()) {
+        const data = institutionDoc.data();
+        if (data.dischargeLanguage) {
+          setDischargeLanguage(data.dischargeLanguage);
+        } else {
+          setDischargeLanguage('english');
+        }
+      }
+    } catch (err: any) {
+      console.error('❌ Error loading discharge language:', err);
+    }
+  };
+
+  const saveDischargeLanguage = async (language: string) => {
+    try {
+      const institutionRef = doc(db, 'institutions', institutionId);
+      await updateDoc(institutionRef, { dischargeLanguage: language });
+      setDischargeLanguage(language);
+      setSuccess('Discharge language updated successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err: any) {
+      console.error('❌ Error saving discharge language:', err);
+      setError('Failed to save discharge language: ' + err.message);
+    }
+  };
 
   const loadBedCapacity = async () => {
     try {
@@ -134,14 +185,111 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (institutionDoc.exists()) {
         const data = institutionDoc.data();
         if (data.bedCapacity) {
-          setBedCapacity(data.bedCapacity);
+          setBedCapacity({
+            ...data.bedCapacity,
+            NICU_INBORN: data.bedCapacity.NICU_INBORN || 0,
+            NICU_OUTBORN: data.bedCapacity.NICU_OUTBORN || 0
+          });
         } else {
           // Set default if not exists
-          setBedCapacity({ PICU: 0, NICU: 0, SNCU: 0, HDU: 0, GENERAL_WARD: 0 });
+          setBedCapacity({ PICU: 0, NICU: 0, NICU_INBORN: 0, NICU_OUTBORN: 0, SNCU: 0, HDU: 0, GENERAL_WARD: 0 });
         }
       }
     } catch (err: any) {
       console.error('❌ Error loading bed capacity:', err);
+    }
+  };
+
+  const loadDoctors = async () => {
+    try {
+      const institutionDoc = await getDoc(doc(db, 'institutions', institutionId));
+      if (institutionDoc.exists()) {
+        const data = institutionDoc.data();
+        if (data.doctors && Array.isArray(data.doctors)) {
+          setDoctors(data.doctors);
+        } else {
+          setDoctors([]);
+        }
+      }
+    } catch (err: any) {
+      console.error('❌ Error loading doctors:', err);
+    }
+  };
+
+  const handleAddDoctor = async () => {
+    if (!newDoctorName.trim()) {
+      setError('Doctor name is required');
+      return;
+    }
+
+    // Check for duplicates
+    if (doctors.some(d => d.toLowerCase() === newDoctorName.trim().toLowerCase())) {
+      setError('This doctor name already exists');
+      return;
+    }
+
+    try {
+      const updatedDoctors = [...doctors, newDoctorName.trim()];
+      await updateDoc(doc(db, 'institutions', institutionId), {
+        doctors: updatedDoctors
+      });
+      setDoctors(updatedDoctors);
+      setNewDoctorName('');
+      setSuccess(`Doctor "${newDoctorName.trim()}" added successfully`);
+      console.log('✅ Doctor added:', newDoctorName.trim());
+    } catch (err: any) {
+      console.error('❌ Error adding doctor:', err);
+      setError('Failed to add doctor: ' + err.message);
+    }
+  };
+
+  const handleUpdateDoctor = async (index: number) => {
+    if (!editDoctorName.trim()) {
+      setError('Doctor name is required');
+      return;
+    }
+
+    // Check for duplicates (excluding current doctor)
+    if (doctors.some((d, i) => i !== index && d.toLowerCase() === editDoctorName.trim().toLowerCase())) {
+      setError('This doctor name already exists');
+      return;
+    }
+
+    try {
+      const updatedDoctors = [...doctors];
+      const oldName = updatedDoctors[index];
+      updatedDoctors[index] = editDoctorName.trim();
+      await updateDoc(doc(db, 'institutions', institutionId), {
+        doctors: updatedDoctors
+      });
+      setDoctors(updatedDoctors);
+      setEditingDoctorIndex(null);
+      setEditDoctorName('');
+      setSuccess(`Doctor name updated from "${oldName}" to "${editDoctorName.trim()}"`);
+      console.log('✅ Doctor updated:', editDoctorName.trim());
+    } catch (err: any) {
+      console.error('❌ Error updating doctor:', err);
+      setError('Failed to update doctor: ' + err.message);
+    }
+  };
+
+  const handleDeleteDoctor = async (index: number) => {
+    const doctorName = doctors[index];
+    if (!confirm(`Are you sure you want to remove "${doctorName}" from the doctors list?`)) {
+      return;
+    }
+
+    try {
+      const updatedDoctors = doctors.filter((_, i) => i !== index);
+      await updateDoc(doc(db, 'institutions', institutionId), {
+        doctors: updatedDoctors
+      });
+      setDoctors(updatedDoctors);
+      setSuccess(`Doctor "${doctorName}" removed successfully`);
+      console.log('✅ Doctor removed:', doctorName);
+    } catch (err: any) {
+      console.error('❌ Error removing doctor:', err);
+      setError('Failed to remove doctor: ' + err.message);
     }
   };
 
@@ -150,16 +298,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setError('');
       setSuccess('');
 
-      if (bedCapacity.PICU < 0 || bedCapacity.NICU < 0 || (bedCapacity.SNCU && bedCapacity.SNCU < 0) || (bedCapacity.HDU && bedCapacity.HDU < 0) || (bedCapacity.GENERAL_WARD && bedCapacity.GENERAL_WARD < 0)) {
+      // Validate all bed capacities are non-negative
+      const allCapacities = [
+        bedCapacity.PICU,
+        bedCapacity.NICU_INBORN || 0,
+        bedCapacity.NICU_OUTBORN || 0,
+        bedCapacity.SNCU || 0,
+        bedCapacity.HDU || 0,
+        bedCapacity.GENERAL_WARD || 0
+      ];
+
+      if (allCapacities.some(cap => cap < 0)) {
         setError('Bed capacity cannot be negative');
         return;
       }
 
+      // Calculate total NICU for backward compatibility
+      const totalNICU = (bedCapacity.NICU_INBORN || 0) + (bedCapacity.NICU_OUTBORN || 0);
+
       await updateDoc(doc(db, 'institutions', institutionId), {
-        bedCapacity: bedCapacity
+        bedCapacity: {
+          ...bedCapacity,
+          NICU: totalNICU // Keep legacy field updated
+        }
       });
 
-      setSuccess(`✅ Bed capacity updated: PICU: ${bedCapacity.PICU}, NICU: ${bedCapacity.NICU}, SNCU: ${bedCapacity.SNCU || 0}, HDU: ${bedCapacity.HDU || 0}, General: ${bedCapacity.GENERAL_WARD || 0}`);
+      setSuccess(`✅ Bed capacity updated: PICU: ${bedCapacity.PICU}, NICU Inborn: ${bedCapacity.NICU_INBORN || 0}, NICU Outborn: ${bedCapacity.NICU_OUTBORN || 0}, SNCU: ${bedCapacity.SNCU || 0}, HDU: ${bedCapacity.HDU || 0}, General: ${bedCapacity.GENERAL_WARD || 0}`);
       setEditingBeds(false);
       console.log('✅ Bed capacity updated:', bedCapacity);
     } catch (err: any) {
@@ -369,6 +533,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Render Reports Page
+  if (showReportsPage) {
+    return (
+      <ReportsPage
+        institutionId={institutionId}
+        institutionName={institutionName}
+        onBack={() => setShowReportsPage(false)}
+      />
+    );
+  }
+
+  // Render Export Page
+  if (showExportPage) {
+    return (
+      <DataExportPage
+        institutionId={institutionId}
+        institutionName={institutionName}
+        onBack={() => setShowExportPage(false)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
       {/* Header */}
@@ -414,8 +600,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
 
         {/* Action Buttons */}
-        {!showAddForm && !showBedManagement && (
-          <div className="mb-6 flex gap-4">
+        {!showAddForm && !showBedManagement && !showDoctorsManagement && !showMigrationPanel && !showInstitutionSettings && (
+          <div className="mb-6 flex flex-wrap gap-4">
             <button
               onClick={() => setShowAddForm(true)}
               className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
@@ -433,6 +619,52 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
               </svg>
               Manage Beds
+            </button>
+            <button
+              onClick={() => setShowDoctorsManagement(true)}
+              className="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Manage Doctors
+            </button>
+            <button
+              onClick={() => setShowReportsPage(true)}
+              className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Reports & Analytics
+            </button>
+            <button
+              onClick={() => setShowExportPage(true)}
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Export Data
+            </button>
+            <button
+              onClick={() => setShowMigrationPanel(true)}
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+              </svg>
+              Sync to Supabase
+            </button>
+            <button
+              onClick={() => setShowInstitutionSettings(true)}
+              className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Institution Settings
             </button>
           </div>
         )}
@@ -490,24 +722,49 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* NICU Beds */}
-              <div className="bg-blue-50 dark:bg-sky-900/20 p-4 rounded-lg">
+              {/* NICU Inborn Beds */}
+              <div className="bg-sky-50 dark:bg-sky-900/20 p-4 rounded-lg">
                 <div className="flex items-center justify-between mb-3">
                   <label className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                     <svg className="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                     </svg>
-                    NICU (Neonatal Intensive Care Unit)
+                    NICU Inborn
+                    <span className="text-xs font-normal text-slate-500 dark:text-slate-400">(Babies born in this hospital)</span>
                   </label>
                 </div>
                 <div className="flex items-center gap-4">
                   <input
                     type="number"
                     min="0"
-                    value={bedCapacity.NICU}
-                    onChange={(e) => setBedCapacity({ ...bedCapacity, NICU: parseInt(e.target.value) || 0 })}
+                    value={bedCapacity.NICU_INBORN || 0}
+                    onChange={(e) => setBedCapacity({ ...bedCapacity, NICU_INBORN: parseInt(e.target.value) || 0 })}
                     disabled={!editingBeds}
-                    className="w-32 px-4 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-lg font-bold text-center focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-32 px-4 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-lg font-bold text-center focus:outline-none focus:ring-1 focus:ring-sky-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-slate-600 dark:text-slate-400">beds</span>
+                </div>
+              </div>
+
+              {/* NICU Outborn Beds */}
+              <div className="bg-cyan-50 dark:bg-cyan-900/20 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    <svg className="w-6 h-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                    NICU Outborn
+                    <span className="text-xs font-normal text-slate-500 dark:text-slate-400">(Referred from other hospitals)</span>
+                  </label>
+                </div>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="number"
+                    min="0"
+                    value={bedCapacity.NICU_OUTBORN || 0}
+                    onChange={(e) => setBedCapacity({ ...bedCapacity, NICU_OUTBORN: parseInt(e.target.value) || 0 })}
+                    disabled={!editingBeds}
+                    className="w-32 px-4 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white text-lg font-bold text-center focus:outline-none focus:ring-1 focus:ring-cyan-400 disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <span className="text-slate-600 dark:text-slate-400">beds</span>
                 </div>
@@ -603,6 +860,322 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Doctors Management Panel */}
+        {showDoctorsManagement && (
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 mb-8 border border-teal-500/20 shadow-lg transition-colors duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-teal-500 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Doctors Management</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Add doctors who will appear in dropdown menus throughout the app</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDoctorsManagement(false);
+                  setNewDoctorName('');
+                  setEditingDoctorIndex(null);
+                  setEditDoctorName('');
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Add New Doctor Form */}
+            <div className="bg-teal-50 dark:bg-teal-900/20 p-4 rounded-xl border border-teal-200 dark:border-teal-800 mb-6">
+              <h3 className="text-sm font-semibold text-teal-800 dark:text-teal-300 mb-3 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add New Doctor
+              </h3>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={newDoctorName}
+                  onChange={(e) => setNewDoctorName(e.target.value)}
+                  placeholder="Enter doctor's name (e.g., Dr. John Smith)"
+                  className="flex-1 px-4 py-3 bg-white dark:bg-slate-700 border border-teal-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddDoctor();
+                    }
+                  }}
+                />
+                <button
+                  onClick={handleAddDoctor}
+                  disabled={!newDoctorName.trim()}
+                  className="px-6 py-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Doctor
+                </button>
+              </div>
+            </div>
+
+            {/* Doctors List */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Registered Doctors ({doctors.length})
+                </h3>
+                {doctors.length > 0 && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    These names will appear in doctor selection dropdowns
+                  </span>
+                )}
+              </div>
+
+              {doctors.length === 0 ? (
+                <div className="text-center py-8 bg-slate-50 dark:bg-slate-700/50 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600">
+                  <svg className="w-12 h-12 mx-auto text-slate-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium">No doctors added yet</p>
+                  <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Add doctors above to populate selection dropdowns</p>
+                </div>
+              ) : (
+                <div className="bg-white dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-600 divide-y divide-slate-200 dark:divide-slate-600">
+                  {doctors.map((doctor, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                    >
+                      {editingDoctorIndex === index ? (
+                        // Edit mode
+                        <div className="flex-1 flex items-center gap-3">
+                          <input
+                            type="text"
+                            value={editDoctorName}
+                            onChange={(e) => setEditDoctorName(e.target.value)}
+                            className="flex-1 px-3 py-2 bg-white dark:bg-slate-600 border border-teal-400 dark:border-teal-500 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleUpdateDoctor(index);
+                              } else if (e.key === 'Escape') {
+                                setEditingDoctorIndex(null);
+                                setEditDoctorName('');
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => handleUpdateDoctor(index)}
+                            className="p-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors"
+                            title="Save"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingDoctorIndex(null);
+                              setEditDoctorName('');
+                            }}
+                            className="p-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-600 dark:hover:bg-slate-500 text-slate-700 dark:text-white rounded-lg transition-colors"
+                            title="Cancel"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        // View mode
+                        <>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white font-bold text-sm">
+                              {doctor.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-900 dark:text-white">{doctor}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">Doctor #{index + 1}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingDoctorIndex(index);
+                                setEditDoctorName(doctor);
+                              }}
+                              className="p-2 text-slate-500 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-lg transition-colors"
+                              title="Edit"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteDoctor(index)}
+                              className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                              title="Remove"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Usage Info */}
+            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+              <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Where doctors appear
+              </h4>
+              <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-1">
+                <li>• Patient admission form (Doctor in Charge)</li>
+                <li>• Discharge summary (Prepared by / Verified by)</li>
+                <li>• Progress notes (Recording doctor)</li>
+                <li>• Death certificate (Certifying physician)</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Data Migration Panel */}
+        {showMigrationPanel && (
+          <div className="mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Data Sync & Migration</h2>
+              <button
+                onClick={() => setShowMigrationPanel(false)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+            <DataMigrationPanel
+              institutionId={institutionId}
+              institutionName={institutionName}
+            />
+          </div>
+        )}
+
+        {/* Institution Settings Panel */}
+        {showInstitutionSettings && (
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 mb-8 border border-amber-500/20 shadow-lg transition-colors duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Institution Settings</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Configure institution-wide settings</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowInstitutionSettings(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Discharge Language Setting */}
+            <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 p-6 rounded-xl border border-amber-200 dark:border-amber-800">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    AI-Powered Discharge Advice
+                    <span className="px-2 py-0.5 bg-gradient-to-r from-sky-500 to-indigo-500 text-white text-xs rounded-full">State-of-the-Art</span>
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Select from all <strong>22 Scheduled Languages</strong> of India (8th Schedule of Constitution).
+                    AI generates bilingual discharge advice in English + your selected regional language.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {SCHEDULED_LANGUAGES.map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={() => saveDischargeLanguage(lang.code)}
+                    className={`p-3 rounded-xl border-2 transition-all text-left ${
+                      dischargeLanguage === lang.code
+                        ? 'border-amber-500 bg-amber-100 dark:bg-amber-900/40 shadow-lg'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-amber-300 dark:hover:border-amber-700 bg-white dark:bg-slate-800'
+                    }`}
+                  >
+                    <p className={`font-bold text-sm ${
+                      dischargeLanguage === lang.code ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'
+                    }`}>
+                      {lang.nativeName}
+                    </p>
+                    <p className={`text-xs ${
+                      dischargeLanguage === lang.code ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {lang.name}
+                    </p>
+                    {dischargeLanguage === lang.code && (
+                      <div className="mt-2 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        Selected
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 p-4 bg-gradient-to-r from-sky-50 to-indigo-50 dark:from-sky-900/20 dark:to-indigo-900/20 rounded-lg border border-sky-200 dark:border-sky-800">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-500 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-sky-800 dark:text-sky-300 mb-1">
+                      How AI-Powered Bilingual Advice Works
+                    </p>
+                    <ul className="text-xs text-sky-700 dark:text-sky-400 space-y-1">
+                      <li>• AI generates 10 essential discharge instructions based on diagnosis</li>
+                      <li>• Each advice item is provided in <strong>English + Regional Language</strong></li>
+                      <li>• Uses simple, clear language that any parent can understand</li>
+                      <li>• Includes danger signs to watch for and follow-up advice</li>
+                      <li>• Printed on discharge summary for parents to take home</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence, getRedirectResult, UserCredential } from 'firebase/auth';
-import { getFirestore, initializeFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, enableMultiTabIndexedDbPersistence, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
 
 // Firebase configuration for NeoLink PICU/NICU Medical Records System
 // Configuration is loaded from environment variables for security
@@ -33,9 +33,29 @@ if (missingEnvVars.length > 0) {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+
+// Use the named database "neolink" (asia-south1 Mumbai)
+// Your data lives in this database - do not use the default database
 const db = initializeFirestore(app, {
-  ignoreUndefinedProperties: true
-});
+  ignoreUndefinedProperties: true,
+  cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+  // Note: experimentalForceLongPolling removed - it can cause "offline" errors
+  // Only enable if WebSocket connections fail in your environment
+}, 'neolink');
+
+// Enable offline persistence with multi-tab support
+// This allows the app to work offline and sync when back online
+if (typeof window !== 'undefined') {
+  enableMultiTabIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('⚠️ Multiple tabs open - persistence enabled in one tab only');
+    } else if (err.code === 'unimplemented') {
+      console.warn('⚠️ Browser does not support offline persistence');
+    } else {
+      console.warn('⚠️ Failed to enable persistence:', err);
+    }
+  });
+}
 
 // CRITICAL FIX: Set persistence FIRST, then check redirect result
 // The order matters - persistence must be configured before getRedirectResult
@@ -94,17 +114,5 @@ googleProvider.setCustomParameters({
 
 // Export all Firebase services
 export { app, db, auth, analytics };
-
-// Disable offline persistence to avoid errors
-// Can be re-enabled later if needed with proper multi-tab handling
-// if (typeof window !== 'undefined') {
-//   enableIndexedDbPersistence(db).catch((err) => {
-//     if (err.code === 'failed-precondition') {
-//       console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
-//     } else if (err.code === 'unimplemented') {
-//       console.warn('The current browser does not support offline persistence');
-//     }
-//   });
-// }
 
 export default app;

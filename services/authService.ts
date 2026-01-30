@@ -32,7 +32,7 @@ export const signInWithGoogle = async () => {
     try {
       console.log('🔄 Opening Google sign-in popup...');
       const result = await signInWithPopup(auth, googleProvider);
-      console.log('✅ Popup sign-in successful:', result.user.email);
+      console.log('✅ Popup sign-in successful');
       return result.user;
     } catch (popupError: any) {
       console.error('❌ Popup error:', popupError.code, popupError.message);
@@ -83,7 +83,7 @@ export const handleRedirectResult = async () => {
     // Use the redirect result that was already initiated after authReady
     const result = await pendingRedirectResult;
     if (result?.user) {
-      console.log('✅ Redirect result received:', result.user.email);
+      console.log('✅ Redirect result received successfully');
       return result.user;
     }
     console.log('ℹ️ No redirect result to process');
@@ -223,7 +223,7 @@ export const getCurrentUser = () => {
 export const sendPasswordReset = async (email: string) => {
   try {
     await sendPasswordResetEmail(auth, email);
-    console.log('✅ Password reset email sent to:', email);
+    console.log('✅ Password reset email sent successfully');
   } catch (error: any) {
     console.error('Error sending password reset email:', error);
 
@@ -280,7 +280,7 @@ export const sendPasswordResetByUserID = async (userID: string): Promise<string>
 
     // Send password reset email
     await sendPasswordResetEmail(auth, userEmail);
-    console.log('✅ Password reset email sent to:', userEmail);
+    console.log('✅ Password reset email sent successfully');
 
     return userEmail; // Return email for confirmation message
   } catch (error: any) {
@@ -289,41 +289,89 @@ export const sendPasswordResetByUserID = async (userID: string): Promise<string>
   }
 };
 
-// Sign in with UserID and Password (for all users: Institution Admins, Doctors, Nurses)
-export const signInWithUserID = async (userID: string, password: string) => {
+// Sign in with UserID/Email and Password (for all users: Institution Admins, Doctors, Nurses)
+export const signInWithUserID = async (userIDOrEmail: string, password: string) => {
   try {
     // Import here to avoid circular dependency
     const { db } = await import('../firebaseConfig');
     const { collection, query, where, getDocs } = await import('firebase/firestore');
 
     let userEmail = '';
+    const isEmail = userIDOrEmail.includes('@');
 
-    // First, try to find in institutions collection (for institution admins)
-    const institutionsRef = collection(db, 'institutions');
-    const instQuery = query(institutionsRef, where('userID', '==', userID));
-    const instSnapshot = await getDocs(instQuery);
+    console.log('🔄 Looking up:', isEmail ? 'Email' : 'UserID', userIDOrEmail);
 
-    if (!instSnapshot.empty) {
-      // Found in institutions - this is an institution admin
-      const institution = instSnapshot.docs[0].data();
-      userEmail = institution.adminEmail;
-    } else {
-      // Not found in institutions, try approved_users collection (for doctors, nurses, etc.)
+    if (isEmail) {
+      // Input is an email - query by email field directly
+      console.log('🔍 Querying approved_users by email...');
       const usersRef = collection(db, 'approved_users');
-      const userQuery = query(usersRef, where('userID', '==', userID));
-      const userSnapshot = await getDocs(userQuery);
-
-      if (userSnapshot.empty) {
-        throw new Error('Invalid UserID or password');
+      const userQuery = query(usersRef, where('email', '==', userIDOrEmail.toLowerCase()));
+      let userSnapshot;
+      try {
+        userSnapshot = await getDocs(userQuery);
+        console.log('✅ approved_users query successful, found:', userSnapshot.size, 'documents');
+      } catch (usersError: any) {
+        console.error('❌ Error querying approved_users:', usersError.code, usersError.message);
+        throw usersError;
       }
 
-      // Found in approved_users
+      if (userSnapshot.empty) {
+        throw new Error('Invalid email or password');
+      }
+
       const user = userSnapshot.docs[0].data();
       userEmail = user.email;
 
       // Check if user is enabled
       if (user.enabled === false) {
         throw new Error('This account has been disabled. Please contact your administrator.');
+      }
+    } else {
+      // Input is a UserID - query by userID field
+      // First, try to find in institutions collection (for institution admins)
+      console.log('🔍 Querying institutions collection...');
+      const institutionsRef = collection(db, 'institutions');
+      const instQuery = query(institutionsRef, where('userID', '==', userIDOrEmail));
+      let instSnapshot;
+      try {
+        instSnapshot = await getDocs(instQuery);
+        console.log('✅ Institutions query successful, found:', instSnapshot.size, 'documents');
+      } catch (instError: any) {
+        console.error('❌ Error querying institutions:', instError.code, instError.message);
+        throw instError;
+      }
+
+      if (!instSnapshot.empty) {
+        // Found in institutions - this is an institution admin
+        const institution = instSnapshot.docs[0].data();
+        userEmail = institution.adminEmail;
+        console.log('✅ Found institution admin, email:', userEmail);
+      } else {
+        // Not found in institutions, try approved_users collection (for doctors, nurses, etc.)
+        console.log('🔍 Querying approved_users by userID...');
+        const usersRef = collection(db, 'approved_users');
+        const userQuery = query(usersRef, where('userID', '==', userIDOrEmail));
+        let userSnapshot;
+        try {
+          userSnapshot = await getDocs(userQuery);
+          console.log('✅ approved_users query successful, found:', userSnapshot.size, 'documents');
+        } catch (usersError: any) {
+          console.error('❌ Error querying approved_users:', usersError.code, usersError.message);
+          throw usersError;
+        }
+
+        if (userSnapshot.empty) {
+          throw new Error('Invalid UserID or password');
+        }
+
+        // Found in approved_users
+        const user = userSnapshot.docs[0].data();
+        userEmail = user.email;
+
+        // Check if user is enabled
+        if (user.enabled === false) {
+          throw new Error('This account has been disabled. Please contact your administrator.');
+        }
       }
     }
 

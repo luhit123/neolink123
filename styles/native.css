@@ -24,10 +24,9 @@ html {
 body {
   /* Native momentum scrolling */
   -webkit-overflow-scrolling: touch;
-  /* Prevent rubber-band effect on body */
-  overscroll-behavior-y: none;
-  /* Prevent pull-to-refresh on PWA */
-  overscroll-behavior-x: none;
+  /* Allow normal scrolling */
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
 
 /* ===== Text Rendering ===== */
@@ -113,10 +112,6 @@ select:focus {
 /* ===== Button Optimizations ===== */
 
 button {
-  /* Better touch targets */
-  min-height: 48px; /* Android minimum */
-  min-width: 48px;
-
   /* Remove default button styling */
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -130,11 +125,6 @@ button {
   user-select: none;
 }
 
-button:active {
-  /* Subtle scale on press for native feel */
-  transform: scale(0.98);
-}
-
 button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -143,11 +133,6 @@ button:disabled {
 /* ===== Safe Area Insets for Notched Devices ===== */
 
 @supports (padding: max(0px)) {
-  body {
-    padding-left: max(0px, env(safe-area-inset-left));
-    padding-right: max(0px, env(safe-area-inset-right));
-  }
-
   /* Fixed headers respect notch */
   .safe-area-top {
     padding-top: max(0px, env(safe-area-inset-top));
@@ -279,14 +264,6 @@ button:disabled {
 /* ===== Optimized for Android Chrome ===== */
 
 @media screen and (max-width: 768px) {
-  /* Better touch targets on mobile */
-  button,
-  a,
-  [role="button"] {
-    min-height: 48px;
-    min-width: 48px;
-  }
-
   /* Prevent zoom on input focus */
   input[type="text"],
   input[type="email"],
@@ -314,10 +291,5 @@ button:disabled {
   /* PWA mode styles */
   :root {
     --status-bar-height: env(safe-area-inset-top, 0px);
-  }
-
-  body {
-    /* Account for status bar */
-    padding-top: var(--status-bar-height);
   }
 }

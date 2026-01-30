@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ChatMessage as ChatMessageType } from '../../types/chat';
+import { sanitizeHTML } from '../../utils/security';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -46,7 +47,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
     // Line breaks
     formatted = formatted.replace(/\n/g, '<br />');
 
-    return formatted;
+    // SECURITY: Sanitize HTML to prevent XSS attacks
+    return sanitizeHTML(formatted);
   };
 
   const formattedTimestamp = new Date(message.timestamp).toLocaleTimeString('en-US', {

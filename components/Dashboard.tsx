@@ -22,7 +22,7 @@ import DateFilter, { DateFilterValue } from './DateFilter';
 import ShiftFilter, { ShiftFilterConfigs } from './ShiftFilter';
 import DeathsAnalysis from './DeathsAnalysis';
 import DeathAnalyticsPage from './DeathAnalyticsPage';
-import { MobileAnalyticsView } from './analytics';
+
 import PatientDetailsPage from './PatientDetailsPage';
 import ReferralInbox from './ReferralInbox';
 import AdvancedAnalytics from './AdvancedAnalytics';
@@ -41,6 +41,9 @@ import AddPatientChoiceModal from './AddPatientChoiceModal';
 import ObservationPatientForm from './ObservationPatientForm';
 import { ObservationPatient, ObservationOutcome } from '../types';
 
+// Supabase sync for hybrid architecture
+import { syncPatientToSupabase, deletePatientSync } from '../services/supabaseSyncService';
+
 interface DashboardProps {
   userRole: UserRole;
   institutionId?: string; // SuperAdmin doesn't have institutionId
@@ -57,6 +60,7 @@ interface DashboardProps {
   setShowPatientList: (show: boolean) => void;
   triggerAnalyticsScroll?: number;
   triggerQuickActions?: number;
+  doctors?: string[]; // List of doctors for dropdown selection
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
@@ -76,7 +80,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   showPatientList,
   setShowPatientList,
   triggerAnalyticsScroll,
-  triggerQuickActions
+  triggerQuickActions,
+  doctors = []
 }) => {
   // Map props to internal names to avoid refactoring everything
   const showPatientDetailsPage = showPatientList;
@@ -126,7 +131,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   // REMOVED separate chart filter - charts now use main dateFilter for consistency
 
   const [showDeathsAnalysis, setShowDeathsAnalysis] = useState(false);
-  const [showMobileAnalytics, setShowMobileAnalytics] = useState(false);
+
   const [showSmartHandoff, setShowSmartHandoff] = useState(false);
   const [showAIReportGenerator, setShowAIReportGenerator] = useState(false);
 
@@ -151,8 +156,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [showAddPatientChoice, setShowAddPatientChoice] = useState(false);
   const [showObservationForm, setShowObservationForm] = useState(false);
 
-  // Observation Patients
+  // Observation Patients - Active ones loaded by default, history loaded on demand
   const [observationPatients, setObservationPatients] = useState<ObservationPatient[]>([]);
+  const [observationHistory, setObservationHistory] = useState<ObservationPatient[]>([]);
+  const [loadingObservationHistory, setLoadingObservationHistory] = useState(false);
+  const [observationHistoryLoaded, setObservationHistoryLoaded] = useState(false);
 
   // Chat context for AI widget
   const { updateContext } = useChatContext();
@@ -390,7 +398,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  // Load observation patients from Firestore with real-time updates
+  // Load ONLY active observation patients from Firestore (outcome = InObservation)
   useEffect(() => {
     if (!institutionId) {
       setObservationPatients([]);
@@ -398,18 +406,23 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
 
     const observationRef = collection(db, 'observationPatients');
-    const q = query(observationRef, where('institutionId', '==', institutionId));
+    // Only query for active observations - completed ones are loaded on demand
+    const q = query(
+      observationRef,
+      where('institutionId', '==', institutionId),
+      where('outcome', '==', ObservationOutcome.InObservation)
+    );
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const allObservationPatients = snapshot.docs.map(doc => ({
+        const activeObservations = snapshot.docs.map(doc => ({
           ...doc.data(),
           id: doc.id,
         } as ObservationPatient));
 
-        setObservationPatients(allObservationPatients);
-        console.log('✅ Real-time update: Loaded', allObservationPatients.length, 'observation patients');
+        setObservationPatients(activeObservations);
+        console.log('✅ Real-time update: Loaded', activeObservations.length, 'active observation patients');
       },
       (error) => {
         console.error('❌ Error loading observation patients:', error);
@@ -419,6 +432,42 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     return () => unsubscribe();
   }, [institutionId]);
+
+  // Function to load observation history on demand
+  const loadObservationHistory = async () => {
+    if (!institutionId || observationHistoryLoaded || loadingObservationHistory) return;
+
+    setLoadingObservationHistory(true);
+    try {
+      const observationRef = collection(db, 'observationPatients');
+      const q = query(
+        observationRef,
+        where('institutionId', '==', institutionId),
+        where('outcome', 'in', [ObservationOutcome.HandedOverToMother, ObservationOutcome.ConvertedToAdmission])
+      );
+
+      const snapshot = await getDocs(q);
+      const historyPatients = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id,
+      } as ObservationPatient));
+
+      // Sort by most recent completion first
+      historyPatients.sort((a, b) => {
+        const dateA = a.dischargedAt ? new Date(a.dischargedAt).getTime() : 0;
+        const dateB = b.dischargedAt ? new Date(b.dischargedAt).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      setObservationHistory(historyPatients);
+      setObservationHistoryLoaded(true);
+      console.log('✅ Loaded', historyPatients.length, 'observation history records');
+    } catch (error) {
+      console.error('❌ Error loading observation history:', error);
+    } finally {
+      setLoadingObservationHistory(false);
+    }
+  };
 
   // Real-time listener for unread referrals
   useEffect(() => {
@@ -838,6 +887,11 @@ const Dashboard: React.FC<DashboardProps> = ({
     return filtered;
   }, [observationPatients, selectedUnit, dateFilter]);
 
+  // Completed observation patients (handed over or converted to admission) - loaded on demand
+  const completedObservationPatients = useMemo(() => {
+    return observationHistory.filter(p => p.unit === selectedUnit);
+  }, [observationHistory, selectedUnit]);
+
   const nicuMortalityBreakdown = useMemo(() => {
     if ((selectedUnit !== Unit.NICU && selectedUnit !== Unit.SNCU) || !stats.inbornDeaths || !stats.outbornDeaths) return [];
     return [
@@ -929,16 +983,31 @@ const Dashboard: React.FC<DashboardProps> = ({
         return value === undefined ? null : value;
       }));
 
+      let patientId: string;
+
       if (patientToEdit) {
         // Update existing patient in top-level patients collection
         const patientRef = doc(db, 'patients', patientToEdit.id);
         await updateDoc(patientRef, sanitizedData);
+        patientId = patientToEdit.id;
         console.log('✅ Patient updated in Firestore:', patientData.id);
       } else {
         // Add new patient to top-level patients collection
         const patientsRef = collection(db, 'patients');
         const docRef = await addDoc(patientsRef, sanitizedData);
+        patientId = docRef.id;
         console.log('✅ Patient added to Firestore:', docRef.id);
+      }
+
+      // Sync to Supabase (background, non-blocking)
+      if (institutionId) {
+        syncPatientToSupabase(patientId, patientData as Patient, institutionId)
+          .then(supabaseId => {
+            if (supabaseId) {
+              console.log('✅ Patient synced to Supabase:', supabaseId);
+            }
+          })
+          .catch(err => console.warn('⚠️ Supabase sync failed (non-critical):', err));
       }
 
       // Real-time listener will automatically update the patient list
@@ -960,6 +1029,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       const patientRef = doc(db, 'patients', id);
       await deleteDoc(patientRef);
       console.log('✅ Patient deleted from Firestore:', id);
+
+      // Also delete from Supabase (background, non-blocking)
+      deletePatientSync(id)
+        .then(success => {
+          if (success) {
+            console.log('✅ Patient deleted from Supabase:', id);
+          }
+        })
+        .catch(err => console.warn('⚠️ Supabase delete failed (non-critical):', err));
 
       // Real-time listener will automatically update the patient list
     } catch (error: any) {
@@ -995,6 +1073,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       await updateDoc(patientRef, { ...updatedPatient });
       console.log('✅ Patient discharged from step down:', patient.id);
 
+      // Sync to Supabase (background, non-blocking)
+      if (institutionId) {
+        syncPatientToSupabase(patient.id, updatedPatient, institutionId)
+          .then(supabaseId => {
+            if (supabaseId) console.log('✅ Step-down discharge synced to Supabase');
+          })
+          .catch(err => console.warn('⚠️ Supabase sync failed (non-critical):', err));
+      }
+
       // Real-time listener will automatically update the patient list
     } catch (error: any) {
       console.error('❌ Error discharging patient:', error);
@@ -1027,6 +1114,15 @@ const Dashboard: React.FC<DashboardProps> = ({
       await updateDoc(patientRef, { ...updatedPatient });
       console.log('✅ Patient readmitted from step down:', patient.id);
 
+      // Sync to Supabase (background, non-blocking)
+      if (institutionId) {
+        syncPatientToSupabase(patient.id, updatedPatient, institutionId)
+          .then(supabaseId => {
+            if (supabaseId) console.log('✅ Readmission synced to Supabase');
+          })
+          .catch(err => console.warn('⚠️ Supabase sync failed (non-critical):', err));
+      }
+
       // Real-time listener will automatically update the patient list
     } catch (error: any) {
       console.error('❌ Error readmitting patient:', error);
@@ -1048,17 +1144,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
 
 
-  // Mobile Analytics View (swipeable cards for mobile)
-  if (showMobileAnalytics) {
-    return (
-      <MobileAnalyticsView
-        patients={patients}
-        allPatients={patients}
-        institutionName={institutionName || 'Unknown Institution'}
-        onClose={() => setShowMobileAnalytics(false)}
-      />
-    );
-  }
+
 
   // Desktop Deaths Analysis Page
   if (showDeathsAnalysis) {
@@ -1067,7 +1153,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         patients={patients}
         institutionName={institutionName || 'Unknown Institution'}
         selectedUnit={selectedUnit}
-        onClose={() => setShowDeathsAnalysis(false)}
+        onBack={() => setShowDeathsAnalysis(false)}
         userRole={userRole}
       />
     );
@@ -1119,7 +1205,11 @@ const Dashboard: React.FC<DashboardProps> = ({
         onEdit={handleEditPatient}
         userRole={userRole}
         allRoles={allRoles}
-        observationPatients={observationPatients}
+        observationPatients={activeObservationPatients}
+        completedObservationPatients={completedObservationPatients}
+        onLoadObservationHistory={loadObservationHistory}
+        loadingObservationHistory={loadingObservationHistory}
+        observationHistoryLoaded={observationHistoryLoaded}
         institutionId={institutionId}
         userEmail={userEmail || ''}
         userName={displayName || userEmail?.split('@')[0] || 'User'}
@@ -1155,6 +1245,36 @@ const Dashboard: React.FC<DashboardProps> = ({
             onShowAddPatient(partialPatient as Patient, observationPatient.unit);
           }
         }}
+        onHandoverObservation={async (observationPatient) => {
+          // Handover observation patient to mother - track the time
+          try {
+            const now = new Date().toISOString();
+            const observationRef = doc(db, 'observationPatients', observationPatient.id);
+
+            // Calculate observation duration for logging
+            const startTime = new Date(observationPatient.dateOfObservation);
+            const endTime = new Date(now);
+            const durationMs = endTime.getTime() - startTime.getTime();
+            const durationHours = Math.floor(durationMs / (1000 * 60 * 60));
+            const durationMinutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+
+            await updateDoc(observationRef, {
+              outcome: ObservationOutcome.HandedOverToMother,
+              dischargedAt: now,
+              updatedAt: now,
+              observationDurationHours: durationHours,
+              observationDurationMinutes: durationMinutes,
+            });
+
+            console.log(`✅ Observation patient ${observationPatient.babyName} handed over to mother after ${durationHours}h ${durationMinutes}m`);
+
+            // Real-time listener will update the list automatically
+          } catch (error) {
+            console.error('❌ Error handing over observation patient:', error);
+            alert('Failed to handover patient. Please try again.');
+          }
+        }}
+        doctors={doctors}
       />
     );
   }
@@ -1251,13 +1371,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <button
                   onClick={() => {
                     haptics.tap();
-                    // Check if mobile (screen width < 768px)
-                    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-                    if (isMobile) {
-                      setShowMobileAnalytics(true);
-                    } else {
-                      setShowDeathsAnalysis(true);
-                    }
+                    setShowDeathsAnalysis(true);
                   }}
                   className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold text-sm"
                 >
@@ -1830,13 +1944,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               onClick={() => {
                 haptics.tap();
                 setShowQuickActions(false);
-                // Check if mobile (screen width < 768px)
-                const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-                if (isMobile) {
-                  setShowMobileAnalytics(true);
-                } else {
-                  setShowDeathsAnalysis(true);
-                }
+                setShowDeathsAnalysis(true);
               }}
               className="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-600 transition-all"
             >

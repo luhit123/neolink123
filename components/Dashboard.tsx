@@ -13,7 +13,6 @@ import TimeBasedAnalytics from './TimeBasedAnalytics';
 import BedOccupancy from './BedOccupancy';
 import AIClinicalAssistant from './AIClinicalAssistant';
 import SmartHandoff from './SmartHandoff';
-import AIReportGenerator from './AIReportGenerator';
 import NeolinkAIButton from './NeolinkAIButton';
 import { BedIcon, ArrowRightOnRectangleIcon, ChartBarIcon, PlusIcon, HomeIcon, ArrowUpOnSquareIcon, PresentationChartBarIcon, ArrowUpIcon, SparklesIcon } from './common/Icons';
 import { ResponsiveContainer, Tooltip, Legend, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
@@ -28,16 +27,14 @@ import ReferralInbox from './ReferralInbox';
 import AdvancedAnalytics from './AdvancedAnalytics';
 
 // Native Android Components
-import PullToRefresh from './gestures/PullToRefresh';
-import FAB from './material/FAB';
 import BottomSheet from './material/BottomSheet';
 import BottomNavigation, { NavItem } from './material/BottomNavigation';
 import DashboardSkeleton from './skeletons/DashboardSkeleton';
 import { haptics } from '../utils/haptics';
-import { IconHome, IconChartBar, IconUsers, IconSettings, IconPlus } from '@tabler/icons-react';
-import GlobalAIChatWidget from './GlobalAIChatWidget';
+import { IconHome, IconChartBar, IconUsers, IconSettings, IconUserPlus } from '@tabler/icons-react';
 import { useChatContext } from '../contexts/ChatContext';
 import AddPatientChoiceModal from './AddPatientChoiceModal';
+import AddPatientFAB from './AddPatientFAB';
 import ObservationPatientForm from './ObservationPatientForm';
 import { ObservationPatient, ObservationOutcome } from '../types';
 
@@ -56,11 +53,15 @@ interface DashboardProps {
   setShowAdminPanel?: (show: boolean) => void; // For Admin dashboard access
   onShowReferrals?: () => void; // For switching to full Referral Management page
   onShowAddPatient?: (patient?: Patient | null, unit?: Unit) => void; // For navigating to Add Patient page
+  onShowAnalytics?: () => void; // For navigating to dedicated analytics page
+  onShowAIReports?: () => void; // For navigating to AI Reports page
   showPatientList: boolean;
   setShowPatientList: (show: boolean) => void;
   triggerAnalyticsScroll?: number;
   triggerQuickActions?: number;
   doctors?: string[]; // List of doctors for dropdown selection
+  onUnitChange?: (unit: Unit) => void; // Callback when unit changes
+  onFacilitiesLoaded?: (facilities: Unit[]) => void; // Callback when facilities are loaded
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
@@ -77,11 +78,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   setShowAdminPanel,
   onShowReferrals,
   onShowAddPatient,
+  onShowAnalytics,
+  onShowAIReports,
   showPatientList,
   setShowPatientList,
   triggerAnalyticsScroll,
   triggerQuickActions,
-  doctors = []
+  doctors = [],
+  onUnitChange,
+  onFacilitiesLoaded
 }) => {
   // Map props to internal names to avoid refactoring everything
   const showPatientDetailsPage = showPatientList;
@@ -91,15 +96,9 @@ const Dashboard: React.FC<DashboardProps> = ({
     return userRole === role || (allRoles && allRoles.includes(role));
   };
 
-  // Debug: Log user roles
-  console.log('📋 Dashboard Roles:', {
-    userRole,
-    allRoles,
-    hasAdmin: hasRole(UserRole.Admin),
-    hasDoctor: hasRole(UserRole.Doctor),
-    hasNurse: hasRole(UserRole.Nurse),
-    canAddPatient: hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)
-  });
+  // Debug logging disabled in production for performance
+  // Enable only when debugging role issues by uncommenting below:
+  // console.log('📋 Dashboard Roles:', { userRole, allRoles });
 
   // State declarations FIRST (before using them in handlers)
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -133,7 +132,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [showDeathsAnalysis, setShowDeathsAnalysis] = useState(false);
 
   const [showSmartHandoff, setShowSmartHandoff] = useState(false);
-  const [showAIReportGenerator, setShowAIReportGenerator] = useState(false);
 
   const [showReferralInbox, setShowReferralInbox] = useState(false);
   const [showAdvancedAnalytics, setShowAdvancedAnalytics] = useState(true); // Enable by default for world-class UX
@@ -318,7 +316,6 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         setPatients(allPatients);
         setLoading(false);
-        console.log('✅ Real-time update: Loaded', allPatients.length, 'patients');
       },
       (error) => {
         console.error('❌ Error loading patients:', error);
@@ -347,7 +344,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         const data = institutionDoc.data();
         if (data.bedCapacity) {
           setBedCapacity(data.bedCapacity);
-          console.log('✅ Loaded bed capacity:', data.bedCapacity);
         } else {
           // Use defaults if not set
           setBedCapacity({ PICU: 10, NICU: 20, SNCU: 0 });
@@ -361,15 +357,21 @@ const Dashboard: React.FC<DashboardProps> = ({
             facilitiesToEnable = data.facilities.filter((facility: Unit) =>
               allowedDashboards.includes(facility)
             );
-            console.log('🔒 Dashboard access restricted to:', allowedDashboards);
           }
 
           setEnabledFacilities(facilitiesToEnable);
+          // Notify parent of facilities loaded
+          if (onFacilitiesLoaded) {
+            onFacilitiesLoaded(facilitiesToEnable);
+          }
 
           // Ensure selected unit is valid
           if (!facilitiesToEnable.includes(selectedUnit)) {
             const newUnit = facilitiesToEnable[0] || Unit.NICU;
             setSelectedUnit(newUnit);
+            if (onUnitChange) {
+              onUnitChange(newUnit);
+            }
             // Save to localStorage
             try {
               localStorage.setItem('selectedUnit', newUnit);
@@ -377,7 +379,6 @@ const Dashboard: React.FC<DashboardProps> = ({
               console.warn('Failed to save selectedUnit to localStorage:', error);
             }
           }
-          console.log('✅ Loaded facilities:', facilitiesToEnable);
         } else {
           // Default to NICU+PICU if not set (backward compatibility)
           let defaultFacilities = [Unit.NICU, Unit.PICU];
@@ -390,6 +391,10 @@ const Dashboard: React.FC<DashboardProps> = ({
           }
 
           setEnabledFacilities(defaultFacilities);
+          // Notify parent of facilities loaded
+          if (onFacilitiesLoaded) {
+            onFacilitiesLoaded(defaultFacilities);
+          }
         }
       }
     } catch (error: any) {
@@ -422,7 +427,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         } as ObservationPatient));
 
         setObservationPatients(activeObservations);
-        console.log('✅ Real-time update: Loaded', activeObservations.length, 'active observation patients');
       },
       (error) => {
         console.error('❌ Error loading observation patients:', error);
@@ -526,14 +530,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [patients, selectedUnit, nicuView, institutionId]);
 
   const unitPatients = useMemo(() => {
-    console.log('🔍 ========================================');
-    console.log('🔍 FILTERING PATIENTS');
-    console.log('🔍 dateFilter.period:', dateFilter.period);
-    console.log('🔍 dateFilter.startDate:', dateFilter.startDate);
-    console.log('🔍 dateFilter.endDate:', dateFilter.endDate);
-    console.log('🔍 dateFilter full object:', JSON.stringify(dateFilter));
-    console.log('🔍 baseUnitPatients count:', baseUnitPatients.length);
-
     let filtered = baseUnitPatients;
 
     if (dateFilter.period !== 'All Time') {
@@ -541,24 +537,18 @@ const Dashboard: React.FC<DashboardProps> = ({
       let endDate: Date;
 
       const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
-      console.log('🔍 periodIsMonth:', periodIsMonth, 'tested against:', dateFilter.period);
 
       if (periodIsMonth) {
         const [year, month] = dateFilter.period.split('-').map(Number);
         // Use local timezone, not UTC, to match patient date comparisons
         startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
         endDate = new Date(year, month, 0, 23, 59, 59, 999);
-        console.log('🔍 MONTH FILTER:', dateFilter.period);
-        console.log('🔍 Start Date:', startDate.toISOString(), '(local:', startDate.toString(), ')');
-        console.log('🔍 End Date:', endDate.toISOString(), '(local:', endDate.toString(), ')');
       } else {
-        console.log('🔍 Not a month filter, checking period type:', dateFilter.period);
         const now = new Date();
         switch (dateFilter.period) {
           case 'Today':
             startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-            console.log('🔍 TODAY filter - Start:', startDate, 'End:', endDate);
             break;
           case 'This Week':
             const firstDayOfWeek = new Date(now);
@@ -593,15 +583,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       }
 
       if (dateFilter.period === 'Custom' && (!dateFilter.startDate || !dateFilter.endDate)) {
-        console.log('🔍 Invalid custom range, keeping all patients');
-        // Do nothing, filtered stays as baseFiltered
+        // Invalid custom range - keep all patients
       } else {
-        console.log('🔍 Applying date filter to', filtered.length, 'patients');
-        console.log('🔍 Filter range: START=', startDate, 'END=', endDate);
-
-        let includedCount = 0;
-        let excludedCount = 0;
-
         filtered = filtered.filter(p => {
           const admissionDate = new Date(p.admissionDate);
 
@@ -625,25 +608,8 @@ const Dashboard: React.FC<DashboardProps> = ({
           // Patient is active during period if:
           // - Admitted before/during period AND
           // - (Still in progress OR outcome happened during/after period start)
-          const wasActiveDuringPeriod = wasAdmittedBeforeOrDuringPeriod &&
-            (!outcomeDate || outcomeDate >= startDate);
-
-          if (!wasActiveDuringPeriod) {
-            excludedCount++;
-            console.log('🔍 EXCLUDED:', p.name,
-              'Admitted:', admissionDate.toISOString(),
-              'Outcome:', outcomeDate ? outcomeDate.toISOString() : 'None',
-              'Period:', startDate.toISOString(), 'to', endDate.toISOString());
-          } else {
-            includedCount++;
-            console.log('✅ INCLUDED:', p.name,
-              'Admitted:', admissionDate.toISOString(),
-              'Outcome:', outcomeDate ? outcomeDate.toISOString() : 'In Progress');
-          }
-
-          return wasActiveDuringPeriod;
+          return wasAdmittedBeforeOrDuringPeriod && (!outcomeDate || outcomeDate >= startDate);
         });
-        console.log('🔍 After date filter:', filtered.length, 'patients remain (included:', includedCount, ', excluded:', excludedCount, ')');
       }
     }
 
@@ -682,8 +648,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       });
     }
 
-    console.log('🔍 FINAL RESULT:', filtered.length, 'patients after all filters');
-    console.log('🔍 ========================================');
     return filtered;
   }, [baseUnitPatients, dateFilter, shiftFilter]);
 
@@ -1134,6 +1098,11 @@ const Dashboard: React.FC<DashboardProps> = ({
     setSelectedUnit(unit);
     setNicuView('All'); // Reset nicu view when switching main unit
 
+    // Notify parent of unit change
+    if (onUnitChange) {
+      onUnitChange(unit);
+    }
+
     // Save selected unit to localStorage for persistence
     try {
       localStorage.setItem('selectedUnit', unit);
@@ -1226,6 +1195,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           // Real-time listener will automatically refresh patients
           console.log('✅ Patients deleted - real-time listener will update');
         }}
+        onShowReferrals={onShowReferrals}
         onConvertObservationToAdmission={(observationPatient) => {
           // Open patient form pre-filled with observation data
           setShowPatientDetailsPage(false);
@@ -1286,59 +1256,60 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <>
-      <PullToRefresh onRefresh={handleRefresh}>
-        <div className="container mx-auto px-0 sm:px-6 py-2 sm:py-6 space-y-4 sm:space-y-6 pb-24 md:pb-6">
-          <div className="bg-gradient-to-r from-slate-50 via-white to-slate-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-2 sm:px-6 py-3 sm:py-4 border-b-2 border-slate-200 dark:border-slate-700 shadow-xl transition-all duration-200 mb-3 sm:mb-6 space-y-3 rounded-b-xl sm:rounded-b-2xl">
+      <div className="container mx-auto px-0 sm:px-6 py-2 sm:py-6 space-y-4 sm:space-y-6 pb-24 md:pb-6">
+        <div className="bg-white dark:bg-slate-800 px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-200 dark:border-slate-700 shadow-sm transition-all duration-200 mb-4">
 
-            {/* Welcome Message */}
-            {displayName && (
-              <motion.div
-                className="text-center mb-2"
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2, type: 'spring', stiffness: 300, damping: 25 }}
-              >
-                <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">
-                  Welcome, <span className="text-medical-teal bg-gradient-to-r from-medical-teal to-blue-600 bg-clip-text text-transparent">{displayName}</span>!
-                </h1>
-                <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm mt-1">
-                  {institutionName || 'Healthcare Management'}
-                </p>
-              </motion.div>
-            )}
-
-            {/* Row 1: Unit Selection & Date Display Badge (Mobile) */}
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-              <UnitSelection
-                selectedUnit={selectedUnit}
-                onSelectUnit={setSelectedUnit}
-                availableUnits={enabledFacilities}
-              />
-              {selectedUnit === Unit.NICU && (
-                <>
-                  <div className="h-5 w-px bg-slate-300 dark:bg-slate-600 hidden sm:block"></div>
-                  <NicuViewSelection selectedView={nicuView} onSelectView={setNicuView} />
-                </>
-              )}
-              {/* Mobile Date Badge */}
-              <div className="flex sm:hidden items-center gap-1 bg-blue-500/20 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-lg text-[10px] font-semibold">
-                <span>📅</span>
-                <span>
-                  {dateFilter.period === 'Custom' && dateFilter.startDate && dateFilter.endDate
-                    ? `${new Date(dateFilter.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(dateFilter.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                    : dateFilter.period === 'Today'
-                      ? new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-                      : dateFilter.period === 'This Week'
-                        ? 'This Week'
-                        : dateFilter.period === 'This Month'
-                          ? new Date().toLocaleDateString('en-US', { month: 'long' })
-                          : 'All Time'}
-                </span>
-              </div>
+          {/* Clean Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
+                {selectedUnit} Dashboard
+              </h1>
+              <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm">
+                {institutionName || 'Healthcare Management'}
+              </p>
             </div>
+            {displayName && (
+              <div className="text-right">
+                <p className="text-xs text-slate-500 dark:text-slate-400">Welcome back,</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">{displayName}</p>
+              </div>
+            )}
+          </div>
 
-            {/* Row 2: Quick Actions - Hidden on mobile, visible on desktop */}
-            {/* Mobile: Info message to use "More" menu */}
+          {/* Row 1: Unit Selection & Date Display Badge (Mobile) */}
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+            <UnitSelection
+              selectedUnit={selectedUnit}
+              onSelectUnit={setSelectedUnit}
+              availableUnits={enabledFacilities}
+            />
+            {selectedUnit === Unit.NICU && (
+              <>
+                <div className="h-5 w-px bg-slate-300 dark:bg-slate-600 hidden sm:block"></div>
+                <NicuViewSelection selectedView={nicuView} onSelectView={setNicuView} />
+              </>
+            )}
+            {/* Mobile Date Badge */}
+            <div className="flex sm:hidden items-center gap-1 bg-blue-500/20 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-lg text-[10px] font-semibold">
+              <span>📅</span>
+              <span>
+                {dateFilter.period === 'Custom' && dateFilter.startDate && dateFilter.endDate
+                  ? `${new Date(dateFilter.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(dateFilter.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                  : dateFilter.period === 'Today'
+                    ? new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                    : dateFilter.period === 'This Week'
+                      ? 'This Week'
+                      : dateFilter.period === 'This Month'
+                        ? new Date().toLocaleDateString('en-US', { month: 'long' })
+                        : 'All Time'}
+              </span>
+            </div>
+          </div>
+
+          {/* Row 2: Quick Actions - Hidden on mobile, visible on desktop */}
+          {/* Mobile: Info message to use "More" menu - Hidden for Officials */}
+          {userRole !== UserRole.Official && (
             <div className="flex md:hidden items-center justify-center">
               <div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1.5 bg-slate-100 dark:bg-slate-700 px-3 py-1.5 rounded-lg">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1347,8 +1318,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <span>Tap ⚙️ More for all actions</span>
               </div>
             </div>
+          )}
 
-            {/* Desktop: Full action buttons grid */}
+          {/* Desktop: Full action buttons grid - Hidden for Officials */}
+          {userRole !== UserRole.Official && (
             <div className="hidden md:grid grid-cols-2 lg:grid-cols-4 gap-2">
               {/* Admin Dashboard - Only show for Admin role users */}
               {userRole === UserRole.Admin && setShowAdminPanel && (
@@ -1397,17 +1370,16 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </button>
               )}
 
-              {(hasRole(UserRole.Admin) || hasRole(UserRole.Doctor)) && (
+              {/* AI Reports - For Admin, Doctor, and Nurse roles */}
+              {(userRole === UserRole.Admin || userRole === UserRole.Doctor || userRole === UserRole.Nurse) && onShowAIReports && (
                 <button
                   onClick={() => {
                     haptics.tap();
-                    setShowAIReportGenerator(true);
+                    onShowAIReports();
                   }}
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white rounded-lg hover:from-indigo-600 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold text-sm"
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold text-sm"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
+                  <IconChartBar size={18} />
                   AI Reports
                 </button>
               )}
@@ -1472,404 +1444,224 @@ const Dashboard: React.FC<DashboardProps> = ({
                 Filters & Settings
               </button>
             </div>
+          )}
 
-            {/* Row 3: Filters - Date & Shift */}
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
-              <DateFilter onFilterChange={setDateFilter} />
-              <ShiftFilter onFilterChange={setShiftFilter} />
+          {/* Row 3: Filters - Date & Shift */}
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+            <DateFilter onFilterChange={setDateFilter} />
+            <ShiftFilter onFilterChange={setShiftFilter} />
+          </div>
+
+        </div>
+
+        {/* Key Metrics Cards - Clean Medical Grade Design */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+          {/* Active Patients - Primary Metric */}
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 text-white shadow-lg shadow-blue-500/25">
+            <div className="flex items-center justify-between mb-2">
+              <BedIcon className="w-6 h-6 opacity-80" />
+              <span className="text-xs font-medium bg-white/20 px-2 py-0.5 rounded-full">Active</span>
             </div>
-
+            <p className="text-3xl font-bold">{stats.inProgress}</p>
+            <p className="text-xs text-blue-100 mt-1">Patients in Care</p>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-2 sm:gap-3 md:gap-4 px-2 sm:px-0">
-            <StatCard title={`Admissions ${getPeriodTitle(dateFilter.period)}`} value={stats.admissionsCount} icon={<PlusIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-indigo-500/90" />
-            <StatCard title={`Total Patients ${getPeriodTitle(dateFilter.period)}`} value={stats.total} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-blue/90" />
-            <StatCard title={`In Progress ${getPeriodTitle(dateFilter.period)}`} value={stats.inProgress} icon={<BedIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-blue-light/90" />
-            <StatCard title={`Step Down ${getPeriodTitle(dateFilter.period)}`} value={stats.stepDown} icon={<ArrowUpIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-blue-500/90" />
-            <StatCard title={`Discharged ${getPeriodTitle(dateFilter.period)}`} value={stats.discharged} icon={<ArrowRightOnRectangleIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-green/90" />
-            <StatCard title={`Referred ${getPeriodTitle(dateFilter.period)}`} value={stats.referred} icon={<ArrowUpOnSquareIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-orange/90" />
-            <StatCard title={`Deceased ${getPeriodTitle(dateFilter.period)}`} value={stats.deceased} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-red/90" />
-            <StatCard title={`Mortality Rate ${getPeriodTitle(dateFilter.period)}`} value={stats.mortalityRate} icon={<ChartBarIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />} color="bg-medical-red" />
-            <StatCard
-              title="In Observation"
-              value={activeObservationPatients.length}
-              icon={
-                <svg className="w-5 h-5 md:w-6 md:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-              }
-              color="bg-amber-500/90"
-            />
+          {/* Total Admissions */}
+          <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl p-4 text-white shadow-lg shadow-indigo-500/25">
+            <div className="flex items-center justify-between mb-2">
+              <PlusIcon className="w-6 h-6 opacity-80" />
+              <span className="text-xs font-medium bg-white/20 px-2 py-0.5 rounded-full">{getPeriodTitle(dateFilter.period).replace(/[()]/g, '')}</span>
+            </div>
+            <p className="text-3xl font-bold">{stats.admissionsCount}</p>
+            <p className="text-xs text-indigo-100 mt-1">New Admissions</p>
           </div>
 
-          {/* Advanced Analytics Toggle & Section */}
-          <div className="flex items-center justify-between mb-4" data-analytics-section>
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-              <span className="text-3xl">📊</span>
-              Analytics Dashboard
+          {/* Discharged */}
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-4 text-white shadow-lg shadow-emerald-500/25">
+            <div className="flex items-center justify-between mb-2">
+              <ArrowRightOnRectangleIcon className="w-6 h-6 opacity-80" />
+              <span className="text-xs font-medium bg-white/20 px-2 py-0.5 rounded-full">Outcomes</span>
+            </div>
+            <p className="text-3xl font-bold">{stats.discharged}</p>
+            <p className="text-xs text-emerald-100 mt-1">Discharged</p>
+          </div>
+
+          {/* Mortality Rate */}
+          <div className="bg-gradient-to-br from-slate-600 to-slate-700 rounded-2xl p-4 text-white shadow-lg shadow-slate-600/25">
+            <div className="flex items-center justify-between mb-2">
+              <ChartBarIcon className="w-6 h-6 opacity-80" />
+              <span className="text-xs font-medium bg-white/20 px-2 py-0.5 rounded-full">Rate</span>
+            </div>
+            <p className="text-3xl font-bold">{stats.mortalityRate}</p>
+            <p className="text-xs text-slate-300 mt-1">Mortality Rate</p>
+          </div>
+        </div>
+
+        {/* Secondary Stats Row - More subtle */}
+        <div className="grid grid-cols-4 gap-2 px-1">
+          <div className="text-center py-2 px-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+            <p className="text-lg font-bold text-slate-900 dark:text-white">{stats.total}</p>
+            <p className="text-[10px] text-slate-500">Total</p>
+          </div>
+          <div className="text-center py-2 px-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+            <p className="text-lg font-bold text-amber-600">{stats.referred}</p>
+            <p className="text-[10px] text-slate-500">Referred</p>
+          </div>
+          <div className="text-center py-2 px-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+            <p className="text-lg font-bold text-sky-600">{stats.stepDown}</p>
+            <p className="text-[10px] text-slate-500">Step Down</p>
+          </div>
+          <div className="text-center py-2 px-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+            <p className="text-lg font-bold text-purple-600">{activeObservationPatients.length}</p>
+            <p className="text-[10px] text-slate-500">Observation</p>
+          </div>
+        </div>
+
+        {/* Quick Analytics Preview & Link to Full Analytics */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-4 md:p-6" data-analytics-section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <IconChartBar size={24} className="text-blue-500" />
+              Analytics Overview
             </h2>
             <button
-              onClick={() => setShowAdvancedAnalytics(!showAdvancedAnalytics)}
-              className={`px-4 py-2 rounded-lg font-bold text-sm transition-all duration-200 flex items-center gap-2 shadow-lg ${showAdvancedAnalytics
-                ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600'
-                : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600'
-                }`}
+              onClick={() => {
+                haptics.tap();
+                if (onShowAnalytics) {
+                  onShowAnalytics();
+                }
+              }}
+              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-semibold text-sm flex items-center gap-2 shadow-lg hover:shadow-xl hover:from-blue-600 hover:to-indigo-700 transition-all"
             >
-              {showAdvancedAnalytics ? (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  Advanced View
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                  </svg>
-                  Basic View
-                </>
-              )}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              View Full Analytics
             </button>
           </div>
 
-          {showAdvancedAnalytics ? (
-            /* World-Class Advanced Analytics */
-            <AdvancedAnalytics
-              patients={unitPatients}
-              selectedUnit={selectedUnit}
-              dateFilter={dateFilter}
-            />
-          ) : (
-            /* Basic Analytics - Original Charts */
-            <>
-              <div className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 transition-colors duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <span className="text-2xl">📊</span>
-                    Mortality Analysis vs Total Admissions
-                  </h3>
-                  <NeolinkAIButton
-                    chartTitle="Mortality Analysis vs Total Admissions"
-                    chartType="bar chart"
-                    dataPoints={[
-                      { label: 'Total Admissions', value: chartStats.total },
-                      { label: 'Deceased', value: chartStats.deceased },
-                      { label: 'Survived', value: chartStats.total - chartStats.deceased },
-                      { label: 'Mortality Rate', value: chartStats.total > 0 ? ((chartStats.deceased / chartStats.total) * 100).toFixed(1) + '%' : '0%' }
-                    ]}
-                    context={`${selectedUnit} mortality analysis for ${getChartPeriodTitle()}`}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-                  {/* Mortality vs Admissions Bar Chart */}
-                  <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg transition-colors duration-200">
-                    <h4 className="text-sm md:text-base font-semibold text-slate-700 dark:text-slate-300 mb-3">Mortality vs Total Admissions <span className="text-sky-500">({getChartPeriodTitle()})</span></h4>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <BarChart data={[
-                        { name: 'Total Admissions', value: chartStats.total, fill: '#3b82f6' },
-                        { name: 'Deceased', value: chartStats.deceased, fill: '#ef4444' },
-                        { name: 'Survived', value: chartStats.total - chartStats.deceased, fill: '#10b981' }
-                      ]}>
-                        <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-                        <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 10 }} angle={-15} textAnchor="end" height={60} />
-                        <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', fontSize: '12px' }} />
-                        <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                          {[{ fill: '#3b82f6' }, { fill: '#ef4444' }, { fill: '#10b981' }].map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.fill} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                    <div className="mt-3 text-xs text-slate-600 dark:text-slate-400 text-center">
-                      Mortality Rate: <span className="text-red-400 font-bold">{chartStats.total > 0 ? ((chartStats.deceased / chartStats.total) * 100).toFixed(1) + '%' : '0%'}</span> ({chartStats.deceased}/{chartStats.total})
-                    </div>
-                  </div>
-
-                  {/* Outcome Breakdown Pie Chart */}
-                  <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg transition-colors duration-200">
-                    <h4 className="text-sm md:text-base font-semibold text-slate-700 dark:text-slate-300 mb-3">Patient Outcomes Distribution <span className="text-sky-500">({getChartPeriodTitle()})</span></h4>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'In Progress', value: chartStats.inProgress, fill: '#3b82f6' },
-                            { name: 'Step Down', value: chartStats.stepDown, fill: '#a855f7' },
-                            { name: 'Discharged', value: chartStats.discharged, fill: '#10b981' },
-                            { name: 'Referred', value: chartStats.referred, fill: '#f59e0b' },
-                            { name: 'Deceased', value: chartStats.deceased, fill: '#ef4444' }
-                          ].filter(item => item.value > 0)}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={80}
-                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                          labelLine={false}
-                        >
-                          {[{ fill: '#3b82f6' }, { fill: '#a855f7' }, { fill: '#10b981' }, { fill: '#f59e0b' }, { fill: '#ef4444' }].map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.fill} />
-                          ))}
-                        </Pie>
-                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', fontSize: '12px' }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="mt-3 text-xs text-slate-600 dark:text-slate-400 text-center">
-                      Total Patients: <span className="text-sky-400 font-bold">{chartStats.total}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* NICU/SNCU Specific Mortality Breakdown */}
-              {(selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && (
-                <div className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 transition-colors duration-200">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <span className="text-2xl">🏥</span>
-                      {selectedUnit} Mortality: Inborn vs Outborn Analysis <span className="text-sky-500 text-base">({getChartPeriodTitle()})</span>
-                    </h3>
-                    <NeolinkAIButton
-                      chartTitle={`${selectedUnit} Inborn vs Outborn Mortality Analysis`}
-                      chartType="comparison bar chart"
-                      dataPoints={[
-                        { label: 'Inborn Admissions', value: chartFilteredPatients.filter(p => p.admissionType === 'Inborn').length },
-                        { label: 'Inborn Deaths', value: chartStats.inbornDeaths ?? 0 },
-                        { label: 'Outborn Admissions', value: chartFilteredPatients.filter(p => p.admissionType === 'Outborn').length },
-                        { label: 'Outborn Deaths', value: chartStats.outbornDeaths ?? 0 }
-                      ]}
-                      context={`Comparing inborn vs outborn mortality in ${selectedUnit} for ${getChartPeriodTitle()}`}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-                    {/* Inborn vs Outborn Admissions & Deaths */}
-                    <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg transition-colors duration-200">
-                      <h4 className="text-sm md:text-base font-semibold text-slate-700 dark:text-slate-300 mb-3">Admissions & Mortality Comparison <span className="text-sky-500">({getChartPeriodTitle()})</span></h4>
-                      <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={[
-                          {
-                            name: 'Inborn',
-                            admissions: chartFilteredPatients.filter(p => p.admissionType === 'Inborn').length,
-                            deaths: chartStats.inbornDeaths ?? 0
-                          },
-                          {
-                            name: 'Outborn',
-                            admissions: chartFilteredPatients.filter(p => p.admissionType === 'Outborn').length,
-                            deaths: chartStats.outbornDeaths ?? 0
-                          }
-                        ]}>
-                          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-                          <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                          <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', fontSize: '12px' }} />
-                          <Legend wrapperStyle={{ fontSize: '11px' }} />
-                          <Bar dataKey="admissions" name="Total Admissions" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-                          <Bar dataKey="deaths" name="Deaths" fill="#ef4444" radius={[8, 8, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    {/* Mortality Rate Comparison */}
-                    <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg transition-colors duration-200">
-                      <h4 className="text-sm md:text-base font-semibold text-slate-700 dark:text-slate-300 mb-3">Mortality Rate by Type <span className="text-sky-500">({getChartPeriodTitle()})</span></h4>
-                      <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={[
-                          {
-                            name: 'Inborn',
-                            rate: chartFilteredPatients.filter(p => p.admissionType === 'Inborn').length > 0
-                              ? ((chartStats.inbornDeaths ?? 0) / chartFilteredPatients.filter(p => p.admissionType === 'Inborn').length * 100).toFixed(1)
-                              : 0
-                          },
-                          {
-                            name: 'Outborn',
-                            rate: chartFilteredPatients.filter(p => p.admissionType === 'Outborn').length > 0
-                              ? ((chartStats.outbornDeaths ?? 0) / chartFilteredPatients.filter(p => p.admissionType === 'Outborn').length * 100).toFixed(1)
-                              : 0
-                          }
-                        ]} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-                          <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 10 }} label={{ value: 'Mortality Rate (%)', position: 'bottom', style: { fill: '#94a3b8', fontSize: '11px' } }} />
-                          <YAxis type="category" dataKey="name" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', fontSize: '12px' }} formatter={(value) => `${value}%`} />
-                          <Bar dataKey="rate" fill="#ef4444" radius={[0, 8, 8, 0]}>
-                            {[{ fill: '#a855f7' }, { fill: '#f59e0b' }].map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.fill} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Summary Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-                    <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-lg">
-                      <div className="text-xs text-blue-300">Inborn Admissions</div>
-                      <div className="text-xl md:text-2xl font-bold text-blue-400">{chartFilteredPatients.filter(p => p.admissionType === 'Inborn').length}</div>
-                    </div>
-                    <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-lg">
-                      <div className="text-xs text-blue-300">Inborn Deaths</div>
-                      <div className="text-xl md:text-2xl font-bold text-red-400">{chartStats.inbornDeaths ?? 0}</div>
-                    </div>
-                    <div className="bg-orange-500/10 border border-orange-500/30 p-3 rounded-lg">
-                      <div className="text-xs text-orange-300">Outborn Admissions</div>
-                      <div className="text-xl md:text-2xl font-bold text-orange-400">{chartFilteredPatients.filter(p => p.admissionType === 'Outborn').length}</div>
-                    </div>
-                    <div className="bg-orange-500/10 border border-orange-500/30 p-3 rounded-lg">
-                      <div className="text-xs text-orange-300">Outborn Deaths</div>
-                      <div className="text-xl md:text-2xl font-bold text-red-400">{chartStats.outbornDeaths ?? 0}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* PICU Specific Under-5 Mortality */}
-              {selectedUnit === Unit.PICU && stats.under5Total !== undefined && (
-                <div className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 transition-colors duration-200">
-                  <h3 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                    <span className="text-2xl">👶</span>
-                    PICU Under-5 Mortality Analysis
-                  </h3>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-                    {/* Under-5 Statistics */}
-                    <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg transition-colors duration-200">
-                      <h4 className="text-sm md:text-base font-semibold text-slate-700 dark:text-slate-300 mb-3">Under-5 Years Patient Statistics</h4>
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                          <span className="text-sm text-blue-300">Total Under-5 Patients</span>
-                          <span className="text-xl md:text-2xl font-bold text-blue-400">{stats.under5Total}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                          <span className="text-sm text-red-300">Under-5 Deaths</span>
-                          <span className="text-xl md:text-2xl font-bold text-red-400">{stats.under5Deaths}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                          <span className="text-sm text-blue-300">Under-5 Mortality Rate</span>
-                          <span className="text-2xl font-bold text-blue-400">{stats.under5MortalityRate}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Comparison Chart */}
-                    <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg transition-colors duration-200">
-                      <h4 className="text-sm md:text-base font-semibold text-slate-700 dark:text-slate-300 mb-3">Under-5 vs Overall Mortality</h4>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={[
-                          {
-                            name: 'Under-5',
-                            patients: stats.under5Total,
-                            deaths: stats.under5Deaths
-                          },
-                          {
-                            name: 'Overall',
-                            patients: stats.total,
-                            deaths: stats.deceased
-                          }
-                        ]}>
-                          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-                          <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                          <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', fontSize: '12px' }} />
-                          <Legend wrapperStyle={{ fontSize: '11px' }} />
-                          <Bar dataKey="patients" name="Total Patients" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-                          <Bar dataKey="deaths" name="Deaths" fill="#ef4444" radius={[8, 8, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                      <div className="mt-3 text-xs text-slate-600 dark:text-slate-400 text-center">
-                        Under-5 represents {((stats.under5Total / stats.total) * 100).toFixed(1)}% of total PICU patients
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Summary Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-                    <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-lg">
-                      <div className="text-xs text-blue-300">Under-5 Patients</div>
-                      <div className="text-xl md:text-2xl font-bold text-blue-400">{stats.under5Total}</div>
-                      <div className="text-xs text-blue-300/70 mt-1">{((stats.under5Total / stats.total) * 100).toFixed(1)}% of total</div>
-                    </div>
-                    <div className="bg-red-500/10 border border-red-500/30 p-3 rounded-lg">
-                      <div className="text-xs text-red-300">Under-5 Deaths</div>
-                      <div className="text-xl md:text-2xl font-bold text-red-400">{stats.under5Deaths}</div>
-                      <div className="text-xs text-red-300/70 mt-1">{stats.under5MortalityRate} mortality</div>
-                    </div>
-                    <div className="bg-green-500/10 border border-green-500/30 p-3 rounded-lg">
-                      <div className="text-xs text-green-300">Under-5 Survived</div>
-                      <div className="text-xl md:text-2xl font-bold text-green-400">{stats.under5Total - stats.under5Deaths}</div>
-                      <div className="text-xs text-green-300/70 mt-1">{(((stats.under5Total - stats.under5Deaths) / stats.under5Total) * 100).toFixed(1)}% survival</div>
-                    </div>
-                    <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-lg">
-                      <div className="text-xs text-blue-300">Age Groups</div>
-                      <div className="text-sm md:text-base font-bold text-blue-400">Days, Weeks, Months, Years &lt;5</div>
-                      <div className="text-xs text-blue-300/70 mt-1">All included</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Analytics Tab - Always Show These */}
-          <div className="space-y-6">
-            <TimeBasedAnalytics
-              patients={unitPatients}
-              period={dateFilter.period}
-              startDate={dateFilter.startDate}
-              endDate={dateFilter.endDate}
-            />
-            <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} availableUnits={enabledFacilities} observationPatients={observationPatients} nicuView={nicuView} />
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 rounded-xl p-3 border border-blue-200 dark:border-blue-800/50">
+              <p className="text-2xl md:text-3xl font-bold text-blue-600 dark:text-blue-400">{stats.total}</p>
+              <p className="text-xs text-blue-700 dark:text-blue-300">Total Patients</p>
+            </div>
+            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/30 dark:to-emerald-800/20 rounded-xl p-3 border border-emerald-200 dark:border-emerald-800/50">
+              <p className="text-2xl md:text-3xl font-bold text-emerald-600 dark:text-emerald-400">{stats.discharged}</p>
+              <p className="text-xs text-emerald-700 dark:text-emerald-300">Discharged</p>
+            </div>
+            <div className="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/20 rounded-xl p-3 border border-amber-200 dark:border-amber-800/50">
+              <p className="text-2xl md:text-3xl font-bold text-amber-600 dark:text-amber-400">{stats.referred}</p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">Referred</p>
+            </div>
+            <div className="bg-gradient-to-br from-rose-50 to-rose-100 dark:from-rose-900/30 dark:to-rose-800/20 rounded-xl p-3 border border-rose-200 dark:border-rose-800/50">
+              <p className="text-2xl md:text-3xl font-bold text-rose-600 dark:text-rose-400">{stats.mortalityRate}</p>
+              <p className="text-xs text-rose-700 dark:text-rose-300">Mortality Rate</p>
+            </div>
           </div>
-
-
-          {/* View All Patients Button */}
-
-
-          {selectedPatientForAI && (
-            <AIClinicalAssistant
-              patient={selectedPatientForAI}
-              onClose={() => setSelectedPatientForAI(null)}
-              allPatients={patients}
-            />
-          )}
-
-          {/* Patient view is now handled by full-page PatientViewPage */}
-
-
-
-          {showSmartHandoff && institutionName && (
-            <SmartHandoff
-              patients={unitPatients}
-              unit={selectedUnit}
-              onClose={() => setShowSmartHandoff(false)}
-            />
-          )}
-
-          {showAIReportGenerator && institutionName && (
-            <AIReportGenerator
-              patients={unitPatients}
-              unit={selectedUnit}
-              institutionName={institutionName}
-              onClose={() => setShowAIReportGenerator(false)}
-            />
-          )}
-
-          {showReferralInbox && institutionId && institutionName && userEmail && (
-            <ReferralInbox
-              institutionId={institutionId}
-              institutionName={institutionName}
-              userEmail={userEmail}
-              userRole={userRole}
-              userName={userEmail.split('@')[0] || 'User'}
-              onBack={() => setShowReferralInbox(false)}
-            />
-          )}
         </div>
-      </PullToRefresh>
+
+        {/* Bed Occupancy - Keep this as it's useful for quick overview */}
+        <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} availableUnits={enabledFacilities} observationPatients={observationPatients} nicuView={nicuView} />
+
+        {/* Active Patients Quick View - Hidden for Officials */}
+        {userRole !== UserRole.Official && stats.inProgress > 0 && (
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-4 md:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                Active Patients
+              </h3>
+              <button
+                onClick={() => {
+                  haptics.tap();
+                  setShowPatientDetailsPage(true);
+                  window.history.pushState({ page: 'patientList' }, '', window.location.pathname);
+                }}
+                className="text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline flex items-center gap-1"
+              >
+                View All
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Active patients list - show first 5 */}
+            <div className="space-y-2">
+              {unitPatients
+                .filter(p => p.outcome === 'In Progress')
+                .slice(0, 5)
+                .map((patient) => (
+                  <div
+                    key={patient.id}
+                    onClick={() => handleViewDetails(patient)}
+                    className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
+                        {patient.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">{patient.name}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {patient.age} {patient.ageUnit} | {patient.gender}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Admitted {new Date(patient.admissionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+
+              {stats.inProgress > 5 && (
+                <div className="text-center py-2">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    +{stats.inProgress - 5} more patients
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Quick Actions Section */}
+
+
+        {selectedPatientForAI && (
+          <AIClinicalAssistant
+            patient={selectedPatientForAI}
+            onClose={() => setSelectedPatientForAI(null)}
+            allPatients={patients}
+          />
+        )}
+
+        {/* Patient view is now handled by full-page PatientViewPage */}
+
+
+
+        {showSmartHandoff && institutionName && (
+          <SmartHandoff
+            patients={unitPatients}
+            unit={selectedUnit}
+            onClose={() => setShowSmartHandoff(false)}
+          />
+        )}
+
+        {showReferralInbox && institutionId && institutionName && userEmail && (
+          <ReferralInbox
+            institutionId={institutionId}
+            institutionName={institutionName}
+            userEmail={userEmail}
+            userRole={userRole}
+            userName={userEmail.split('@')[0] || 'User'}
+            onBack={() => setShowReferralInbox(false)}
+          />
+        )}
+      </div>
 
       {/* Filter Bottom Sheet */}
       <BottomSheet
@@ -1967,17 +1759,18 @@ const Dashboard: React.FC<DashboardProps> = ({
             </button>
           )}
 
-          {/* AI Report Generator */}
-          {hasRole(UserRole.Admin) && (
+          {/* AI Reports - For Admin, Doctor, and Nurse roles */}
+          {(userRole === UserRole.Admin || userRole === UserRole.Doctor || userRole === UserRole.Nurse) && onShowAIReports && (
             <button
               onClick={() => {
-                setShowAIReportGenerator(true);
+                onShowAIReports();
                 setShowQuickActions(false);
                 haptics.tap();
               }}
-              className="w-full bg-violet-500 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-lg hover:bg-violet-600 transition-all"
+              className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-lg hover:from-indigo-600 hover:to-purple-700 transition-all"
             >
-              📊 AI Reports
+              <IconChartBar size={20} />
+              AI Reports
             </button>
           )}
 
@@ -2031,22 +1824,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </BottomSheet>
 
-      {/* Floating Action Button (Mobile Only) - Add Patient */}
-      {(hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)) && (
-        <FAB
-          icon={<IconPlus size={24} />}
-          label="Add Patient"
-          onClick={() => {
-            haptics.impact();
-            setShowAddPatientChoice(true);
-          }}
-          extended={false}
-          className="md:hidden !bottom-20"
-        />
+      {/* World-Class Add Patient FAB - Works on both Mobile and Web, Hidden for Officials */}
+      {userRole !== UserRole.Official && (hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)) && (
+        <AddPatientFAB onClick={() => setShowAddPatientChoice(true)} />
       )}
-
-      {/* Global AI Chat Widget */}
-      <GlobalAIChatWidget patients={filteredPatients} />
 
       {/* Add Patient Choice Modal */}
       <AddPatientChoiceModal

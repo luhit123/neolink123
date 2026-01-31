@@ -11,7 +11,8 @@ export enum UserRole {
   Admin = "Admin",
   Doctor = "Doctor",
   Nurse = "Nurse",
-  DistrictAdmin = "District Admin"
+  DistrictAdmin = "District Admin",
+  Official = "Official" // Government/Health officials with read-only access to all institutions
 }
 
 export enum AgeUnit {
@@ -1154,4 +1155,130 @@ export interface DeathCertificateOptions {
   nhmCDRFormCompleted?: boolean;
   deathNotifiedToASHA?: boolean;
   deathNotifiedToCMO?: boolean;
+}
+
+// ==================== OFFICIAL (Government/Health Officials) ====================
+
+/**
+ * Official - Government or Health officials with read-only access to all institutions
+ * Can view dashboards but cannot modify any data
+ * Can request reports from institution admins
+ */
+export interface Official {
+  id: string;
+  email: string;
+  displayName: string;
+  designation: string; // e.g., "District Health Officer", "CMO", "Joint Director"
+  department?: string; // e.g., "Health Department", "NHM"
+  district?: string; // District they are responsible for (optional)
+  state?: string; // State (optional)
+  phoneNumber?: string;
+
+  // Authentication
+  userID: string; // Unique UserID for login (e.g., "OFF001")
+  password: string; // Password set by SuperAdmin
+
+  // Permissions
+  enabled: boolean; // Can be disabled by SuperAdmin
+  canViewAllInstitutions: boolean; // If false, only specific assigned institutions
+  assignedInstitutionIds?: string[]; // Specific institutions they can view (if not all)
+
+  // Audit
+  addedBy: string; // SuperAdmin email who added
+  addedAt: string; // ISO timestamp
+  lastLoginAt?: string; // ISO timestamp
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+// ==================== REPORT REQUESTS ====================
+
+export enum ReportRequestStatus {
+  Pending = 'Pending',
+  InProgress = 'In Progress',
+  Completed = 'Completed',
+  Rejected = 'Rejected'
+}
+
+export enum ReportType {
+  MonthlyStatistics = 'Monthly Statistics',
+  MortalityReport = 'Mortality Report',
+  AdmissionReport = 'Admission Report',
+  DischargeReport = 'Discharge Report',
+  OccupancyReport = 'Bed Occupancy Report',
+  CustomReport = 'Custom Report'
+}
+
+/**
+ * ReportRequest - Request from an Official to an Institution Admin for a report
+ */
+export interface ReportRequest {
+  id: string;
+
+  // Requester (Official)
+  requesterId: string; // Official's document ID
+  requesterEmail: string;
+  requesterName: string;
+  requesterDesignation: string;
+
+  // Target Institution
+  institutionId: string;
+  institutionName: string;
+
+  // Request Details
+  reportType: ReportType;
+  customReportDescription?: string; // For custom reports
+  dateRangeStart?: string; // ISO date
+  dateRangeEnd?: string; // ISO date
+  unit?: Unit; // Specific unit (NICU, PICU, etc.) or all
+  additionalNotes?: string; // Any additional requirements
+
+  // Priority
+  priority: 'Normal' | 'Urgent';
+  deadline?: string; // Requested deadline (ISO date)
+
+  // Status
+  status: ReportRequestStatus;
+
+  // Response (filled by Admin)
+  responseNote?: string; // Admin's response note
+  reportPdfUrl?: string; // URL to uploaded PDF report
+  reportFileName?: string;
+  respondedBy?: string; // Admin who responded
+  respondedByEmail?: string;
+  respondedAt?: string; // ISO timestamp
+  rejectionReason?: string; // If rejected
+
+  // Audit
+  createdAt: string;
+  updatedAt?: string;
+
+  // Read status
+  isReadByAdmin?: boolean;
+  isReadByOfficial?: boolean;
+}
+
+/**
+ * ReportResponse - Response from Admin to Official (can be multiple responses per request)
+ */
+export interface ReportResponse {
+  id: string;
+  requestId: string; // Reference to the ReportRequest
+
+  // Responder (Admin)
+  responderId: string;
+  responderEmail: string;
+  responderName: string;
+  responderRole: UserRole;
+
+  // Response Content
+  responseType: 'PDF' | 'Note' | 'Both';
+  note?: string; // Text note/message
+  pdfUrl?: string; // URL to PDF file (stored in Firebase Storage)
+  pdfFileName?: string;
+  pdfSize?: number; // File size in bytes
+
+  // Metadata
+  createdAt: string;
+  isRead: boolean; // Has the official read this response
 }

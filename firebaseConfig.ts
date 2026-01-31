@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence, getRedirectResult, UserCredential } from 'firebase/auth';
-import { getFirestore, initializeFirestore, enableMultiTabIndexedDbPersistence, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 
 // Firebase configuration for NeoLink PICU/NICU Medical Records System
 // Configuration is loaded from environment variables for security
@@ -36,26 +37,14 @@ const auth = getAuth(app);
 
 // Use the named database "neolink" (asia-south1 Mumbai)
 // Your data lives in this database - do not use the default database
+// Using the NEW persistence API (not the deprecated enableMultiTabIndexedDbPersistence)
 const db = initializeFirestore(app, {
   ignoreUndefinedProperties: true,
-  cacheSizeBytes: CACHE_SIZE_UNLIMITED,
-  // Note: experimentalForceLongPolling removed - it can cause "offline" errors
-  // Only enable if WebSocket connections fail in your environment
+  // Modern persistence API - replaces deprecated enableMultiTabIndexedDbPersistence
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
 }, 'neolink');
-
-// Enable offline persistence with multi-tab support
-// This allows the app to work offline and sync when back online
-if (typeof window !== 'undefined') {
-  enableMultiTabIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('⚠️ Multiple tabs open - persistence enabled in one tab only');
-    } else if (err.code === 'unimplemented') {
-      console.warn('⚠️ Browser does not support offline persistence');
-    } else {
-      console.warn('⚠️ Failed to enable persistence:', err);
-    }
-  });
-}
 
 // CRITICAL FIX: Set persistence FIRST, then check redirect result
 // The order matters - persistence must be configured before getRedirectResult
@@ -112,7 +101,15 @@ googleProvider.setCustomParameters({
 // in Firebase Console > Authentication > Settings > Authorized domains
 // that your domain (including localhost for testing) is listed
 
+// Initialize Firebase Functions
+// Functions are deployed to asia-southeast1 (Singapore) to match database region
+const functions = getFunctions(app, 'asia-southeast1');
+
+// For local development, connect to Functions emulator
+// Uncomment the line below when running `firebase emulators:start`
+// connectFunctionsEmulator(functions, 'localhost', 5001);
+
 // Export all Firebase services
-export { app, db, auth, analytics };
+export { app, db, auth, analytics, functions };
 
 export default app;

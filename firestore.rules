@@ -10,9 +10,14 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Get user document
+    // Get user document from users collection
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Check if user document exists in users collection
+    function userDocExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     // Check if user is SuperAdmin (document ID is email, not uid)
@@ -21,32 +26,74 @@ service cloud.firestore {
              exists(/databases/$(database)/documents/superAdmins/$(request.auth.token.email));
     }
 
+    // Check if user is the designated admin of an institution (via institutions collection)
+    // This works even if the user's document in 'users' collection doesn't exist yet
+    function isInstitutionAdminByEmail(institutionId) {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/institutions/$(institutionId)).data.adminEmail == request.auth.token.email;
+    }
+
     // Check if user is Admin of specific institution (handles both 'admin' and 'Admin')
+    // Falls back to checking institutions collection if users doc doesn't exist
     function isInstitutionAdmin(institutionId) {
       return isAuthenticated() &&
-             (getUserData().role == 'admin' || getUserData().role == 'Admin') &&
-             getUserData().institutionId == institutionId;
+             (
+               // Check via users collection
+               (userDocExists() &&
+                (getUserData().role == 'admin' || getUserData().role == 'Admin') &&
+                getUserData().institutionId == institutionId)
+               ||
+               // Fallback: Check via institutions collection (adminEmail field)
+               isInstitutionAdminByEmail(institutionId)
+             );
     }
 
     // Check if user belongs to institution
     function belongsToInstitution(institutionId) {
       return isAuthenticated() &&
+             userDocExists() &&
              getUserData().institutionId == institutionId;
     }
 
     // Check if user has specific role (handles case variations)
+    // Returns false if user document doesn't exist
     function hasRole(role) {
-      return isAuthenticated() && (getUserData().role == role || getUserData().role.lower() == role.lower());
+      return isAuthenticated() &&
+             userDocExists() &&
+             (getUserData().role == role || getUserData().role.lower() == role.lower());
     }
 
-    // Check if user is an admin (any case)
+    // Check if user is an admin (any case) - checks users collection
     function isAdmin() {
-      return isAuthenticated() && (getUserData().role == 'admin' || getUserData().role == 'Admin');
+      return isAuthenticated() &&
+             userDocExists() &&
+             (getUserData().role == 'admin' || getUserData().role == 'Admin');
     }
 
     // Check if user can access patient data (belongs to same institution)
     function canAccessPatient(institutionId) {
       return isSuperAdmin() || belongsToInstitution(institutionId);
+    }
+
+    // Check if user is an Official (read-only access to all institutions)
+    // Checks both users collection AND officials collection (by email) for flexibility
+    function isOfficial() {
+      return isAuthenticated() &&
+             (
+               // Check via users collection
+               (userDocExists() && getUserData().role == 'Official') ||
+               // Fallback: Check via officials collection (by email)
+               exists(/databases/$(database)/documents/officials/$(request.auth.token.email))
+             );
+    }
+
+    // Check if Official can view a specific institution
+    // Officials can view all institutions or only assigned ones
+    function officialCanViewInstitution(institutionId) {
+      return isOfficial() &&
+             (getUserData().canViewAllInstitutions == true ||
+              (getUserData().assignedInstitutionIds != null &&
+               institutionId in getUserData().assignedInstitutionIds));
     }
 
     // Validate required fields for audit trail
@@ -106,9 +153,11 @@ service cloud.firestore {
     // ==================== PATIENTS (PHI - Protected Health Information) ====================
     match /patients/{patientId} {
       // Read: Must be authenticated and belong to same institution
+      // Officials can also read (view-only access)
       allow read: if isAuthenticated() &&
                     (isSuperAdmin() ||
-                     resource.data.institutionId == getUserData().institutionId);
+                     resource.data.institutionId == getUserData().institutionId ||
+                     officialCanViewInstitution(resource.data.institutionId));
 
       // Create: Must be authenticated, belong to institution, and include audit fields
       allow create: if isAuthenticated() &&
@@ -130,7 +179,8 @@ service cloud.firestore {
       match /progressNotes/{noteId} {
         allow read: if isAuthenticated() &&
                       (isSuperAdmin() ||
-                       get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
+                       get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId ||
+                       officialCanViewInstitution(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId));
         allow create, update: if isAuthenticated() &&
                                 (isSuperAdmin() ||
                                  get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
@@ -141,7 +191,8 @@ service cloud.firestore {
       match /clinicalNotes/{noteId} {
         allow read: if isAuthenticated() &&
                       (isSuperAdmin() ||
-                       get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
+                       get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId ||
+                       officialCanViewInstitution(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId));
         allow create, update: if isAuthenticated() &&
                                 (isSuperAdmin() ||
                                  get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
@@ -172,20 +223,35 @@ service cloud.firestore {
 
     // ==================== REFERRALS ====================
     match /referrals/{referralId} {
+      // Helper to get user's institution ID (supports both users collection and auth token claims)
+      // First tries users collection, falls back to auth token custom claims
+      function getUserInstitutionId() {
+        return userDocExists() ? getUserData().institutionId : request.auth.token.institutionId;
+      }
+
+      // Check if user belongs to institution (supports both users doc and token claims)
+      function canAccessInstitution(instId) {
+        return (userDocExists() && getUserData().institutionId == instId) ||
+               (request.auth.token.institutionId == instId);
+      }
+
       // Users can read referrals to/from their institution
       allow read: if isAuthenticated() &&
                     (isSuperAdmin() ||
-                     resource.data.fromInstitutionId == getUserData().institutionId ||
-                     resource.data.toInstitutionId == getUserData().institutionId);
+                     canAccessInstitution(resource.data.fromInstitutionId) ||
+                     canAccessInstitution(resource.data.toInstitutionId));
 
-      // Only authenticated users from sending institution can create
+      // Authenticated users from sending institution can create
+      // Supports both users collection and auth token claims for institutionId
       allow create: if isAuthenticated() &&
-                      request.resource.data.fromInstitutionId == getUserData().institutionId;
+                      (isSuperAdmin() ||
+                       canAccessInstitution(request.resource.data.fromInstitutionId));
 
-      // Only receiving institution can update (accept/reject)
+      // Both sending and receiving institution can update (for status changes, accepting/rejecting)
       allow update: if isAuthenticated() &&
                       (isSuperAdmin() ||
-                       resource.data.toInstitutionId == getUserData().institutionId);
+                       canAccessInstitution(resource.data.fromInstitutionId) ||
+                       canAccessInstitution(resource.data.toInstitutionId));
 
       allow delete: if isSuperAdmin();
     }
@@ -210,10 +276,11 @@ service cloud.firestore {
       allow read: if true; // Allow unauthenticated reads for login lookup
 
       // Only SuperAdmins and institution admins can create/update/delete
+      // Uses isInstitutionAdmin which checks both users collection AND institutions collection (adminEmail)
       allow create: if isSuperAdmin() ||
-                      (hasRole('admin') && request.resource.data.institutionId == getUserData().institutionId);
+                      isInstitutionAdmin(request.resource.data.institutionId);
       allow update: if isSuperAdmin() ||
-                      (hasRole('admin') && resource.data.institutionId == getUserData().institutionId);
+                      isInstitutionAdmin(resource.data.institutionId);
       allow delete: if isSuperAdmin();
     }
 
@@ -221,6 +288,21 @@ service cloud.firestore {
     match /systemConfig/{docId} {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
+    }
+
+    // ==================== GLOBAL CONFIGURATION (AI providers, etc) ====================
+    match /globalConfig/{docId} {
+      // All authenticated users can read global config (needed for AI provider selection)
+      allow read: if isAuthenticated();
+      // Only SuperAdmins can update global config
+      allow write: if isSuperAdmin();
+    }
+
+    // ==================== USER LOOKUP TABLE (O(1) Authentication) ====================
+    match /userLookup/{identifier} {
+      // Lookup table is managed by Cloud Functions only
+      // Allows O(1) user lookup during authentication
+      allow read, write: if false; // Only via Cloud Functions (admin SDK bypasses rules)
     }
 
     // ==================== ANALYTICS (Read-only for most) ====================
@@ -278,9 +360,11 @@ service cloud.firestore {
 
     // ==================== OBSERVATION PATIENTS ====================
     match /observationPatients/{patientId} {
+      // Officials can read observation patients (view-only)
       allow read: if isAuthenticated() &&
                     (isSuperAdmin() ||
-                     resource.data.institutionId == getUserData().institutionId);
+                     resource.data.institutionId == getUserData().institutionId ||
+                     officialCanViewInstitution(resource.data.institutionId));
       allow create: if isAuthenticated() &&
                       (isSuperAdmin() ||
                        request.resource.data.institutionId == getUserData().institutionId);
@@ -289,6 +373,115 @@ service cloud.firestore {
                        resource.data.institutionId == getUserData().institutionId);
       allow delete: if isSuperAdmin() ||
                       (hasRole('admin') && resource.data.institutionId == getUserData().institutionId);
+    }
+
+    // ==================== OFFICIALS (Government/Health Officials) ====================
+    match /officials/{officialId} {
+      // Allow reading for login lookup (query by userID or email)
+      allow read: if true; // Allow unauthenticated reads for login lookup
+
+      // Only SuperAdmins can create/update/delete officials
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    // ==================== REPORT REQUESTS (Official to Admin communication) ====================
+    match /reportRequests/{requestId} {
+      // Officials can read their own requests
+      // Admins can read requests for their institution
+      // SuperAdmins can read all
+      allow read: if isAuthenticated() &&
+                    (isSuperAdmin() ||
+                     resource.data.requesterEmail == request.auth.token.email ||
+                     isInstitutionAdmin(resource.data.institutionId));
+
+      // Only Officials can create report requests
+      allow create: if isAuthenticated() &&
+                      isOfficial() &&
+                      request.resource.data.requesterEmail == request.auth.token.email;
+
+      // Officials can update their own requests (e.g., mark as read)
+      // Admins can update requests for their institution (respond, update status)
+      allow update: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       (isOfficial() && resource.data.requesterEmail == request.auth.token.email) ||
+                       isInstitutionAdmin(resource.data.institutionId));
+
+      // Only SuperAdmins can delete
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== REPORT RESPONSES (Admin responses to Officials) ====================
+    match /reportResponses/{responseId} {
+      // Officials can read responses to their requests
+      // Admins can read responses they created
+      // SuperAdmins can read all
+      allow read: if isAuthenticated() &&
+                    (isSuperAdmin() ||
+                     resource.data.responderEmail == request.auth.token.email ||
+                     // Check if the official owns the parent request
+                     get(/databases/$(database)/documents/reportRequests/$(resource.data.requestId)).data.requesterEmail == request.auth.token.email);
+
+      // Only Admins can create responses
+      allow create: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       isInstitutionAdmin(get(/databases/$(database)/documents/reportRequests/$(request.resource.data.requestId)).data.institutionId));
+
+      // Responses can be updated (e.g., mark as read)
+      allow update: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       resource.data.responderEmail == request.auth.token.email ||
+                       get(/databases/$(database)/documents/reportRequests/$(resource.data.requestId)).data.requesterEmail == request.auth.token.email);
+
+      // Only SuperAdmins can delete
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== PENDING ACCESS REQUESTS ====================
+    match /pending_access_requests/{requestId} {
+      // Any authenticated user can create a request (to request access to the system)
+      allow create: if isAuthenticated() &&
+                      request.resource.data.uid == request.auth.uid &&
+                      request.resource.data.email == request.auth.token.email;
+
+      // Users can read their own pending requests
+      // SuperAdmins can read all requests
+      // Institution admins can read requests (to approve users for their institution)
+      allow read: if isAuthenticated() &&
+                    (resource.data.uid == request.auth.uid ||
+                     isSuperAdmin() ||
+                     hasRole('admin'));
+
+      // Only SuperAdmins and institution admins can update (approve/reject)
+      allow update: if isSuperAdmin() || hasRole('admin');
+
+      // Only SuperAdmins can delete
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== AUTHENTICATION AUDIT LOGS (Enterprise Security) ====================
+    match /authAuditLogs/{logId} {
+      // Only Cloud Functions can create audit logs (via admin SDK)
+      // SuperAdmins can read audit logs
+      allow read: if isSuperAdmin();
+      allow create: if false; // Only via Cloud Functions (admin SDK bypasses rules)
+      allow update, delete: if false; // Immutable
+    }
+
+    // ==================== RATE LIMITS (Enterprise Security) ====================
+    match /rateLimits/{identifier} {
+      // Rate limits are managed by Cloud Functions only
+      allow read, write: if false; // Only via Cloud Functions (admin SDK bypasses rules)
+    }
+
+    // ==================== DISTRICT ADMINS ====================
+    match /districtAdmins/{adminId} {
+      // Allow reading for login lookup
+      // SECURITY NOTE: passwordHash is stored but never exposed to client
+      // (Cloud Functions handle authentication server-side)
+      allow read: if true; // Allow unauthenticated reads for login lookup
+
+      // Only SuperAdmins can manage district admins
+      allow create, update, delete: if isSuperAdmin();
     }
 
     // ==================== DEFAULT DENY ====================

@@ -17,6 +17,7 @@ import { X, Filter, Search, ChevronLeft, Users, Calendar, Clock, Stethoscope, Tr
 import { showToast } from '../utils/toast';
 import ProgressNoteForm from './ProgressNoteFormEnhanced';
 import { useBackgroundSave } from '../contexts/BackgroundSaveContext';
+import ReferralForm from './ReferralForm';
 
 interface PatientDetailsPageProps {
   patients: Patient[];
@@ -41,6 +42,7 @@ interface PatientDetailsPageProps {
   userName?: string;
   onPatientUpdate?: (patient: Patient) => void;
   doctors?: string[]; // List of doctors for dropdown selection
+  onShowReferrals?: () => void; // Navigate to Referral Network
 }
 
 const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
@@ -65,7 +67,8 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   userEmail = '',
   userName = '',
   onPatientUpdate,
-  doctors = []
+  doctors = [],
+  onShowReferrals
 }) => {
   const hasRole = (role: UserRole) => {
     return userRole === role || (allRoles && allRoles.includes(role));
@@ -129,8 +132,9 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   const [stepDownLocation, setStepDownLocation] = useState('');
   const [showReferModal, setShowReferModal] = useState(false);
   const [referPatient, setReferPatient] = useState<Patient | null>(null);
-  const [referLocation, setReferLocation] = useState('');
-  const [referReason, setReferReason] = useState('');
+
+  // Get institution name from localStorage
+  const institutionName = localStorage.getItem('collegeName') || 'Medical Institution';
 
   // Background save context
   const { addSavingNote, startProcessing, updateNoteStatus, updateNoteContent, setOnViewPatient, setOnViewDischarge } = useBackgroundSave();
@@ -169,7 +173,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   }, [patients, onViewDetails, setOnViewPatient, setOnViewDischarge]);
 
   const isAdmin = hasRole(UserRole.Admin);
-  const canEdit = hasRole(UserRole.Doctor);
+  const canEdit = hasRole(UserRole.Doctor) || hasRole(UserRole.Admin) || hasRole(UserRole.Nurse);
 
   // Status filter options with colors and icons
   const statusOptions: Array<{ value: OutcomeFilter; label: string; color: string; bgColor: string; icon: string }> = [
@@ -839,6 +843,14 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
         setDeathCertificatePatient(updatedPatient);
         setShowDeathCertificateModal(true);
       }
+      // For Referred - open referral form to create proper referral document
+      else if (pendingStatus === 'Referred') {
+        showToast('info', 'Please complete the referral form to send this patient.');
+        // Revert the status temporarily - ReferralForm will set it properly
+        await updateDoc(patientRef, { outcome: statusPatient.outcome, releaseDate: null });
+        setReferPatient(statusPatient);
+        setShowReferModal(true);
+      }
       else {
         showToast('success', `Patient status updated to ${pendingStatus}`);
       }
@@ -947,51 +959,20 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
 
   const handleRefer = useCallback((patient: Patient) => {
     setReferPatient(patient);
-    setReferLocation('');
-    setReferReason('');
     setShowReferModal(true);
   }, []);
 
-  const confirmRefer = useCallback(async () => {
-    if (!referPatient) return;
-
-    setIsUpdatingStatus(true);
-    try {
-      const now = new Date().toISOString();
-      const updateData: Partial<Patient> = {
-        outcome: 'Referred',
-        releaseDate: now,
-        referredTo: referLocation || undefined,
-        referralReason: referReason || undefined
-      };
-
-      const patientRef = doc(db, 'patients', referPatient.id);
-      await updateDoc(patientRef, updateData);
-
-      const updatedPatient = { ...referPatient, ...updateData };
-
-      // Sync to Supabase (background, non-blocking)
-      if (institutionId) {
-        syncPatientToSupabase(referPatient.id, updatedPatient as Patient, institutionId)
-          .catch(err => console.warn('⚠️ Supabase sync failed (non-critical):', err));
-      }
-
-      if (onPatientUpdate) {
-        onPatientUpdate(updatedPatient);
-      }
-
-      showToast('success', 'Patient referred successfully');
-      setShowReferModal(false);
-      setReferPatient(null);
-      setReferLocation('');
-      setReferReason('');
-    } catch (error) {
-      console.error('Error referring patient:', error);
-      showToast('error', 'Failed to refer patient');
-    } finally {
-      setIsUpdatingStatus(false);
+  const handleReferralSuccess = useCallback(() => {
+    // Reload patients or update the list
+    if (onPatientUpdate && referPatient) {
+      // The patient status will be updated by ReferralForm
+      const updatedPatient = { ...referPatient, outcome: 'Referred' as PatientOutcome };
+      onPatientUpdate(updatedPatient);
     }
-  }, [referPatient, referLocation, referReason, onPatientUpdate]);
+    setShowReferModal(false);
+    setReferPatient(null);
+    showToast('success', 'Patient referral sent successfully');
+  }, [referPatient, onPatientUpdate]);
 
   const handleDeathCertificate = useCallback((patient: Patient) => {
     setDeathCertificatePatient(patient);
@@ -2029,83 +2010,23 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Refer Patient Modal */}
-      <AnimatePresence>
-        {showReferModal && referPatient && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => !isUpdatingStatus && setShowReferModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.9 }}
-              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-3 bg-purple-100 rounded-full">
-                  <Send className="w-6 h-6 text-purple-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Refer Patient</h3>
-                  <p className="text-sm text-slate-500">{referPatient.name}</p>
-                </div>
-              </div>
-
-              <div className="space-y-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Referred To</label>
-                  <input
-                    type="text"
-                    value={referLocation}
-                    onChange={(e) => setReferLocation(e.target.value)}
-                    placeholder="Hospital/Facility name"
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Reason for Referral</label>
-                  <textarea
-                    value={referReason}
-                    onChange={(e) => setReferReason(e.target.value)}
-                    placeholder="Briefly describe the reason for referral..."
-                    rows={3}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowReferModal(false)}
-                  disabled={isUpdatingStatus}
-                  className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmRefer}
-                  disabled={isUpdatingStatus}
-                  className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {isUpdatingStatus ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    'Confirm Referral'
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Refer Patient Modal - Using Full Referral Form */}
+      {showReferModal && referPatient && institutionId && (
+        <ReferralForm
+          patient={referPatient}
+          currentInstitutionId={institutionId}
+          currentInstitutionName={institutionName}
+          userEmail={userEmail}
+          userRole={userRole}
+          userName={userName}
+          onClose={() => {
+            setShowReferModal(false);
+            setReferPatient(null);
+          }}
+          onSuccess={handleReferralSuccess}
+          onShowReferrals={onShowReferrals}
+        />
+      )}
 
       {/* Discharge Summary Modal */}
       {showDischargeModal && dischargePatient && (

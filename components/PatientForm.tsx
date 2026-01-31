@@ -96,6 +96,18 @@ const PatientForm: React.FC<PatientFormProps> = ({
   const [admissionIndications, setAdmissionIndications] = useState<AdmissionIndication[]>([]);
   const [loadingIndications, setLoadingIndications] = useState(false);
 
+  // Step-based wizard for full-screen navigation
+  const [currentStep, setCurrentStep] = useState(1);
+  const isNICU_SNCU = patient.unit === Unit.NICU || patient.unit === Unit.SNCU;
+  // Steps: 1=Admission/Birth, 2=Demographics, 3=Clinical, 4=Maternal(NICU/SNCU), 5=Review
+  const totalSteps = isNICU_SNCU ? 5 : 4;
+  const stepTitles = isNICU_SNCU
+    ? ['Admission & Birth', 'Demographics', 'Clinical', 'Maternal History', 'Review']
+    : ['Admission & Birth', 'Demographics', 'Clinical', 'Review'];
+
+  const nextStep = () => { if (currentStep < totalSteps) setCurrentStep(s => s + 1); };
+  const prevStep = () => { if (currentStep > 1) setCurrentStep(s => s - 1); };
+
   // Section expansion states
   const [expandedSections, setExpandedSections] = useState({
     demographics: true,
@@ -715,6 +727,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
   const handleSaveComplete = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validate Doctor In Charge (required for all admissions)
+    if (!patient.doctorInCharge || patient.doctorInCharge.trim() === '') {
+      alert('Please select or enter the Doctor In Charge. This field is required.');
+      return;
+    }
+
     // Validate indications for NICU/SNCU (indications auto-populate diagnosis)
     if ((patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && !isNurse) {
       if (!patient.indicationsForAdmission || patient.indicationsForAdmission.length === 0) {
@@ -736,21 +754,21 @@ const PatientForm: React.FC<PatientFormProps> = ({
   const canEditSensitiveFields = userRole === UserRole.Admin || userRole === UserRole.Doctor;
 
   return (
-    <div className="w-full min-h-screen bg-slate-100">
-      <div className="w-full mx-auto px-2 py-3 sm:px-4 sm:py-4 lg:px-8 lg:py-6 lg:max-w-7xl">
-        {/* Header */}
-        <div className="bg-white rounded-lg sm:rounded-xl shadow-lg border-2 border-blue-300 p-3 sm:p-6 mb-3 sm:mb-6 sticky top-0 z-10">
-          <div className="flex justify-between items-start">
+    <div className="w-full h-screen bg-slate-100 flex flex-col overflow-hidden">
+      <div className="w-full mx-auto px-2 py-2 sm:px-4 sm:py-3 lg:px-8 lg:py-4 lg:max-w-7xl flex-1 flex flex-col min-h-0">
+        {/* Header - Compact */}
+        <div className="bg-white rounded-lg shadow-md border-2 border-blue-300 p-2 sm:p-3 mb-2 flex-shrink-0">
+          <div className="flex justify-between items-center">
             <div className="flex-1">
-              <h1 className="text-2xl sm:text-3xl font-bold text-blue-900 mb-2">{patientToEdit ? 'Edit Patient Record' : 'Add New Patient'}</h1>
-              {isNurse && <p className="text-sm text-blue-600">Enter basic patient information. Doctor will complete the diagnosis.</p>}
-              {patient.isDraft && isDoctor && <p className="text-sm text-amber-600">⚠️ Draft record - Please complete diagnosis and notes</p>}
+              <h1 className="text-xl sm:text-2xl font-bold text-blue-900">{patientToEdit ? 'Edit Patient Record' : 'Add New Patient'}</h1>
+              {isNurse && <p className="text-xs text-blue-600">Enter basic patient information. Doctor will complete the diagnosis.</p>}
+              {patient.isDraft && isDoctor && <p className="text-xs text-amber-600">⚠️ Draft record - Please complete diagnosis and notes</p>}
             </div>
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors font-semibold flex items-center gap-2 shadow-md"
+              className="px-3 py-1.5 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors font-semibold flex items-center gap-1 shadow-md text-sm"
             >
-              <XIcon className="w-5 h-5" />
+              <XIcon className="w-4 h-4" />
               Close
             </button>
           </div>
@@ -758,19 +776,19 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
         {/* NTID Search for Readmission - Only show for new patients */}
         {!patientToEdit && (
-          <div className="bg-white rounded-lg sm:rounded-xl shadow-lg border-2 border-blue-300 mb-3 sm:mb-6 overflow-hidden">
+          <div className="bg-white rounded-lg shadow-md border-2 border-blue-300 mb-2 overflow-hidden flex-shrink-0">
             <button
               type="button"
               onClick={() => toggleSection('readmission')}
-              className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-slate-50 hover:bg-slate-100 transition-colors"
+              className="w-full px-3 py-2 flex items-center justify-between bg-slate-50 hover:bg-slate-100 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-                <h3 className="text-lg font-bold text-blue-900">Readmission Lookup (NTID)</h3>
+                <h3 className="text-base font-bold text-blue-900">Readmission Lookup (NTID)</h3>
               </div>
-              <svg className={`w-5 h-5 text-blue-600 transition-transform ${expandedSections.readmission ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-4 h-4 text-blue-600 transition-transform ${expandedSections.readmission ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
@@ -831,10 +849,25 @@ const PatientForm: React.FC<PatientFormProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSaveComplete} className="space-y-3 sm:space-y-6">
-          <div className="space-y-3 sm:space-y-6 flex-grow">
+        <form onSubmit={handleSaveComplete} className="flex-1 flex flex-col min-h-0">
+          {/* Step Progress Indicator - Compact and fixed at top */}
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-2 rounded-t-lg shadow-md flex-shrink-0">
+            <div className="flex items-center justify-between text-white mb-1.5">
+              <span className="font-bold text-sm">Step {currentStep} of {totalSteps}</span>
+              <span className="text-xs opacity-90">{stepTitles[currentStep - 1]}</span>
+            </div>
+            <div className="flex gap-0.5">
+              {stepTitles.map((_, idx) => (
+                <div key={idx} className={`flex-1 h-1.5 rounded-full transition-all ${idx + 1 <= currentStep ? 'bg-white' : 'bg-white/30'}`} />
+              ))}
+            </div>
+          </div>
 
-            {/* Admission & Birth Details Section */}
+          {/* Step Content - Scrollable area with proper height constraint */}
+          <div className="flex-1 overflow-y-auto min-h-0 p-2 sm:p-3 space-y-2 sm:space-y-3">
+
+            {/* STEP 1: Admission & Birth Details Section */}
+            {currentStep === 1 && (
             <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 overflow-hidden shadow-md">
               <button
                 type="button"
@@ -1023,8 +1056,10 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 </div>
               )}
             </div>
+            )}
 
-            {/* Administrative & Demographic Information Section */}
+            {/* STEP 2: Administrative & Demographic Information Section */}
+            {currentStep === 2 && (
             <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
               <button
                 type="button"
@@ -1102,7 +1137,9 @@ const PatientForm: React.FC<PatientFormProps> = ({
                       </select>
                     </div>
                     <div>
-                      <label htmlFor="doctorInCharge" className="block text-sm font-medium text-slate-700 mb-1">Doctor In Charge</label>
+                      <label htmlFor="doctorInCharge" className="block text-sm font-medium text-slate-700 mb-1">
+                        Doctor In Charge <span className="text-red-500">*</span>
+                      </label>
                       <div className="relative">
                         <input
                           type="text"
@@ -1111,6 +1148,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                           list="doctors-list"
                           value={patient.doctorInCharge || ''}
                           onChange={handleChange}
+                          required
                           className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder={doctors.length > 0 ? "Select or type doctor name" : "Enter doctor name"}
                           autoComplete="off"
@@ -1202,7 +1240,10 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
 
 
-            {/* Clinical Information Section */}
+            )}
+
+            {/* STEP 3: Clinical Information Section */}
+            {currentStep === 3 && (
             <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
               <div className="px-4 py-3 bg-gradient-to-r from-teal-600 to-emerald-600">
                 <div className="flex items-center gap-3">
@@ -1304,8 +1345,11 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 )}
               </div>
             </div>
+            )}
 
-            {/* Readmit to ICU Section - Only show for Step Down patients */}
+            {/* Readmit to ICU Section - Only show for Step Down patients (part of Step 3) */}
+            {currentStep === 3 && (
+            <>
             {patient.outcome === 'Step Down' && patient.isStepDown && (
               <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 overflow-hidden shadow-md">
                 <div className="px-4 py-3 bg-red-900/50">
@@ -1352,9 +1396,11 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 </div>
               </div>
             )}
+            </>
+            )}
 
-            {/* Maternal History Section - Only for NICU/SNCU */}
-            {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
+            {/* STEP 4: Maternal History Section - Only for NICU/SNCU */}
+            {currentStep === 4 && isNICU_SNCU && (
               <div className="bg-white rounded-lg sm:rounded-xl border-2 border-pink-300 overflow-hidden shadow-md">
                 <button
                   type="button"
@@ -1804,6 +1850,39 @@ const PatientForm: React.FC<PatientFormProps> = ({
               </div>
             )}
 
+            {/* FINAL STEP: Review & Submit */}
+            {currentStep === totalSteps && (
+            <>
+            {/* Summary Card */}
+            <div className="bg-white rounded-xl border-2 border-green-300 shadow-md p-4 mb-4">
+              <h3 className="text-lg font-bold text-green-900 mb-3">Review Patient Information</h3>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-blue-50 p-2 rounded"><span className="font-bold">Name:</span> {patient.name || '-'}</div>
+                <div className="bg-blue-50 p-2 rounded"><span className="font-bold">Sex:</span> {patient.gender || '-'}</div>
+                <div className="bg-blue-50 p-2 rounded"><span className="font-bold">Age:</span> {patient.age} {patient.ageUnit}</div>
+                <div className="bg-blue-50 p-2 rounded"><span className="font-bold">Unit:</span> {patient.unit}</div>
+                <div className={`p-2 rounded col-span-2 ${patient.doctorInCharge ? 'bg-purple-50' : 'bg-red-50 border border-red-300'}`}>
+                  <span className="font-bold">Doctor In Charge:</span> {patient.doctorInCharge || <span className="text-red-600">⚠️ Required</span>}
+                </div>
+                <div className="bg-teal-50 p-2 rounded col-span-2"><span className="font-bold">Admission:</span> {patient.admissionDateTime ? new Date(patient.admissionDateTime).toLocaleString() : '-'}</div>
+                {(patient.indicationsForAdmission || []).length > 0 && (
+                  <div className="bg-green-50 p-2 rounded col-span-2"><span className="font-bold">Diagnosis:</span> {patient.indicationsForAdmission?.join(', ')}</div>
+                )}
+                {isNICU_SNCU && patient.maternalHistory?.gravida !== undefined && (
+                  <div className="bg-pink-50 p-2 rounded col-span-2"><span className="font-bold">Maternal:</span> G{patient.maternalHistory.gravida}P{patient.maternalHistory.para || 0}A{patient.maternalHistory.abortion || 0}L{patient.maternalHistory.living || 0}</div>
+                )}
+              </div>
+              {(!patient.name || !patient.gender || !patient.doctorInCharge) && (
+                <div className="mt-3 p-2 bg-yellow-100 border border-yellow-400 rounded text-sm text-yellow-800">
+                  ⚠️ Missing required fields: {[
+                    !patient.name && 'Name',
+                    !patient.gender && 'Gender',
+                    !patient.doctorInCharge && 'Doctor In Charge'
+                  ].filter(Boolean).join(', ')}. Please go back and complete them.
+                </div>
+              )}
+            </div>
+
             {/* Discharge Details Section - Only show when outcome is not In Progress */}
             {patient.outcome !== 'In Progress' && (
               <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
@@ -1867,44 +1946,45 @@ const PatientForm: React.FC<PatientFormProps> = ({
                 )}
               </div>
             )}
-            {/* Action Buttons */}
-            <div className="bg-white rounded-xl shadow-lg border-2 border-blue-300 p-6 mt-6 sticky bottom-4">
-              <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="w-full sm:w-auto px-6 py-3 rounded-lg text-blue-800 bg-slate-700 hover:bg-slate-600 transition-colors font-semibold text-base flex items-center justify-center gap-2"
-                >
-                  <XIcon className="w-5 h-5" />
-                  Cancel
-                </button>
-                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                  {isNurse && (
-                    <button
-                      type="button"
-                      onClick={handleSaveAsDraft}
-                      className="w-full sm:w-auto px-8 py-3 rounded-lg text-white bg-yellow-600 hover:bg-yellow-700 transition-colors font-bold text-base flex items-center justify-center gap-2 shadow-lg"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                      </svg>
-                      Save as Draft
-                    </button>
-                  )}
-                  {isDoctor && (
-                    <button
-                      type="submit"
-                      className="w-full sm:w-auto px-8 py-3 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all font-bold text-base flex items-center justify-center gap-2 shadow-lg"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Complete & Save Patient
-                    </button>
-                  )}
-                </div>
+            </>
+            )}
+
+          </div>
+
+          {/* Navigation Buttons - Compact and fixed at bottom */}
+          <div className="bg-white border-t-2 border-blue-200 p-2 flex justify-between items-center gap-3 flex-shrink-0 rounded-b-lg">
+            {currentStep > 1 ? (
+              <button type="button" onClick={prevStep} className="px-4 py-1.5 rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200 font-semibold flex items-center gap-1 text-sm">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                Previous
+              </button>
+            ) : (
+              <button type="button" onClick={onClose} className="px-4 py-1.5 rounded-lg text-gray-700 bg-gray-200 hover:bg-gray-300 font-semibold flex items-center gap-1 text-sm">
+                <XIcon className="w-4 h-4" />
+                Cancel
+              </button>
+            )}
+
+            {currentStep < totalSteps ? (
+              <button type="button" onClick={nextStep} className="px-4 py-1.5 rounded-lg text-white bg-blue-600 hover:bg-blue-700 font-bold flex items-center gap-1 text-sm">
+                Next
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                {isNurse && (
+                  <button type="button" onClick={handleSaveAsDraft} className="px-4 py-1.5 rounded-lg text-white bg-yellow-600 hover:bg-yellow-700 font-bold text-sm">
+                    Save Draft
+                  </button>
+                )}
+                {isDoctor && (
+                  <button type="submit" className="px-4 py-1.5 rounded-lg text-white bg-green-600 hover:bg-green-700 font-bold flex items-center gap-1 text-sm">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    Save Patient
+                  </button>
+                )}
               </div>
-            </div>
+            )}
           </div>
         </form>
 

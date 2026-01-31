@@ -1,8 +1,101 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, addDoc, onSnapshot, query, where, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Patient, Institution, Unit, UserRole, ReferralDetails, VitalSigns } from '../types';
+import { Patient, Institution, Unit, UserRole, ReferralDetails, VitalSigns, ProgressNote, Medication } from '../types';
 import { generateReferralLetter } from '../utils/openaiService';
+
+// Helper function to format clinical notes for display
+const formatClinicalNotes = (notes: ProgressNote[]): string => {
+  if (!notes || notes.length === 0) return 'No clinical notes recorded';
+
+  return notes.slice(-5).map((note, idx) => {
+    const date = new Date(note.date || note.timestamp || '').toLocaleDateString();
+    const noteText = note.note || '';
+    const vitals = note.vitals ? Object.entries(note.vitals)
+      .filter(([_, v]) => v)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(', ') : '';
+
+    return `[${date}] ${noteText}${vitals ? ` | Vitals: ${vitals}` : ''}`;
+  }).join('\n');
+};
+
+// Helper function to extract all treatments from clinical notes
+const extractTreatmentsFromNotes = (notes: ProgressNote[]): string[] => {
+  const treatments = new Set<string>();
+
+  notes.forEach(note => {
+    if (note.medications) {
+      note.medications.forEach(med => {
+        const treatment = `${med.name} ${med.dose}${med.route ? ` (${med.route})` : ''}${med.frequency ? ` - ${med.frequency}` : ''}`;
+        treatments.add(treatment);
+      });
+    }
+  });
+
+  return Array.from(treatments);
+};
+
+// Helper function to get latest vitals from progress notes
+const getLatestVitals = (notes: ProgressNote[]): VitalSigns => {
+  const latestVitals: VitalSigns = {};
+
+  // Go through notes from newest to oldest to get latest vitals
+  const sortedNotes = [...notes].sort((a, b) =>
+    new Date(b.date || b.timestamp || 0).getTime() - new Date(a.date || a.timestamp || 0).getTime()
+  );
+
+  for (const note of sortedNotes) {
+    if (note.vitals) {
+      if (!latestVitals.temperature && note.vitals.temperature) latestVitals.temperature = note.vitals.temperature;
+      if (!latestVitals.hr && note.vitals.hr) latestVitals.hr = note.vitals.hr;
+      if (!latestVitals.rr && note.vitals.rr) latestVitals.rr = note.vitals.rr;
+      if (!latestVitals.bp && note.vitals.bp) latestVitals.bp = note.vitals.bp;
+      if (!latestVitals.spo2 && note.vitals.spo2) latestVitals.spo2 = note.vitals.spo2;
+      if (!latestVitals.crt && note.vitals.crt) latestVitals.crt = note.vitals.crt;
+      if (!latestVitals.weight && note.vitals.weight) latestVitals.weight = note.vitals.weight;
+    }
+
+    // If all vitals are filled, stop searching
+    if (latestVitals.temperature && latestVitals.hr && latestVitals.rr &&
+        latestVitals.bp && latestVitals.spo2 && latestVitals.crt && latestVitals.weight) {
+      break;
+    }
+  }
+
+  return latestVitals;
+};
+
+// Helper function to generate clinical course summary from notes
+const generateClinicalCourseSummary = (patient: Patient): string => {
+  const parts: string[] = [];
+
+  // Admission info
+  parts.push(`Patient ${patient.name}, ${patient.age} ${patient.ageUnit} old ${patient.gender}, admitted on ${new Date(patient.admissionDate).toLocaleDateString()} with ${patient.diagnosis}.`);
+
+  // Gestational age for neonates
+  if (patient.gestationalAgeWeeks) {
+    parts.push(`Gestational age: ${patient.gestationalAgeWeeks}${patient.gestationalAgeDays ? `+${patient.gestationalAgeDays}` : ''} weeks.`);
+  }
+
+  // Birth weight
+  if (patient.birthWeight) {
+    parts.push(`Birth weight: ${patient.birthWeight} kg.`);
+  }
+
+  // Key progress notes summary
+  if (patient.progressNotes && patient.progressNotes.length > 0) {
+    parts.push(`\nClinical Course (${patient.progressNotes.length} notes recorded):`);
+    patient.progressNotes.slice(-3).forEach(note => {
+      const date = new Date(note.date || note.timestamp || '').toLocaleDateString();
+      if (note.note) {
+        parts.push(`- [${date}] ${note.note.substring(0, 200)}${note.note.length > 200 ? '...' : ''}`);
+      }
+    });
+  }
+
+  return parts.join('\n');
+};
 
 interface ReferralFormProps {
   patient: Patient;
@@ -13,6 +106,7 @@ interface ReferralFormProps {
   userName: string;
   onClose: () => void;
   onSuccess: () => void;
+  onShowReferrals?: () => void; // Navigate to Referral Network
 }
 
 const ReferralForm: React.FC<ReferralFormProps> = ({
@@ -23,7 +117,8 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
   userRole,
   userName,
   onClose,
-  onSuccess
+  onSuccess,
+  onShowReferrals
 }) => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,6 +155,67 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
   const [selectedUnit, setSelectedUnit] = useState<Unit | ''>('');
   const [priority, setPriority] = useState<'Low' | 'Medium' | 'High' | 'Critical'>('Medium');
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Custom institution state
+  const [showCustomInstitutionForm, setShowCustomInstitutionForm] = useState(false);
+  const [customInstitution, setCustomInstitution] = useState({
+    name: '',
+    district: '',
+    institutionType: '',
+    phone: '',
+    address: ''
+  });
+
+  // State for comprehensive patient history view
+  const [showClinicalHistory, setShowClinicalHistory] = useState(false);
+
+  // Auto-populate form with patient data on mount
+  useEffect(() => {
+    // Auto-populate vitals from latest progress notes
+    if (patient.progressNotes && patient.progressNotes.length > 0) {
+      const latestVitals = getLatestVitals(patient.progressNotes);
+      setVitalSigns(prev => ({
+        ...prev,
+        ...latestVitals
+      }));
+    }
+
+    // Auto-populate treatments from medications and progress notes
+    const allTreatments: string[] = [];
+
+    // Add active medications
+    if (patient.medications) {
+      patient.medications.filter(med => med.isActive !== false).forEach(med => {
+        const treatment = `${med.name} ${med.dose}${med.route ? ` (${med.route})` : ''}${med.frequency ? ` - ${med.frequency}` : ''}`;
+        allTreatments.push(treatment);
+      });
+    }
+
+    // Add treatments from clinical notes
+    if (patient.progressNotes) {
+      const noteTreatments = extractTreatmentsFromNotes(patient.progressNotes);
+      noteTreatments.forEach(t => {
+        if (!allTreatments.includes(t)) {
+          allTreatments.push(t);
+        }
+      });
+    }
+
+    if (allTreatments.length > 0) {
+      setReferralData(prev => ({
+        ...prev,
+        treatmentsProvided: allTreatments
+      }));
+    }
+
+    // Generate clinical summary from patient history
+    const clinicalSummary = generateClinicalCourseSummary(patient);
+    setReferralData(prev => ({
+      ...prev,
+      clinicalSummary
+    }));
+
+  }, [patient]);
 
   // Load institutions
   useEffect(() => {
@@ -108,6 +264,34 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
       ...prev,
       treatmentsProvided: prev.treatmentsProvided.filter((_, i) => i !== index)
     }));
+  };
+
+  // Handle adding custom institution
+  const handleAddCustomInstitution = () => {
+    if (!customInstitution.name.trim()) {
+      setErrors(prev => ({ ...prev, customInstitutionName: 'Institution name is required' }));
+      return;
+    }
+
+    // Create a pseudo-institution object for the referral
+    const customInst: Institution = {
+      id: `custom_${Date.now()}`,
+      name: customInstitution.name.trim(),
+      district: customInstitution.district.trim() || 'Not specified',
+      institutionType: customInstitution.institutionType.trim() || 'External Institution',
+      adminEmail: '',
+      facilities: [],
+      isActive: true,
+      isCustom: true, // Flag to identify custom institutions
+      phone: customInstitution.phone.trim(),
+      address: customInstitution.address.trim()
+    } as Institution & { isCustom: boolean; phone?: string; address?: string };
+
+    setSelectedInstitution(customInst);
+    setShowCustomInstitutionForm(false);
+    setShowInstitutionDropdown(false);
+    setSearchTerm('');
+    setErrors(prev => ({ ...prev, institution: '', customInstitutionName: '' }));
   };
 
   const validateForm = () => {
@@ -159,6 +343,9 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
   };
 
 
+
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdReferralInfo, setCreatedReferralInfo] = useState<{toName: string; patientName: string} | null>(null);
 
   const handleFinalSubmit = async () => {
     if (!selectedInstitution) return;
@@ -230,18 +417,130 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
         lastEditedAt: new Date().toISOString()
       });
 
-      alert('Referral sent successfully! The receiving institution has been notified.');
-      onSuccess();
-      onClose();
+      // Show success modal with tracking info
+      setCreatedReferralInfo({
+        toName: selectedInstitution.name,
+        patientName: patient.name
+      });
+      setShowSuccessModal(true);
     } catch (error) {
       console.error('Error creating referral:', error);
       alert(
         `Failed to send referral: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
-    } finally {
       setLoading(false);
     }
   };
+
+  // Success Modal - shows after referral is created
+  if (showSuccessModal && createdReferralInfo) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+          {/* Success Header */}
+          <div className="bg-gradient-to-r from-emerald-500 to-green-500 text-white p-6 rounded-t-2xl text-center">
+            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold">Referral Sent!</h2>
+            <p className="text-emerald-100 text-sm mt-1">
+              Patient has been successfully referred
+            </p>
+          </div>
+
+          {/* Info */}
+          <div className="p-6 space-y-4">
+            <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Patient</p>
+                  <p className="font-semibold text-slate-900">{createdReferralInfo.patientName}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Referred To</p>
+                  <p className="font-semibold text-slate-900">{createdReferralInfo.toName}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Status Info */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="font-semibold text-amber-800 text-sm">Awaiting Response</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    The receiving institution has been notified. Track this referral's status in the <strong>Referral Network</strong> dashboard.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Info */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="font-semibold text-blue-800 text-sm">How to Track</p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Go to <strong>More → Referral Network</strong> to view all your outgoing referrals and their current status.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="p-6 pt-0 flex gap-3">
+            <button
+              onClick={() => {
+                setShowSuccessModal(false);
+                onSuccess();
+                onClose();
+              }}
+              className="flex-1 py-3 border-2 border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-all"
+            >
+              Done
+            </button>
+            {onShowReferrals && (
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  onSuccess();
+                  onClose();
+                  onShowReferrals();
+                }}
+                className="flex-1 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl font-semibold hover:from-indigo-600 hover:to-purple-600 transition-all flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                View in Referral Network
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleBackToForm = () => {
     setShowLetterPreview(false);
@@ -502,10 +801,72 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
                   </div>
                 </div>
 
+                {/* Complete Medications List */}
+                {patient.medications && patient.medications.filter(m => m.isActive !== false).length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                      Current Medications ({patient.medications.filter(m => m.isActive !== false).length})
+                    </h4>
+                    <div className="bg-green-50 border border-green-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-green-100">
+                          <tr>
+                            <th className="text-left px-3 py-2 text-green-800 font-semibold">Medication</th>
+                            <th className="text-left px-3 py-2 text-green-800 font-semibold">Dose</th>
+                            <th className="text-left px-3 py-2 text-green-800 font-semibold">Route</th>
+                            <th className="text-left px-3 py-2 text-green-800 font-semibold">Frequency</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-green-100">
+                          {patient.medications.filter(m => m.isActive !== false).map((med, idx) => (
+                            <tr key={idx}>
+                              <td className="px-3 py-2 font-medium text-slate-800">{med.name}</td>
+                              <td className="px-3 py-2 text-slate-600">{med.dose}</td>
+                              <td className="px-3 py-2 text-slate-600">{med.route || '-'}</td>
+                              <td className="px-3 py-2 text-slate-600">{med.frequency || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Clinical Notes Summary */}
+                {patient.progressNotes && patient.progressNotes.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                      Clinical Course Summary ({patient.progressNotes.length} notes)
+                    </h4>
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3 max-h-48 overflow-y-auto">
+                      {[...patient.progressNotes].reverse().slice(0, 3).map((note, idx) => (
+                        <div key={idx} className="border-l-2 border-blue-400 pl-3">
+                          <p className="text-xs font-bold text-slate-500">
+                            {new Date(note.date || note.timestamp || '').toLocaleString()}
+                            {note.addedBy && <span className="text-slate-400 ml-2">by {note.addedBy}</span>}
+                          </p>
+                          {note.note && <p className="text-sm text-slate-700 mt-1">{note.note}</p>}
+                          {note.vitals && Object.values(note.vitals).some(v => v) && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {Object.entries(note.vitals).filter(([_, v]) => v).map(([key, val]) => (
+                                <span key={key} className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">
+                                  {key}: {val}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* AI Summary Box */}
                 <div className="mt-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <h4 className="text-sm font-bold text-slate-900 uppercase">Clinical Summary</h4>
+                    <h4 className="text-sm font-bold text-slate-900 uppercase">AI-Generated Comprehensive Summary</h4>
                     <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">Generated by AI</span>
 
                     {editingLetter ? (
@@ -515,15 +876,24 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
                     )}
                   </div>
 
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3 mb-2">
+                    <p className="text-xs text-blue-700 flex items-center gap-1">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      This summary analyzes {patient.progressNotes?.length || 0} clinical notes and {patient.medications?.filter(m => m.isActive !== false).length || 0} medications to provide a comprehensive overview.
+                    </p>
+                  </div>
+
                   {editingLetter ? (
                     <textarea
                       value={generatedLetter}
                       onChange={(e) => setGeneratedLetter(e.target.value)}
                       className="w-full p-4 border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm leading-relaxed"
-                      rows={6}
+                      rows={8}
                     />
                   ) : (
-                    <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-4 text-slate-800 text-sm leading-relaxed text-justify">
+                    <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-4 text-slate-800 text-sm leading-relaxed text-justify whitespace-pre-line">
                       {generatedLetter || "No summary generated."}
                     </div>
                   )}
@@ -633,7 +1003,169 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
                 <p className="font-semibold text-sky-900">{patient.diagnosis}</p>
               </div>
             </div>
+
+            {/* Birth Details for Neonates */}
+            {(patient.birthWeight || patient.gestationalAgeWeeks) && (
+              <div className="mt-3 pt-3 border-t border-sky-200 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                {patient.birthWeight && (
+                  <div>
+                    <span className="text-sky-600">Birth Weight:</span>
+                    <p className="font-semibold text-sky-900">{patient.birthWeight} kg</p>
+                  </div>
+                )}
+                {patient.gestationalAgeWeeks && (
+                  <div>
+                    <span className="text-sky-600">Gestational Age:</span>
+                    <p className="font-semibold text-sky-900">{patient.gestationalAgeWeeks}{patient.gestationalAgeDays ? `+${patient.gestationalAgeDays}` : ''} weeks</p>
+                  </div>
+                )}
+                {patient.modeOfDelivery && (
+                  <div>
+                    <span className="text-sky-600">Mode of Delivery:</span>
+                    <p className="font-semibold text-sky-900">{patient.modeOfDelivery}</p>
+                  </div>
+                )}
+                {patient.admissionDateTime && (
+                  <div>
+                    <span className="text-sky-600">Admission:</span>
+                    <p className="font-semibold text-sky-900">{new Date(patient.admissionDateTime).toLocaleString()}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Toggle Clinical History View */}
+            <button
+              type="button"
+              onClick={() => setShowClinicalHistory(!showClinicalHistory)}
+              className="mt-3 text-sm text-sky-600 hover:text-sky-800 font-semibold flex items-center gap-1"
+            >
+              <svg className={`w-4 h-4 transform transition-transform ${showClinicalHistory ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+              {showClinicalHistory ? 'Hide' : 'View'} Clinical History ({patient.progressNotes?.length || 0} notes, {patient.medications?.filter(m => m.isActive !== false).length || 0} active medications)
+            </button>
           </div>
+
+          {/* Clinical History Section (Collapsible) */}
+          {showClinicalHistory && (
+            <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 overflow-hidden">
+              <div className="bg-slate-700 text-white px-4 py-3">
+                <h3 className="font-bold flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Complete Clinical History
+                </h3>
+                <p className="text-slate-300 text-xs">This data will be included in the referral ticket</p>
+              </div>
+
+              <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
+                {/* Active Medications */}
+                {patient.medications && patient.medications.filter(m => m.isActive !== false).length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-700 uppercase flex items-center gap-2 mb-2">
+                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                      Active Medications ({patient.medications.filter(m => m.isActive !== false).length})
+                    </h4>
+                    <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100">
+                      {patient.medications.filter(m => m.isActive !== false).map((med, idx) => (
+                        <div key={idx} className="px-3 py-2 flex justify-between items-center">
+                          <div>
+                            <span className="font-semibold text-slate-800">{med.name}</span>
+                            <span className="text-slate-600 ml-2">{med.dose}</span>
+                          </div>
+                          <div className="text-sm text-slate-500">
+                            {med.route && <span className="bg-slate-100 px-2 py-0.5 rounded mr-1">{med.route}</span>}
+                            {med.frequency && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{med.frequency}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Progress Notes */}
+                {patient.progressNotes && patient.progressNotes.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-700 uppercase flex items-center gap-2 mb-2">
+                      <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                      Recent Clinical Notes (Last 5)
+                    </h4>
+                    <div className="space-y-2">
+                      {[...patient.progressNotes].reverse().slice(0, 5).map((note, idx) => (
+                        <div key={idx} className="bg-white rounded-lg border border-slate-200 p-3">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-xs font-bold text-slate-500">
+                              {new Date(note.date || note.timestamp || '').toLocaleString()}
+                            </span>
+                            {note.addedBy && (
+                              <span className="text-xs text-slate-400">by {note.addedBy}</span>
+                            )}
+                          </div>
+                          {note.note && (
+                            <p className="text-sm text-slate-700 mb-2">{note.note}</p>
+                          )}
+                          {note.vitals && Object.values(note.vitals).some(v => v) && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {note.vitals.temperature && (
+                                <span className="text-xs bg-red-50 text-red-700 px-2 py-1 rounded">Temp: {note.vitals.temperature}°C</span>
+                              )}
+                              {note.vitals.hr && (
+                                <span className="text-xs bg-pink-50 text-pink-700 px-2 py-1 rounded">HR: {note.vitals.hr}</span>
+                              )}
+                              {note.vitals.rr && (
+                                <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded">RR: {note.vitals.rr}</span>
+                              )}
+                              {note.vitals.spo2 && (
+                                <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-1 rounded">SpO2: {note.vitals.spo2}%</span>
+                              )}
+                              {note.vitals.bp && (
+                                <span className="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded">BP: {note.vitals.bp}</span>
+                              )}
+                            </div>
+                          )}
+                          {note.examination && (
+                            <div className="mt-2 text-xs text-slate-600 bg-slate-50 p-2 rounded">
+                              {note.examination.cns && <p><strong>CNS:</strong> {note.examination.cns}</p>}
+                              {note.examination.cvs && <p><strong>CVS:</strong> {note.examination.cvs}</p>}
+                              {note.examination.chest && <p><strong>Chest:</strong> {note.examination.chest}</p>}
+                              {note.examination.perAbdomen && <p><strong>Abdomen:</strong> {note.examination.perAbdomen}</p>}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Indication for Admission */}
+                {patient.indicationsForAdmission && patient.indicationsForAdmission.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-700 uppercase flex items-center gap-2 mb-2">
+                      <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                      Indications for Admission
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {patient.indicationsForAdmission.map((ind, idx) => (
+                        <span key={idx} className="bg-amber-100 text-amber-800 text-sm px-3 py-1 rounded-full">{ind}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* No Data Message */}
+                {(!patient.progressNotes || patient.progressNotes.length === 0) && (!patient.medications || patient.medications.length === 0) && (
+                  <div className="text-center py-8 text-slate-500">
+                    <svg className="w-12 h-12 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p>No clinical history recorded yet</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Select Receiving Institution */}
           <div>
@@ -669,7 +1201,7 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
               </svg>
 
               {/* Dropdown */}
-              {showInstitutionDropdown && filteredInstitutions.length > 0 && (
+              {showInstitutionDropdown && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-sky-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
                   {filteredInstitutions.map((institution) => (
                     <button
@@ -681,7 +1213,7 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
                         setSearchTerm('');
                         setErrors((prev) => ({ ...prev, institution: '' }));
                       }}
-                      className="w-full text-left px-4 py-3 hover:bg-sky-50 transition-all border-b border-sky-100 last:border-0"
+                      className="w-full text-left px-4 py-3 hover:bg-sky-50 transition-all border-b border-sky-100"
                     >
                       <p className="font-semibold text-sky-900">{institution.name}</p>
                       <p className="text-sm text-sky-600">
@@ -692,18 +1224,182 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
                       </p>
                     </button>
                   ))}
+
+                  {/* Add Custom Institution Option */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCustomInstitutionForm(true);
+                      setShowInstitutionDropdown(false);
+                    }}
+                    className="w-full text-left px-4 py-3 hover:bg-amber-50 transition-all border-t-2 border-amber-200 bg-amber-50/50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      <div>
+                        <p className="font-semibold text-amber-800">Institution not listed?</p>
+                        <p className="text-sm text-amber-600">Click to add a custom institution</p>
+                      </div>
+                    </div>
+                  </button>
                 </div>
               )}
             </div>
             {errors.institution && <p className="text-red-500 text-sm mt-1">{errors.institution}</p>}
             {selectedInstitution && (
               <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-sm font-semibold text-green-900">
-                  Selected: {selectedInstitution.name}
-                </p>
-                <p className="text-xs text-green-700">
-                  {selectedInstitution.district} • {selectedInstitution.institutionType}
-                </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-green-900">
+                      Selected: {selectedInstitution.name}
+                      {(selectedInstitution as any).isCustom && (
+                        <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">Custom</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-green-700">
+                      {selectedInstitution.district} • {selectedInstitution.institutionType}
+                    </p>
+                    {(selectedInstitution as any).phone && (
+                      <p className="text-xs text-green-600 mt-1">Phone: {(selectedInstitution as any).phone}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInstitution(null)}
+                    className="text-green-600 hover:text-green-800 p-1"
+                    title="Clear selection"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Custom Institution Form Modal */}
+            {showCustomInstitutionForm && (
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                  <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white p-4 rounded-t-2xl">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                        <h3 className="text-lg font-bold">Add Custom Institution</h3>
+                      </div>
+                      <button
+                        onClick={() => setShowCustomInstitutionForm(false)}
+                        className="text-white hover:bg-white/20 p-1 rounded-lg"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <p className="text-amber-100 text-sm mt-1">
+                      Add details for an institution not in our system
+                    </p>
+                  </div>
+
+                  <div className="p-5 space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">
+                        Institution Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={customInstitution.name}
+                        onChange={(e) => setCustomInstitution(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="e.g., City General Hospital"
+                        className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                          errors.customInstitutionName ? 'border-red-500' : 'border-slate-300'
+                        }`}
+                      />
+                      {errors.customInstitutionName && (
+                        <p className="text-red-500 text-xs mt-1">{errors.customInstitutionName}</p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">District</label>
+                        <input
+                          type="text"
+                          value={customInstitution.district}
+                          onChange={(e) => setCustomInstitution(prev => ({ ...prev, district: e.target.value }))}
+                          placeholder="e.g., Kamrup"
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Type</label>
+                        <select
+                          value={customInstitution.institutionType}
+                          onChange={(e) => setCustomInstitution(prev => ({ ...prev, institutionType: e.target.value }))}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="">Select type</option>
+                          <option value="Government Hospital">Government Hospital</option>
+                          <option value="Medical College">Medical College</option>
+                          <option value="Private Hospital">Private Hospital</option>
+                          <option value="District Hospital">District Hospital</option>
+                          <option value="Community Health Center">Community Health Center</option>
+                          <option value="Primary Health Center">Primary Health Center</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Phone Number</label>
+                      <input
+                        type="tel"
+                        value={customInstitution.phone}
+                        onChange={(e) => setCustomInstitution(prev => ({ ...prev, phone: e.target.value }))}
+                        placeholder="e.g., 0361-2345678"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1">Address</label>
+                      <textarea
+                        value={customInstitution.address}
+                        onChange={(e) => setCustomInstitution(prev => ({ ...prev, address: e.target.value }))}
+                        placeholder="Full address of the institution"
+                        rows={2}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <p className="text-xs text-amber-700">
+                        <strong>Note:</strong> This institution will only be used for this referral and won't be added to the system permanently.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-4 border-t border-slate-200 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomInstitutionForm(false)}
+                      className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddCustomInstitution}
+                      className="flex-1 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 font-semibold"
+                    >
+                      Add Institution
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

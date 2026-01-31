@@ -1,8 +1,37 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 import fetch from 'node-fetch';
 
+// Initialize Firebase Admin
 admin.initializeApp();
+
+// ============================================================================
+// REGION CONFIGURATION - MUST MATCH CLIENT (firebaseConfig.ts)
+// ============================================================================
+const FUNCTION_REGION = 'asia-southeast1'; // Singapore - matches database region
+
+// Export Enterprise Authentication Functions
+export {
+  createSecureUser,
+  authenticateUser,
+  migrateUserPassword,
+  bulkMigratePasswords,
+  changePassword,
+  getAuthAuditLogs,
+  initializeUserPassword,
+  autoFixPasswords,
+} from './auth';
+
+// Export Scalable User Lookup Functions & Triggers
+export {
+  migrateAllUsersToLookup,
+  onOfficialWrite,
+  onApprovedUserWrite,
+  onInstitutionWrite,
+  onDistrictAdminWrite,
+  onSuperAdminWrite,
+} from './userLookup';
 
 const RUNPOD_API_KEY = functions.config().runpod?.api_key || process.env.RUNPOD_API_KEY;
 const MEDASR_ENDPOINT_ID = functions.config().runpod?.medasr_endpoint || process.env.MEDASR_ENDPOINT_ID || 'tiv2evbbzqxdkg';
@@ -27,7 +56,7 @@ interface RunPodStatusResponse {
 /**
  * MedASR Transcription - Submit audio for transcription
  */
-export const medAsrTranscribe = functions.https.onCall(async (data, context) => {
+export const medAsrTranscribe = functions.region(FUNCTION_REGION).https.onCall(async (data, context) => {
   // Verify authentication (optional but recommended)
   if (!context.auth) {
     throw new functions.https.HttpsError(
@@ -130,10 +159,118 @@ export const medAsrTranscribe = functions.https.onCall(async (data, context) => 
 /**
  * Health check endpoint
  */
-export const healthCheck = functions.https.onRequest((req, res) => {
+export const healthCheck = functions.region(FUNCTION_REGION).https.onRequest((req, res) => {
   res.json({
     status: 'ok',
     service: 'MedASR Proxy',
     configured: !!RUNPOD_API_KEY
   });
+});
+
+/**
+ * Authentication System Status
+ * Returns information about which authentication mode is active
+ */
+export const authSystemStatus = functions.region(FUNCTION_REGION).https.onRequest(async (req, res) => {
+  const db = getFirestore('neolink');
+
+  // Check if userLookup collection exists and has data
+  const lookupSnapshot = await db.collection('userLookup').limit(1).get();
+  const hasLookupTable = !lookupSnapshot.empty;
+
+  // Count entries in lookup table
+  const lookupCount = hasLookupTable
+    ? (await db.collection('userLookup').count().get()).data().count
+    : 0;
+
+  // Check audit logs for recent activity
+  const recentAuditLogs = await db.collection('authAuditLogs')
+    .orderBy('timestamp', 'desc')
+    .limit(5)
+    .get();
+
+  res.json({
+    status: 'ok',
+    authSystem: 'ENTERPRISE_GRADE',
+    version: '2.0.0',
+    features: {
+      bcryptHashing: true,
+      bcryptRounds: 12,
+      rateLimiting: {
+        enabled: true,
+        maxAttempts: 5,
+        windowMinutes: 15,
+      },
+      accountLockout: {
+        enabled: true,
+        lockoutMinutes: 30,
+      },
+      auditLogging: true,
+      customClaims: true,
+      serverSideAuth: true,
+    },
+    scalability: {
+      lookupTableEnabled: hasLookupTable,
+      lookupTableEntries: lookupCount,
+      lookupComplexity: 'O(1)',
+      autoSyncTriggers: [
+        'onOfficialWrite',
+        'onApprovedUserWrite',
+        'onInstitutionWrite',
+        'onDistrictAdminWrite',
+        'onSuperAdminWrite',
+      ],
+    },
+    recentActivity: {
+      auditLogsCount: recentAuditLogs.size,
+      lastActivity: recentAuditLogs.docs[0]?.data()?.timestamp || null,
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+/**
+ * Verify Authentication Mode (Callable)
+ * Can be called from client to verify enterprise auth is working
+ */
+export const verifyAuthMode = functions.region(FUNCTION_REGION).https.onCall(async (data, context) => {
+  const db = getFirestore('neolink');
+
+  // Check lookup table status
+  const lookupCount = (await db.collection('userLookup').count().get()).data().count;
+
+  // If authenticated, return user info
+  let userInfo = null;
+  if (context.auth) {
+    userInfo = {
+      uid: context.auth.uid,
+      email: context.auth.token.email,
+      role: context.auth.token.role,
+      customClaims: {
+        role: context.auth.token.role || null,
+        institutionId: context.auth.token.institutionId || null,
+        userID: context.auth.token.userID || null,
+      },
+    };
+  }
+
+  return {
+    authMode: 'ENTERPRISE',
+    serverSideValidation: true,
+    passwordStorage: 'bcrypt_hashed',
+    lookupTableStatus: lookupCount > 0 ? 'active' : 'pending_migration',
+    lookupTableEntries: lookupCount,
+    authenticated: !!context.auth,
+    user: userInfo,
+    securityFeatures: [
+      'bcrypt_password_hashing',
+      'server_side_authentication',
+      'rate_limiting',
+      'account_lockout',
+      'audit_logging',
+      'custom_claims_rbac',
+      'o1_user_lookup',
+    ],
+    timestamp: new Date().toISOString(),
+  };
 });

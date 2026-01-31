@@ -64,8 +64,8 @@ const ObservationPatientForm: React.FC<ObservationPatientFormProps> = ({
         const filtered = allIndications.filter(ind => {
           const isActive = ind.isActive !== false; // Default to active if not set
           const matchesUnit = !ind.applicableUnits ||
-                              ind.applicableUnits.length === 0 ||
-                              ind.applicableUnits.some(u => u === selectedUnit || u.includes(selectedUnit.split(' ')[0]));
+            ind.applicableUnits.length === 0 ||
+            ind.applicableUnits.some(u => u === selectedUnit || u.includes(selectedUnit.split(' ')[0]));
           return isActive && matchesUnit;
         });
 
@@ -249,7 +249,7 @@ const ObservationPatientForm: React.FC<ObservationPatientFormProps> = ({
                 value={birthWeight}
                 onChange={(e) => setBirthWeight(e.target.value)}
                 min="0"
-                step="1"
+                step="0.01"
                 className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border-2 border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition-all outline-none text-sm sm:text-base"
                 placeholder="e.g., 2500"
               />
@@ -295,22 +295,20 @@ const ObservationPatientForm: React.FC<ObservationPatientFormProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdmissionType('Inborn')}
-                  className={`px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all text-sm sm:text-base ${
-                    admissionType === 'Inborn'
+                  className={`px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all text-sm sm:text-base ${admissionType === 'Inborn'
                       ? 'bg-amber-500 text-white border-2 border-amber-600 shadow-lg'
                       : 'bg-white text-slate-700 border-2 border-slate-200 hover:border-amber-300'
-                  }`}
+                    }`}
                 >
                   Inborn
                 </button>
                 <button
                   type="button"
                   onClick={() => setAdmissionType('Outborn')}
-                  className={`px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all text-sm sm:text-base ${
-                    admissionType === 'Outborn'
+                  className={`px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all text-sm sm:text-base ${admissionType === 'Outborn'
                       ? 'bg-amber-500 text-white border-2 border-amber-600 shadow-lg'
                       : 'bg-white text-slate-700 border-2 border-slate-200 hover:border-amber-300'
-                  }`}
+                    }`}
                 >
                   Outborn
                 </button>
@@ -334,11 +332,10 @@ const ObservationPatientForm: React.FC<ObservationPatientFormProps> = ({
                   {availableIndications.map((indication) => (
                     <label
                       key={indication.id}
-                      className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all text-sm ${
-                        selectedIndications.includes(indication.name)
+                      className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all text-sm ${selectedIndications.includes(indication.name)
                           ? 'bg-amber-100 border border-amber-400'
                           : 'bg-white border border-slate-200 hover:border-amber-300'
-                      }`}
+                        }`}
                     >
                       <input
                         type="checkbox"

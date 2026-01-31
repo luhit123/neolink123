@@ -32,10 +32,10 @@ let configListenerUnsubscribe: (() => void) | null = null;
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 
-// Debug: Log API key availability on load
-console.log('🔑 Clinical Note AI Service loaded');
-console.log('🔑 OpenAI API Key available:', !!OPENAI_API_KEY);
-console.log('🔑 Gemini API Key available:', !!GEMINI_API_KEY);
+// API key validation (only warn if missing, don't spam logs)
+if (!OPENAI_API_KEY && !GEMINI_API_KEY) {
+  console.warn('⚠️ Clinical Note AI: No API keys configured. AI features will be unavailable.');
+}
 
 // Gemini instance
 let geminiAI: GoogleGenAI | null = null;
@@ -54,17 +54,20 @@ export const initClinicalNoteAIConfig = () => {
   configListenerUnsubscribe = onSnapshot(configRef, (docSnap) => {
     if (docSnap.exists()) {
       const data = docSnap.data() as ClinicalNoteAIConfig;
-      console.log('📥 Firestore config loaded:', JSON.stringify(data));
       cachedConfig = data;
-      console.log('📥 Cached config now:', cachedConfig.provider);
+      // Debug logging disabled in production - uncomment for debugging:
+      // console.log('📥 AI Config loaded:', cachedConfig.provider);
     } else {
-      // Create default config if it doesn't exist
-      console.log('📥 No Firestore config found, creating default with GPT-4o');
-      setDoc(configRef, DEFAULT_CONFIG).catch(console.error);
+      // Create default config if it doesn't exist (silently)
+      setDoc(configRef, DEFAULT_CONFIG).catch(() => {});
       cachedConfig = { ...DEFAULT_CONFIG };
     }
   }, (error) => {
-    console.error('Error listening to clinical note AI config:', error);
+    // Only log if it's not a permission error (which is expected for non-SuperAdmins)
+    if (error.code !== 'permission-denied') {
+      console.warn('Clinical Note AI config listener error:', error.message);
+    }
+    // Use default config silently on permission error
   });
 };
 

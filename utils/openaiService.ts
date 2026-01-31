@@ -197,11 +197,44 @@ export async function generateReferralLetter(params: ReferralLetterParams): Prom
   // Format progress notes for comprehensive history
   const progressNotesText = formatProgressNotes(patient.progressNotes);
 
-  // Extract all medications given during the stay
-  const allMedications = extractAllMedications(patient.progressNotes);
-  const medicationsText = allMedications.length > 0
-    ? allMedications.map(m => `- ${m.name} ${m.dose}${m.route ? ` (${m.route})` : ''}${m.frequency ? ` ${m.frequency}` : ''}`).join('\n')
+  // Extract all medications given during the stay from progress notes
+  const progressNoteMedications = extractAllMedications(patient.progressNotes);
+
+  // Also get medications from patient's master medications list
+  const patientMedications = patient.medications || [];
+  const activeMedications = patientMedications.filter(m => m.isActive !== false);
+  const stoppedMedications = patientMedications.filter(m => m.isActive === false);
+
+  // Combine all medications (avoiding duplicates)
+  const allMedicationsMap = new Map<string, Medication>();
+  [...progressNoteMedications, ...patientMedications].forEach(med => {
+    const key = `${med.name}-${med.dose}`;
+    if (!allMedicationsMap.has(key)) {
+      allMedicationsMap.set(key, med);
+    }
+  });
+
+  const medicationsText = allMedicationsMap.size > 0
+    ? Array.from(allMedicationsMap.values()).map(m =>
+        `- ${m.name} ${m.dose}${m.route ? ` (${m.route})` : ''}${m.frequency ? ` ${m.frequency}` : ''}${m.isActive === false ? ' [STOPPED]' : ' [ACTIVE]'}`
+      ).join('\n')
     : 'No medications recorded';
+
+  // Create a current medications section
+  const currentMedicationsText = activeMedications.length > 0
+    ? activeMedications.map(m =>
+        `- ${m.name} ${m.dose}${m.route ? ` via ${m.route}` : ''}${m.frequency ? ` - ${m.frequency}` : ''}`
+      ).join('\n')
+    : 'None currently active';
+
+  // Format maternal history for neonates
+  const maternalHistoryText = patient.maternalHistory ?
+    `Maternal Age: ${patient.maternalHistory.maternalAge || 'Unknown'}, Blood Group: ${patient.maternalHistory.bloodGroup || 'Unknown'}${patient.maternalHistory.riskFactors?.length ? `, Risk Factors: ${patient.maternalHistory.riskFactors.join(', ')}` : ''}` : '';
+
+  // Format gestational age
+  const gestationalAgeText = patient.gestationalAgeWeeks
+    ? `${patient.gestationalAgeWeeks}${patient.gestationalAgeDays ? `+${patient.gestationalAgeDays}` : ''} weeks (${patient.gestationalAgeCategory || 'N/A'})`
+    : 'N/A';
 
   // Create the comprehensive prompt
   const prompt = `You are a medical professional writing a comprehensive clinical summary for a patient referral document. Based on the following complete patient information, generate a detailed but well-organized clinical summary that covers the ENTIRE patient journey from admission to referral.
@@ -212,17 +245,26 @@ Age: ${patientAge}
 Gender: ${patient.gender}
 Unit: ${patient.unit}
 Institution: ${fromInstitutionName}
+${patient.birthWeight ? `Birth Weight: ${patient.birthWeight} kg` : ''}
+${patient.gestationalAgeWeeks ? `Gestational Age: ${gestationalAgeText}` : ''}
+${maternalHistoryText ? `Maternal History: ${maternalHistoryText}` : ''}
+${patient.modeOfDelivery ? `Mode of Delivery: ${patient.modeOfDelivery}` : ''}
 
 === ADMISSION DETAILS ===
 Date of Admission: ${new Date(patient.admissionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+${patient.admissionDateTime ? `Time of Admission: ${new Date(patient.admissionDateTime).toLocaleTimeString('en-IN')}` : ''}
 Duration of Stay: ${daysOfStay} days
 Admission Diagnosis: ${patient.diagnosis}
+${patient.indicationsForAdmission?.length ? `Indications for Admission: ${patient.indicationsForAdmission.join(', ')}` : ''}
 
-=== CLINICAL COURSE / PROGRESS NOTES ===
+=== CLINICAL COURSE / PROGRESS NOTES (${patient.progressNotes?.length || 0} notes) ===
 ${progressNotesText}
 
-=== MEDICATIONS GIVEN DURING STAY ===
+=== ALL MEDICATIONS DURING STAY ===
 ${medicationsText}
+
+=== CURRENTLY ACTIVE MEDICATIONS ===
+${currentMedicationsText}
 
 === CURRENT STATUS AT REFERRAL ===
 Current Diagnosis: ${referralDetails.diagnosisAtReferral}
@@ -238,17 +280,19 @@ ${referralDetails.reasonForReferral}
 === INSTRUCTIONS ===
 Generate a COMPREHENSIVE clinical summary that includes:
 
-1. **Admission Summary**: Why the patient was admitted, with what condition and initial diagnosis.
+1. **Patient Background**: Age, gestational status (if neonate), relevant birth history.
 
-2. **Course of Treatment**: What treatments/procedures were performed during the stay, key medications given.
+2. **Admission Summary**: Why admitted, initial condition and diagnosis.
 
-3. **Clinical Progress**: How the patient progressed day by day (improving, worsening, complications).
+3. **Course of Treatment**: All key treatments, medications, and interventions during the stay.
 
-4. **Current Status**: Patient's condition at the time of referral.
+4. **Clinical Progress**: How the patient progressed (improving, worsening, complications), key vital sign trends.
 
-5. **Reason for Referral**: Why the patient is being referred, what specialized care is needed.
+5. **Current Status**: Patient's current condition at referral including vitals and active medications.
 
-Write in a professional medical narrative format (not bullet points). Keep it detailed but concise (6-8 sentences). Use plain text only - NO markdown, NO bold, NO bullet points, NO asterisks. The summary should give the receiving institution a complete picture of the patient's journey and why this referral is necessary.`;
+6. **Reason for Referral**: Why specialized/higher care is needed at the receiving institution.
+
+Write in a professional medical narrative format (NOT bullet points). Keep it detailed and comprehensive (8-12 sentences). Use plain text only - NO markdown, NO bold, NO bullet points, NO asterisks. The summary should provide the receiving institution with a COMPLETE clinical picture of the patient's entire journey and current needs. Include specific medications, treatments, and clinical findings.`;
 
   const systemPrompt = 'You are a senior medical professional specializing in pediatric and neonatal care. Generate professional, accurate medical documentation.';
 

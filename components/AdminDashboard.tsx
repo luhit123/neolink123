@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { InstitutionUser, UserRole, BedCapacity, Unit } from '../types';
+import { InstitutionUser, UserRole, BedCapacity, Unit, ReportRequest, ReportResponse, ReportRequestStatus, ReportType } from '../types';
 import { SCHEDULED_LANGUAGES, ScheduledLanguage } from '../utils/dischargeLanguageService';
 import { generateUserID, getNextSequenceNumber } from '../utils/userIdGenerator';
 import { generateAlphanumericPassword } from '../utils/passwordUtils';
@@ -76,6 +76,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Institution Settings
   const [showInstitutionSettings, setShowInstitutionSettings] = useState(false);
   const [dischargeLanguage, setDischargeLanguage] = useState<string>('english');
+
+  // Report Requests from Officials
+  const [showReportRequests, setShowReportRequests] = useState(false);
+  const [reportRequests, setReportRequests] = useState<ReportRequest[]>([]);
+  const [loadingReportRequests, setLoadingReportRequests] = useState(false);
+  const [selectedReportRequest, setSelectedReportRequest] = useState<ReportRequest | null>(null);
+  const [responseNote, setResponseNote] = useState('');
+  const [responsePdfFile, setResponsePdfFile] = useState<File | null>(null);
+  const [submittingResponse, setSubmittingResponse] = useState(false);
 
   // Auto-generate UserID and Password when Add User form opens
   useEffect(() => {
@@ -178,6 +187,130 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setError('Failed to save discharge language: ' + err.message);
     }
   };
+
+  // Load report requests from officials
+  const loadReportRequests = async () => {
+    setLoadingReportRequests(true);
+    try {
+      const requestsRef = collection(db, 'reportRequests');
+      const q = query(
+        requestsRef,
+        where('institutionId', '==', institutionId)
+      );
+      const snapshot = await getDocs(q);
+      const requests = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as ReportRequest));
+
+      // Sort by creation date (newest first)
+      requests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setReportRequests(requests);
+      console.log('✅ Loaded', requests.length, 'report requests');
+    } catch (err: any) {
+      console.error('❌ Error loading report requests:', err);
+      setError('Failed to load report requests: ' + err.message);
+    } finally {
+      setLoadingReportRequests(false);
+    }
+  };
+
+  // Update report request status
+  const updateReportRequestStatus = async (requestId: string, status: ReportRequestStatus) => {
+    try {
+      const requestRef = doc(db, 'reportRequests', requestId);
+      await updateDoc(requestRef, {
+        status,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Update local state
+      setReportRequests(prev => prev.map(req =>
+        req.id === requestId ? { ...req, status, updatedAt: new Date().toISOString() } : req
+      ));
+
+      console.log('✅ Report request status updated to:', status);
+    } catch (err: any) {
+      console.error('❌ Error updating request status:', err);
+      setError('Failed to update request status: ' + err.message);
+    }
+  };
+
+  // Submit response to a report request
+  const submitReportResponse = async () => {
+    if (!selectedReportRequest) return;
+    if (!responseNote.trim() && !responsePdfFile) {
+      setError('Please provide a note or upload a PDF file');
+      return;
+    }
+
+    setSubmittingResponse(true);
+    setError('');
+
+    try {
+      let pdfUrl = '';
+      let pdfFileName = '';
+      let pdfSize = 0;
+
+      // Upload PDF if provided
+      if (responsePdfFile) {
+        const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+        const storage = getStorage();
+        const fileName = `report_responses/${institutionId}/${Date.now()}_${responsePdfFile.name}`;
+        const storageRef = ref(storage, fileName);
+
+        const snapshot = await uploadBytes(storageRef, responsePdfFile);
+        pdfUrl = await getDownloadURL(snapshot.ref);
+        pdfFileName = responsePdfFile.name;
+        pdfSize = responsePdfFile.size;
+        console.log('✅ PDF uploaded:', pdfFileName);
+      }
+
+      // Create the response document
+      const responseData: Omit<ReportResponse, 'id'> = {
+        requestId: selectedReportRequest.id,
+        responderId: institutionId,
+        responderEmail: adminEmail,
+        responderName: institutionName + ' Admin',
+        responderRole: UserRole.Admin,
+        responseType: responsePdfFile && responseNote.trim() ? 'Both' : responsePdfFile ? 'PDF' : 'Note',
+        note: responseNote.trim() || undefined,
+        pdfUrl: pdfUrl || undefined,
+        pdfFileName: pdfFileName || undefined,
+        pdfSize: pdfSize || undefined,
+        createdAt: new Date().toISOString(),
+        isRead: false
+      };
+
+      const responsesRef = collection(db, 'reportResponses');
+      await addDoc(responsesRef, responseData);
+
+      // Update request status to Completed
+      await updateReportRequestStatus(selectedReportRequest.id, ReportRequestStatus.Completed);
+
+      setSuccess('Response sent successfully!');
+      setSelectedReportRequest(null);
+      setResponseNote('');
+      setResponsePdfFile(null);
+
+      // Refresh the requests list
+      await loadReportRequests();
+
+      console.log('✅ Response submitted successfully');
+    } catch (err: any) {
+      console.error('❌ Error submitting response:', err);
+      setError('Failed to submit response: ' + err.message);
+    } finally {
+      setSubmittingResponse(false);
+    }
+  };
+
+  // Load report requests when showing the panel
+  useEffect(() => {
+    if (showReportRequests) {
+      loadReportRequests();
+    }
+  }, [showReportRequests, institutionId]);
 
   const loadBedCapacity = async () => {
     try {
@@ -369,20 +502,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       // Use manual password if provided, otherwise keep auto-generated
       const finalPassword = manualUserPassword.trim();
 
-      // Create Firebase Auth account
-      try {
-        await signUpWithEmail(
-          newUserEmail.trim().toLowerCase(),
-          finalPassword
-        );
-        console.log('✅ Firebase Auth account created for:', newUserEmail);
-      } catch (authError: any) {
-        // If account exists, continue (allow existing users to be added to institution)
-        if (authError.code !== 'auth/email-already-in-use') {
-          throw authError;
-        }
-        console.log('⚠️ Account already exists, adding to institution');
-      }
+      // NOTE: We do NOT create Firebase Auth account here anymore
+      // Creating Firebase Auth account signs in as the new user, which breaks admin permissions
+      // The Firebase Auth account will be created automatically when the user first logs in
+      // via signInWithUserID function in authService.ts
+      console.log('📝 Adding user to approved_users (Firebase Auth will be created on first login)');
 
       const usersRef = collection(db, 'approved_users');
       const addPromises = newUserRoles.map(async (role) => {
@@ -415,7 +539,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         userID: finalUserID,
         password: finalPassword,
         userType: newUserRoles[0] === UserRole.Doctor ? 'Doctor' :
-                  newUserRoles[0] === UserRole.Nurse ? 'Nurse' : 'Admin'
+          newUserRoles[0] === UserRole.Nurse ? 'Nurse' : 'Admin'
       });
       setShowCredentialsModal(true);
 
@@ -600,7 +724,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
 
         {/* Action Buttons */}
-        {!showAddForm && !showBedManagement && !showDoctorsManagement && !showMigrationPanel && !showInstitutionSettings && (
+        {!showAddForm && !showBedManagement && !showDoctorsManagement && !showMigrationPanel && !showInstitutionSettings && !showReportRequests && (
           <div className="mb-6 flex flex-wrap gap-4">
             <button
               onClick={() => setShowAddForm(true)}
@@ -665,6 +789,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               Institution Settings
+            </button>
+            <button
+              onClick={() => setShowReportRequests(true)}
+              className="px-6 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 relative"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Report Requests
+              {reportRequests.filter(r => r.status === ReportRequestStatus.Pending).length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {reportRequests.filter(r => r.status === ReportRequestStatus.Pending).length}
+                </span>
+              )}
             </button>
           </div>
         )}
@@ -1127,20 +1265,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     key={lang.code}
                     onClick={() => saveDischargeLanguage(lang.code)}
-                    className={`p-3 rounded-xl border-2 transition-all text-left ${
-                      dischargeLanguage === lang.code
+                    className={`p-3 rounded-xl border-2 transition-all text-left ${dischargeLanguage === lang.code
                         ? 'border-amber-500 bg-amber-100 dark:bg-amber-900/40 shadow-lg'
                         : 'border-slate-200 dark:border-slate-700 hover:border-amber-300 dark:hover:border-amber-700 bg-white dark:bg-slate-800'
-                    }`}
+                      }`}
                   >
-                    <p className={`font-bold text-sm ${
-                      dischargeLanguage === lang.code ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'
-                    }`}>
+                    <p className={`font-bold text-sm ${dischargeLanguage === lang.code ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'
+                      }`}>
                       {lang.nativeName}
                     </p>
-                    <p className={`text-xs ${
-                      dischargeLanguage === lang.code ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'
-                    }`}>
+                    <p className={`text-xs ${dischargeLanguage === lang.code ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'
+                      }`}>
                       {lang.name}
                     </p>
                     {dischargeLanguage === lang.code && (
@@ -1177,6 +1312,338 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Report Requests Panel */}
+        {showReportRequests && (
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 mb-8 border border-rose-500/20 shadow-lg transition-colors duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-500 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Report Requests</h2>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Respond to report requests from government officials</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowReportRequests(false);
+                  setSelectedReportRequest(null);
+                  setResponseNote('');
+                  setResponsePdfFile(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingReportRequests ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-500"></div>
+                <span className="ml-3 text-slate-600 dark:text-slate-400">Loading requests...</span>
+              </div>
+            ) : reportRequests.length === 0 ? (
+              <div className="text-center py-12">
+                <svg className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-slate-500 dark:text-slate-400">No report requests yet</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">When government officials request reports, they will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Request List */}
+                {!selectedReportRequest && (
+                  <div className="space-y-3">
+                    {reportRequests.map(request => (
+                      <div
+                        key={request.id}
+                        className={`p-4 rounded-xl border-2 transition-all cursor-pointer hover:shadow-md ${request.status === ReportRequestStatus.Pending
+                            ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20'
+                            : request.status === ReportRequestStatus.InProgress
+                              ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
+                              : request.status === ReportRequestStatus.Completed
+                                ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
+                                : 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
+                          }`}
+                        onClick={() => setSelectedReportRequest(request)}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${request.status === ReportRequestStatus.Pending
+                                  ? 'bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200'
+                                  : request.status === ReportRequestStatus.InProgress
+                                    ? 'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200'
+                                    : request.status === ReportRequestStatus.Completed
+                                      ? 'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200'
+                                      : 'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200'
+                                }`}>
+                                {request.status}
+                              </span>
+                              <span className="px-2 py-0.5 text-xs rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                {request.reportType}
+                              </span>
+                            </div>
+                            <h4 className="font-semibold text-slate-900 dark:text-white">{request.requesterName}</h4>
+                            <p className="text-sm text-slate-600 dark:text-slate-400">{request.requesterDesignation}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
+                              {request.dateRangeStart && request.dateRangeEnd
+                                ? `Period: ${new Date(request.dateRangeStart).toLocaleDateString()} - ${new Date(request.dateRangeEnd).toLocaleDateString()}`
+                                : 'No date range specified'}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-slate-500 dark:text-slate-500">
+                              {new Date(request.createdAt).toLocaleDateString()}
+                            </p>
+                            <p className="text-xs text-slate-400 dark:text-slate-600">
+                              {new Date(request.createdAt).toLocaleTimeString()}
+                            </p>
+                          </div>
+                        </div>
+                        {request.additionalNotes && (
+                          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 italic line-clamp-2">
+                            "{request.additionalNotes}"
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Selected Request Detail & Response Form */}
+                {selectedReportRequest && (
+                  <div className="space-y-6">
+                    <button
+                      onClick={() => {
+                        setSelectedReportRequest(null);
+                        setResponseNote('');
+                        setResponsePdfFile(null);
+                      }}
+                      className="text-sm text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 flex items-center gap-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                      </svg>
+                      Back to all requests
+                    </button>
+
+                    {/* Request Details */}
+                    <div className="bg-slate-100 dark:bg-slate-700/50 p-4 rounded-xl">
+                      <h3 className="font-bold text-slate-900 dark:text-white mb-3">Request Details</h3>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="text-slate-500 dark:text-slate-400">Requester</p>
+                          <p className="font-medium text-slate-900 dark:text-white">{selectedReportRequest.requesterName}</p>
+                          <p className="text-slate-600 dark:text-slate-400">{selectedReportRequest.requesterDesignation}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 dark:text-slate-400">Report Type</p>
+                          <p className="font-medium text-slate-900 dark:text-white">{selectedReportRequest.reportType}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 dark:text-slate-400">Date Range</p>
+                          <p className="font-medium text-slate-900 dark:text-white">
+                            {selectedReportRequest.dateRangeStart && selectedReportRequest.dateRangeEnd
+                              ? `${new Date(selectedReportRequest.dateRangeStart).toLocaleDateString()} - ${new Date(selectedReportRequest.dateRangeEnd).toLocaleDateString()}`
+                              : 'Not specified'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 dark:text-slate-400">Unit</p>
+                          <p className="font-medium text-slate-900 dark:text-white">{selectedReportRequest.unit || 'All Units'}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 dark:text-slate-400">Status</p>
+                          <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${selectedReportRequest.status === ReportRequestStatus.Pending
+                              ? 'bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200'
+                              : selectedReportRequest.status === ReportRequestStatus.InProgress
+                                ? 'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200'
+                                : selectedReportRequest.status === ReportRequestStatus.Completed
+                                  ? 'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200'
+                                  : 'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200'
+                            }`}>
+                            {selectedReportRequest.status}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 dark:text-slate-400">Requested On</p>
+                          <p className="font-medium text-slate-900 dark:text-white">
+                            {new Date(selectedReportRequest.createdAt).toLocaleDateString()} at {new Date(selectedReportRequest.createdAt).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      </div>
+                      {selectedReportRequest.additionalNotes && (
+                        <div className="mt-4">
+                          <p className="text-slate-500 dark:text-slate-400">Additional Notes</p>
+                          <p className="mt-1 p-3 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
+                            {selectedReportRequest.additionalNotes}
+                          </p>
+                        </div>
+                      )}
+                      {selectedReportRequest.customReportDescription && (
+                        <div className="mt-4">
+                          <p className="text-slate-500 dark:text-slate-400">Custom Report Description</p>
+                          <p className="mt-1 p-3 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
+                            {selectedReportRequest.customReportDescription}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Status Update Buttons */}
+                    {selectedReportRequest.status !== ReportRequestStatus.Completed && (
+                      <div className="flex gap-2">
+                        {selectedReportRequest.status === ReportRequestStatus.Pending && (
+                          <button
+                            onClick={() => updateReportRequestStatus(selectedReportRequest.id, ReportRequestStatus.InProgress)}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                          >
+                            Mark as In Progress
+                          </button>
+                        )}
+                        <button
+                          onClick={() => updateReportRequestStatus(selectedReportRequest.id, ReportRequestStatus.Rejected)}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          Reject Request
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Response Form */}
+                    {selectedReportRequest.status !== ReportRequestStatus.Completed && selectedReportRequest.status !== ReportRequestStatus.Rejected && (
+                      <div className="bg-gradient-to-br from-rose-50 to-pink-50 dark:from-rose-900/20 dark:to-pink-900/20 p-6 rounded-xl border border-rose-200 dark:border-rose-800">
+                        <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                          <svg className="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                          </svg>
+                          Send Response
+                        </h3>
+
+                        <div className="space-y-4">
+                          {/* Note Input */}
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              Response Note (optional)
+                            </label>
+                            <textarea
+                              value={responseNote}
+                              onChange={(e) => setResponseNote(e.target.value)}
+                              placeholder="Add a message to accompany your response..."
+                              rows={4}
+                              className="w-full px-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400 transition-colors"
+                            />
+                          </div>
+
+                          {/* PDF Upload */}
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              Upload PDF Report (optional)
+                            </label>
+                            <div className="flex items-center gap-4">
+                              <input
+                                type="file"
+                                accept=".pdf"
+                                onChange={(e) => setResponsePdfFile(e.target.files?.[0] || null)}
+                                className="hidden"
+                                id="pdf-upload"
+                              />
+                              <label
+                                htmlFor="pdf-upload"
+                                className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
+                              >
+                                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                <span className="text-slate-700 dark:text-slate-300">Choose PDF</span>
+                              </label>
+                              {responsePdfFile && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-slate-600 dark:text-slate-400">
+                                    {responsePdfFile.name} ({(responsePdfFile.size / 1024 / 1024).toFixed(2)} MB)
+                                  </span>
+                                  <button
+                                    onClick={() => setResponsePdfFile(null)}
+                                    className="text-red-500 hover:text-red-600"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Submit Button */}
+                          <button
+                            onClick={submitReportResponse}
+                            disabled={submittingResponse || (!responseNote.trim() && !responsePdfFile)}
+                            className="w-full px-6 py-3 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                          >
+                            {submittingResponse ? (
+                              <>
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                Sending Response...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                </svg>
+                                Send Response
+                              </>
+                            )}
+                          </button>
+
+                          <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
+                            You must provide either a note or a PDF file (or both) to respond
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Already Responded Message */}
+                    {selectedReportRequest.status === ReportRequestStatus.Completed && (
+                      <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-xl border border-green-300 dark:border-green-700">
+                        <div className="flex items-center gap-3">
+                          <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div>
+                            <p className="font-medium text-green-800 dark:text-green-300">Response Already Sent</p>
+                            <p className="text-sm text-green-700 dark:text-green-400">This request has been completed.</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Rejected Message */}
+                    {selectedReportRequest.status === ReportRequestStatus.Rejected && (
+                      <div className="bg-red-100 dark:bg-red-900/30 p-4 rounded-xl border border-red-300 dark:border-red-700">
+                        <div className="flex items-center gap-3">
+                          <svg className="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div>
+                            <p className="font-medium text-red-800 dark:text-red-300">Request Rejected</p>
+                            <p className="text-sm text-red-700 dark:text-red-400">This request has been rejected.</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1306,12 +1773,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </p>
               </div>
 
-              <div>
-                <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2">
+              <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg border-2 border-slate-200 dark:border-slate-600">
+                <label className="block text-slate-900 dark:text-white font-bold mb-3">
                   Roles *
                 </label>
                 <div className="space-y-3">
-                  <div className="flex items-center">
+                  <div className="flex items-center p-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-blue-400 transition-colors">
                     <input
                       type="checkbox"
                       id="role-admin"
@@ -1323,13 +1790,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setNewUserRoles(prev => prev.filter(role => role !== UserRole.Admin));
                         }
                       }}
-                      className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
+                      className="w-5 h-5 text-blue-600 bg-white border-2 border-slate-400 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
                     />
-                    <label htmlFor="role-admin" className="ml-2 text-slate-700 dark:text-slate-300">
-                      <span className="font-medium">Admin</span> - Can manage users and access all data
+                    <label htmlFor="role-admin" className="ml-3 text-slate-800 dark:text-slate-100 cursor-pointer flex-1">
+                      <span className="font-bold text-blue-700 dark:text-blue-400">Admin</span>
+                      <span className="text-slate-600 dark:text-slate-300"> - Can manage users and access all data</span>
                     </label>
                   </div>
-                  <div className="flex items-center">
+                  <div className="flex items-center p-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-green-400 transition-colors">
                     <input
                       type="checkbox"
                       id="role-doctor"
@@ -1341,13 +1809,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setNewUserRoles(prev => prev.filter(role => role !== UserRole.Doctor));
                         }
                       }}
-                      className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
+                      className="w-5 h-5 text-green-600 bg-white border-2 border-slate-400 rounded focus:ring-green-500 focus:ring-2 cursor-pointer"
                     />
-                    <label htmlFor="role-doctor" className="ml-2 text-slate-700 dark:text-slate-300">
-                      <span className="font-medium">Doctor</span> - Can view and edit all patient records
+                    <label htmlFor="role-doctor" className="ml-3 text-slate-800 dark:text-slate-100 cursor-pointer flex-1">
+                      <span className="font-bold text-green-700 dark:text-green-400">Doctor</span>
+                      <span className="text-slate-600 dark:text-slate-300"> - Can view and edit all patient records</span>
                     </label>
                   </div>
-                  <div className="flex items-center">
+                  <div className="flex items-center p-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-purple-400 transition-colors">
                     <input
                       type="checkbox"
                       id="role-nurse"
@@ -1359,15 +1828,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setNewUserRoles(prev => prev.filter(role => role !== UserRole.Nurse));
                         }
                       }}
-                      className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
+                      className="w-5 h-5 text-purple-600 bg-white border-2 border-slate-400 rounded focus:ring-purple-500 focus:ring-2 cursor-pointer"
                     />
-                    <label htmlFor="role-nurse" className="ml-2 text-slate-700 dark:text-slate-300">
-                      <span className="font-medium">Nurse</span> - Can view records and add patient notes
+                    <label htmlFor="role-nurse" className="ml-3 text-slate-800 dark:text-slate-100 cursor-pointer flex-1">
+                      <span className="font-bold text-purple-700 dark:text-purple-400">Nurse</span>
+                      <span className="text-slate-600 dark:text-slate-300"> - Can view records and add patient notes</span>
                     </label>
                   </div>
                 </div>
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                  Select one or more roles for this user. They will have access to all selected role capabilities.
+                <p className="mt-3 text-sm text-slate-600 dark:text-slate-400 bg-blue-50 dark:bg-blue-900/20 p-2 rounded-lg">
+                  ℹ️ Select one or more roles for this user. They will have access to all selected role capabilities.
                 </p>
               </div>
 
@@ -1383,11 +1853,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {[Unit.PICU, Unit.NICU, Unit.SNCU, Unit.HDU, Unit.GENERAL_WARD].map(unit => (
                     <label
                       key={unit}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${
-                        selectedDashboards.includes(unit)
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${selectedDashboards.includes(unit)
                           ? 'bg-medical-teal text-white shadow-md'
                           : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600'
-                      }`}
+                        }`}
                     >
                       <input
                         type="checkbox"
@@ -1403,10 +1872,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                       <div className="flex-1 text-sm font-medium">
                         {unit === Unit.PICU ? 'PICU' :
-                         unit === Unit.NICU ? 'NICU' :
-                         unit === Unit.SNCU ? 'SNCU' :
-                         unit === Unit.HDU ? 'HDU' :
-                         'Ward'}
+                          unit === Unit.NICU ? 'NICU' :
+                            unit === Unit.SNCU ? 'SNCU' :
+                              unit === Unit.HDU ? 'HDU' :
+                                'Ward'}
                       </div>
                       {selectedDashboards.includes(unit) && (
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

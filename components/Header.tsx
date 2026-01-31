@@ -44,7 +44,7 @@ const Header: React.FC<HeaderProps> = ({ userRole, onLogout, collegeName, onShow
             </div>
           </div>
           <div className="hidden md:block text-xs text-slate-600 border-l border-slate-300 pl-3">
-            PICU/NICU Medical Records
+            Advanced Healthcare Analytics
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">

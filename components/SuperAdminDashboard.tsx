@@ -5,6 +5,7 @@ import { Institution, UserRole, Unit } from '../types';
 import { INSTITUTION_TYPES } from '../constants';
 import AdmissionIndicationsManager from './AdmissionIndicationsManager';
 import MedicationManagementPanel from './MedicationManagementPanel';
+import OfficialsManagement from './OfficialsManagement';
 import PremiumStatCard from './superadmin/PremiumStatCard';
 import SystemHealthPanel from './superadmin/SystemHealthPanel';
 import AIInsightsPanel from './superadmin/AIInsightsPanel';
@@ -32,7 +33,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [initLoading, setInitLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'institutions' | 'analytics' | 'indications' | 'medications' | 'passwordReset' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'institutions' | 'analytics' | 'indications' | 'medications' | 'officials' | 'passwordReset' | 'settings'>('overview');
   const [showMedicationPanel, setShowMedicationPanel] = useState(false);
   const [selectedInstitution, setSelectedInstitution] = useState<string | 'all'>('all');
   const [patients, setPatients] = useState<any[]>([]);
@@ -555,7 +556,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
           newAdminEmail.trim().toLowerCase(),
           finalPassword,
           newAdminRoles[0] === UserRole.Doctor ? 'Doctor' :
-          newAdminRoles[0] === UserRole.Nurse ? 'Nurse' : 'Staff'
+            newAdminRoles[0] === UserRole.Nurse ? 'Nurse' : 'Staff'
         );
         console.log('✅ Firebase Auth account created for user');
       } catch (authError: any) {
@@ -572,7 +573,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
           email: newAdminEmail.trim().toLowerCase(),
           phoneNumber: newAdminPhone.trim(), // Add phone number for OTP login
           displayName: newAdminRoles[0] === UserRole.Doctor ? 'Doctor' :
-                       newAdminRoles[0] === UserRole.Nurse ? 'Nurse' : 'Staff',
+            newAdminRoles[0] === UserRole.Nurse ? 'Nurse' : 'Staff',
           role: role,
           institutionId: managingUsersFor.id,
           institutionName: managingUsersFor.name,
@@ -590,12 +591,12 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
       // Show credentials modal
       setCreatedUserCredentials({
         userName: newAdminRoles[0] === UserRole.Doctor ? 'Doctor' :
-                  newAdminRoles[0] === UserRole.Nurse ? 'Nurse' : 'Staff',
+          newAdminRoles[0] === UserRole.Nurse ? 'Nurse' : 'Staff',
         userEmail: newAdminEmail.trim().toLowerCase(),
         userID: finalUserID,
         password: finalPassword,
         userType: newAdminRoles[0] === UserRole.Doctor ? 'Doctor' :
-                  newAdminRoles[0] === UserRole.Nurse ? 'Nurse' : 'Admin'
+          newAdminRoles[0] === UserRole.Nurse ? 'Nurse' : 'Admin'
       });
       setShowCredentialsModal(true);
 
@@ -968,6 +969,20 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
               </svg>
               Medications
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('officials')}
+            className={`px-6 py-3 font-semibold transition-colors border-b-2 whitespace-nowrap ${activeTab === 'officials'
+              ? 'border-sky-500 text-sky-600 dark:text-sky-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              Officials
             </div>
           </button>
           <button
@@ -1355,12 +1370,12 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                     )}
                   </div>
 
-                  <div>
-                    <label className="block text-slate-700 dark:text-slate-300 font-medium mb-2">
+                  <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg border-2 border-slate-200 dark:border-slate-600">
+                    <label className="block text-slate-900 dark:text-white font-bold mb-3">
                       Admin Roles *
                     </label>
                     <div className="space-y-3">
-                      <div className="flex items-center">
+                      <div className="flex items-center p-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-blue-400 transition-colors">
                         <input
                           type="checkbox"
                           id="admin-role-admin"
@@ -1375,14 +1390,15 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                               }
                             }
                           }}
-                          className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
+                          className="w-5 h-5 text-blue-600 bg-white border-2 border-slate-400 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
                           disabled={true} // Always checked, cannot be unchecked
                         />
-                        <label htmlFor="admin-role-admin" className="ml-2 text-slate-700 dark:text-slate-300">
-                          <span className="font-medium">Admin</span> - Can manage users and access all data
+                        <label htmlFor="admin-role-admin" className="ml-3 text-slate-800 dark:text-slate-100 cursor-pointer flex-1">
+                          <span className="font-bold text-blue-700 dark:text-blue-400">Admin</span>
+                          <span className="text-slate-600 dark:text-slate-300"> - Can manage users and access all data</span>
                         </label>
                       </div>
-                      <div className="flex items-center">
+                      <div className="flex items-center p-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-green-400 transition-colors">
                         <input
                           type="checkbox"
                           id="admin-role-doctor"
@@ -1394,13 +1410,14 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                               setNewAdminRoles(prev => prev.filter(role => role !== UserRole.Doctor));
                             }
                           }}
-                          className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
+                          className="w-5 h-5 text-green-600 bg-white border-2 border-slate-400 rounded focus:ring-green-500 focus:ring-2 cursor-pointer"
                         />
-                        <label htmlFor="admin-role-doctor" className="ml-2 text-slate-700 dark:text-slate-300">
-                          <span className="font-medium">Doctor</span> - Can add/edit patient records and view all data
+                        <label htmlFor="admin-role-doctor" className="ml-3 text-slate-800 dark:text-slate-100 cursor-pointer flex-1">
+                          <span className="font-bold text-green-700 dark:text-green-400">Doctor</span>
+                          <span className="text-slate-600 dark:text-slate-300"> - Can add/edit patient records and view all data</span>
                         </label>
                       </div>
-                      <div className="flex items-center">
+                      <div className="flex items-center p-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-purple-400 transition-colors">
                         <input
                           type="checkbox"
                           id="admin-role-nurse"
@@ -1412,14 +1429,15 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                               setNewAdminRoles(prev => prev.filter(role => role !== UserRole.Nurse));
                             }
                           }}
-                          className="w-4 h-4 text-sky-600 bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-600 rounded focus:ring-blue-400 focus:ring-2"
+                          className="w-5 h-5 text-purple-600 bg-white border-2 border-slate-400 rounded focus:ring-purple-500 focus:ring-2 cursor-pointer"
                         />
-                        <label htmlFor="admin-role-nurse" className="ml-2 text-slate-700 dark:text-slate-300">
-                          <span className="font-medium">Nurse</span> - Can add patient drafts and view records
+                        <label htmlFor="admin-role-nurse" className="ml-3 text-slate-800 dark:text-slate-100 cursor-pointer flex-1">
+                          <span className="font-bold text-purple-700 dark:text-purple-400">Nurse</span>
+                          <span className="text-slate-600 dark:text-slate-300"> - Can add patient drafts and view records</span>
                         </label>
                       </div>
                     </div>
-                    <p className="mt-2 text-sm text-yellow-400 font-medium">
+                    <p className="mt-3 text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 p-2 rounded-lg font-medium">
                       ⚠️ Important: Admin-only users cannot add/edit patients. Check Doctor or Nurse to enable patient management.
                     </p>
                   </div>
@@ -1556,7 +1574,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                                   </p>
                                   <p>
                                     {institution.district && institution.state ? `${institution.district}, ${institution.state}` :
-                                     institution.district || institution.state || ''}
+                                      institution.district || institution.state || ''}
                                   </p>
                                   {institution.institutionType && (
                                     <p className="mt-1 text-sky-600 dark:text-sky-400 font-semibold">
@@ -1881,20 +1899,18 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                         {passwordResetRequests
                           .filter(r => r.status !== 'pending')
                           .map(request => (
-                            <div key={request.id} className={`border-2 rounded-xl p-4 ${
-                              request.status === 'approved'
+                            <div key={request.id} className={`border-2 rounded-xl p-4 ${request.status === 'approved'
                                 ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
                                 : 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
-                            }`}>
+                              }`}>
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-3 mb-2">
                                     <h4 className="font-bold text-slate-900 dark:text-white">
                                       {request.userName || request.institutionName}
                                     </h4>
-                                    <span className={`text-white text-xs font-bold px-2 py-1 rounded ${
-                                      request.status === 'approved' ? 'bg-green-600' : 'bg-red-600'
-                                    }`}>
+                                    <span className={`text-white text-xs font-bold px-2 py-1 rounded ${request.status === 'approved' ? 'bg-green-600' : 'bg-red-600'
+                                      }`}>
                                       {request.status.toUpperCase()}
                                     </span>
                                     {request.userRole && (
@@ -1942,6 +1958,11 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
               )}
             </div>
           </div>
+        )}
+
+        {/* Officials Tab */}
+        {activeTab === 'officials' && (
+          <OfficialsManagement userEmail={userEmail} institutions={institutions} />
         )}
 
         {/* Settings Tab */}
@@ -2103,11 +2124,10 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                     {[Unit.PICU, Unit.NICU, Unit.SNCU, Unit.HDU, Unit.GENERAL_WARD].map(unit => (
                       <label
                         key={unit}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${
-                          selectedDashboards.includes(unit)
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${selectedDashboards.includes(unit)
                             ? 'bg-medical-teal text-white shadow-md'
                             : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600'
-                        }`}
+                          }`}
                       >
                         <input
                           type="checkbox"
@@ -2123,10 +2143,10 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                         />
                         <div className="flex-1 text-sm font-medium">
                           {unit === Unit.PICU ? 'PICU' :
-                           unit === Unit.NICU ? 'NICU' :
-                           unit === Unit.SNCU ? 'SNCU' :
-                           unit === Unit.HDU ? 'HDU' :
-                           'Ward'}
+                            unit === Unit.NICU ? 'NICU' :
+                              unit === Unit.SNCU ? 'SNCU' :
+                                unit === Unit.HDU ? 'HDU' :
+                                  'Ward'}
                         </div>
                         {selectedDashboards.includes(unit) && (
                           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

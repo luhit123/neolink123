@@ -205,7 +205,7 @@ export function useDashboardData(options: UseDashboardDataOptions): UseDashboard
       inProgress: patients.filter(isInProgress).length,
       discharged: patients.filter(p => p.outcome === 'Discharged').length,
       deceased: patients.filter(p => p.outcome === 'Deceased').length,
-      referred: patients.filter(p => p.outcome === 'Referred Out').length,
+      referred: patients.filter(p => p.outcome === 'Referred').length,
       stepDown: patients.filter(p => p.outcome === 'Step Down').length,
       todayAdmissions,
       weekAdmissions,

@@ -296,7 +296,7 @@ export function usePatientStats(institutionId: string) {
         inProgress: patients.filter(p => !p.outcome || p.outcome === '' || p.outcome === 'In Progress').length,
         discharged: patients.filter(p => p.outcome === 'Discharged').length,
         deceased: patients.filter(p => p.outcome === 'Deceased').length,
-        referred: patients.filter(p => p.outcome === 'Referred Out').length,
+        referred: patients.filter(p => p.outcome === 'Referred').length,
         stepDown: patients.filter(p => p.outcome === 'Step Down').length,
         byUnit,
         loading: false

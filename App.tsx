@@ -7,7 +7,7 @@ import { handleRedirectResult } from './services/authService';
 import ErrorBoundary from './components/core/ErrorBoundary';
 import Login from './components/Login';
 import Header from './components/Header';
-import { UserRole, UserProfile, Patient, Unit, InstitutionUser } from './types';
+import { UserRole, UserProfile, Patient, Unit, InstitutionUser, Official } from './types';
 import { animations } from './theme/material3Theme';
 import SharedBottomNav from './components/SharedBottomNav';
 import { ChatProvider } from './contexts/ChatContext';
@@ -21,8 +21,12 @@ const Dashboard = lazy(() => import('./components/Dashboard'));
 const SuperAdminDashboard = lazy(() => import('./components/SuperAdminDashboardEnhanced'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const DistrictAdminDashboard = lazy(() => import('./components/DistrictAdminDashboard'));
+const OfficialDashboard = lazy(() => import('./components/OfficialDashboard'));
 const ReferralManagementPage = lazy(() => import('./components/ReferralManagementPage'));
 const PatientForm = lazy(() => import('./components/PatientForm'));
+const AnalyticsPage = lazy(() => import('./components/AnalyticsPage'));
+const AIReportsPage = lazy(() => import('./components/AIReportsPage'));
+const PasswordSetup = lazy(() => import('./components/PasswordSetup'));
 
 // Module-level flag to ensure redirect is handled only once per page load
 let redirectHandled = false;
@@ -68,16 +72,25 @@ function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [institutionUserData, setInstitutionUserData] = useState<InstitutionUser | null>(null); // Full user data with allowedDashboards
+  const [officialData, setOfficialData] = useState<Official | null>(null); // For Official role
   const [loading, setLoading] = useState(true);
   const [redirectChecked, setRedirectChecked] = useState(false);
   const [showSuperAdminPanel, setShowSuperAdminPanel] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showReferralManagement, setShowReferralManagement] = useState(false);
   const [showAddPatientPage, setShowAddPatientPage] = useState(false);
+  const [showAnalyticsPage, setShowAnalyticsPage] = useState(false);
+  const [showAIReportsPage, setShowAIReportsPage] = useState(false);
   const [patientToEdit, setPatientToEdit] = useState<any>(null);
   const [defaultUnitForAdd, setDefaultUnitForAdd] = useState<Unit | undefined>(undefined);
+  const [dashboardSelectedUnit, setDashboardSelectedUnit] = useState<Unit>(Unit.NICU);
+  const [dashboardEnabledFacilities, setDashboardEnabledFacilities] = useState<Unit[]>([Unit.NICU, Unit.PICU]);
   const [accessDenied, setAccessDenied] = useState(false);
   const [accessMessage, setAccessMessage] = useState('');
+  const [accessRequestSent, setAccessRequestSent] = useState(false);
+  const [requestingAccess, setRequestingAccess] = useState(false);
+  const [requestName, setRequestName] = useState('');
+  const [requestRole, setRequestRole] = useState('Doctor');
   const [superAdminViewingInstitution, setSuperAdminViewingInstitution] = useState<{
     institutionId: string;
     institutionName: string;
@@ -99,6 +112,8 @@ function App() {
     showAdminPanel,
     showReferralManagement,
     showAddPatientPage,
+    showAnalyticsPage,
+    showAIReportsPage,
     superAdminViewingInstitution,
     districtAdminViewingInstitution,
     showPatientList,
@@ -111,11 +126,13 @@ function App() {
       showAdminPanel,
       showReferralManagement,
       showAddPatientPage,
+      showAnalyticsPage,
+      showAIReportsPage,
       superAdminViewingInstitution,
       districtAdminViewingInstitution,
       showPatientList
     };
-  }, [showSuperAdminPanel, showAdminPanel, showReferralManagement, showAddPatientPage, superAdminViewingInstitution, districtAdminViewingInstitution, showPatientList]);
+  }, [showSuperAdminPanel, showAdminPanel, showReferralManagement, showAddPatientPage, showAnalyticsPage, showAIReportsPage, superAdminViewingInstitution, districtAdminViewingInstitution, showPatientList]);
 
   // Load institution doctors when user profile is available
   useEffect(() => {
@@ -127,7 +144,6 @@ function App() {
             const data = institutionDoc.data();
             if (data.doctors && Array.isArray(data.doctors)) {
               setInstitutionDoctors(data.doctors);
-              console.log('✅ Loaded institution doctors:', data.doctors.length);
             }
           }
         } catch (error) {
@@ -137,6 +153,21 @@ function App() {
     };
     loadDoctors();
   }, [userProfile?.institutionId]);
+
+  // Access control for AI Reports page
+  // Allow Admin, Doctor, Nurse, and SuperAdmin roles
+  useEffect(() => {
+    if (showAIReportsPage && userProfile) {
+      const canAccess = userProfile.role === UserRole.Admin ||
+        userProfile.role === UserRole.Doctor ||
+        userProfile.role === UserRole.Nurse ||
+        userProfile.role === UserRole.SuperAdmin;
+      if (!canAccess) {
+        console.log('🚫 Access denied to AI Reports for role:', userProfile.role);
+        setShowAIReportsPage(false);
+      }
+    }
+  }, [showAIReportsPage, userProfile]);
 
   // Smart back navigation
   useEffect(() => {
@@ -161,6 +192,18 @@ function App() {
         setShowAddPatientPage(false);
         setPatientToEdit(null);
         // Restore the 'app' state so the back button is "reset"
+        window.history.pushState({ page: 'app' }, '', window.location.pathname);
+        return;
+      }
+
+      if (state.showAnalyticsPage) {
+        setShowAnalyticsPage(false);
+        window.history.pushState({ page: 'app' }, '', window.location.pathname);
+        return;
+      }
+
+      if (state.showAIReportsPage) {
+        setShowAIReportsPage(false);
         window.history.pushState({ page: 'app' }, '', window.location.pathname);
         return;
       }
@@ -226,7 +269,7 @@ function App() {
 
   // Track if we're on the main dashboard (for rendering conditional UI if needed)
   const isOnMainPage = !showSuperAdminPanel && !showAdminPanel && !showReferralManagement &&
-    !showAddPatientPage && !superAdminViewingInstitution && !districtAdminViewingInstitution;
+    !showAddPatientPage && !showAnalyticsPage && !showAIReportsPage && !superAdminViewingInstitution && !districtAdminViewingInstitution;
 
   // Combined auth initialization effect
   // IMPORTANT: Set up onAuthStateChanged BEFORE checking redirect result
@@ -496,6 +539,54 @@ function App() {
         return;
       }
 
+      // Step 2.5: Check officials collection for Official role
+      const officialSnapshot = await getDocs(
+        query(
+          collection(db, 'officials'),
+          where('email', '==', firebaseUser.email?.toLowerCase())
+        )
+      );
+
+      const officialDoc = officialSnapshot.docs.find(d => d.data().enabled !== false);
+      if (officialDoc) {
+        const officialDocData = officialDoc.data();
+        const profile: UserProfile = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          displayName: officialDocData.displayName || 'Official',
+          role: UserRole.Official,
+          createdAt: officialDocData.addedAt || new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+          allRoles: [UserRole.Official]
+        };
+        setUserProfile(profile);
+        setOfficialData({
+          ...officialDocData,
+          id: officialDoc.id
+        } as Official);
+        setAccessDenied(false);
+        console.log('✅ Official login - showing Official dashboard');
+
+        // Update users collection with Official role
+        setDoc(doc(db, 'users', firebaseUser.uid), {
+          ...profile,
+          role: UserRole.Official,
+          designation: officialDocData.designation,
+          department: officialDocData.department,
+          canViewAllInstitutions: officialDocData.canViewAllInstitutions,
+          assignedInstitutionIds: officialDocData.assignedInstitutionIds,
+          lastLoginAt: new Date().toISOString()
+        }, { merge: true });
+
+        // Update lastLoginAt in officials collection
+        updateDoc(doc(db, 'officials', officialDoc.id), {
+          lastLoginAt: new Date().toISOString()
+        });
+
+        setLoading(false);
+        return;
+      }
+
       // Step 3: Check approved_users for institution access (SuperAdmin not checked here)
 
       // Check if user found
@@ -648,24 +739,28 @@ function App() {
     if (tab === 'home') {
       setShowReferralManagement(false);
       setShowAddPatientPage(false);
+      setShowAnalyticsPage(false);
       setShowPatientList(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else if (tab === 'patients') {
       setShowReferralManagement(false);
       setShowAddPatientPage(false);
+      setShowAnalyticsPage(false);
       setShowPatientList(true);
       // Push history state for back button
       window.history.pushState({ page: 'patientList' }, '', window.location.pathname);
     } else if (tab === 'analytics') {
+      // Navigate to dedicated analytics page
       setShowReferralManagement(false);
       setShowAddPatientPage(false);
       setShowPatientList(false);
-      // Trigger scroll in dashboard
-      setTimeout(() => setTriggerAnalyticsScroll(prev => prev + 1), 100);
+      setShowAnalyticsPage(true);
+      window.history.pushState({ page: 'analytics' }, '', window.location.pathname);
     } else if (tab === 'more') {
       console.log('🔘 App: More tab clicked calling setTriggerQuickActions');
       setShowReferralManagement(false);
       setShowAddPatientPage(false);
+      setShowAnalyticsPage(false);
       setShowPatientList(false);
       // Trigger quick actions in dashboard
       setTimeout(() => {
@@ -698,9 +793,10 @@ function App() {
       await auth.signOut();
       setUser(null);
       setUserProfile(null);
+      setInstitutionUserData(null);
+      setOfficialData(null);
       setShowSuperAdminPanel(false);
       setShowAdminPanel(false);
-      setAccessDenied(false);
       setAccessDenied(false);
       setSuperAdminViewingInstitution(null);
       setDistrictAdminViewingInstitution(null);
@@ -727,44 +823,178 @@ function App() {
     );
   }
 
+  // Check for password setup page (accessible without login)
+  if (window.location.pathname === '/setup-password') {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-slate-900 flex items-center justify-center"><div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div></div>}>
+        <PasswordSetup />
+      </Suspense>
+    );
+  }
+
   // Not logged in (only show after redirect check is complete)
   if (!user) {
     return <Login initialError={authError} />;
   }
 
-  // Access denied
+  // Handle access request submission
+  const handleRequestAccess = async () => {
+    const nameToUse = requestName || user?.displayName || '';
+    if (!user?.email || !nameToUse) return;
+
+    setRequestingAccess(true);
+    try {
+      // Store access request in Firestore
+      const requestRef = doc(collection(db, 'pending_access_requests'));
+      await setDoc(requestRef, {
+        email: user.email.toLowerCase(),
+        displayName: nameToUse,
+        requestedRole: requestRole,
+        uid: user.uid,
+        status: 'pending',
+        requestedAt: new Date().toISOString(),
+        photoURL: user.photoURL || null
+      });
+      setAccessRequestSent(true);
+      console.log('✅ Access request submitted');
+    } catch (error) {
+      console.error('Error submitting access request:', error);
+      alert('Failed to submit request. Please try again.');
+    } finally {
+      setRequestingAccess(false);
+    }
+  };
+
+  // Access denied - improved UI with request access functionality
   if (accessDenied) {
     return (
-      <div className="bg-sky-100 min-h-screen flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md border border-red-200">
-          <div className="flex justify-center mb-6">
-            <div className="bg-red-500/10 p-4 rounded-full">
-              <svg className="w-16 h-16 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-          </div>
+      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 min-h-screen flex items-center justify-center p-4">
+        <div className="bg-slate-800 rounded-2xl shadow-2xl p-8 max-w-md w-full border border-slate-700">
+          {!accessRequestSent ? (
+            <>
+              <div className="flex justify-center mb-6">
+                <div className="bg-amber-500/20 p-4 rounded-full">
+                  <svg className="w-16 h-16 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+              </div>
 
-          <h1 className="text-2xl font-bold text-white text-center mb-4">
-            Access Denied
-          </h1>
+              <h1 className="text-2xl font-bold text-white text-center mb-2">
+                Access Required
+              </h1>
+              <p className="text-slate-400 text-center text-sm mb-6">
+                Your account needs to be approved by an administrator
+              </p>
 
-          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 mb-6">
-            <p className="text-red-300 text-sm whitespace-pre-line">{accessMessage}</p>
-          </div>
+              <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-4 mb-6">
+                <div className="flex items-center gap-3">
+                  {user?.photoURL ? (
+                    <img src={user.photoURL} alt="" className="w-10 h-10 rounded-full" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center">
+                      <span className="text-white font-bold">{user?.email?.[0]?.toUpperCase()}</span>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-white font-medium">{user?.displayName || 'User'}</p>
+                    <p className="text-slate-400 text-sm">{user?.email}</p>
+                  </div>
+                </div>
+              </div>
 
-          <div className="space-y-3">
-            <button
-              onClick={handleLogout}
-              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-4 rounded-lg transition-colors border border-slate-200"
-            >
-              Sign Out
-            </button>
-          </div>
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="text-slate-300 text-sm block mb-2">Your Name</label>
+                  <input
+                    type="text"
+                    value={requestName || user?.displayName || ''}
+                    onChange={(e) => setRequestName(e.target.value)}
+                    placeholder="Enter your full name"
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-300 text-sm block mb-2">Your Role</label>
+                  <select
+                    value={requestRole}
+                    onChange={(e) => setRequestRole(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-sky-500"
+                  >
+                    <option value="Doctor">Doctor</option>
+                    <option value="Nurse">Nurse</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </div>
+              </div>
 
-          <div className="mt-6 text-center text-slate-400 text-xs">
-            <p>Logged in as: <span className="text-cyan-400">{user.email}</span></p>
-          </div>
+              <div className="space-y-3">
+                <button
+                  onClick={handleRequestAccess}
+                  disabled={requestingAccess || (!requestName && !user?.displayName)}
+                  className="w-full bg-sky-600 hover:bg-sky-700 disabled:bg-slate-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {requestingAccess ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Request Access
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 font-semibold py-3 px-4 rounded-lg transition-colors border border-slate-600"
+                >
+                  Sign Out & Use Different Account
+                </button>
+              </div>
+
+              <p className="mt-6 text-center text-slate-500 text-xs">
+                Your request will be sent to the system administrator for approval.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-center mb-6">
+                <div className="bg-green-500/20 p-4 rounded-full">
+                  <svg className="w-16 h-16 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+
+              <h1 className="text-2xl font-bold text-white text-center mb-2">
+                Request Submitted!
+              </h1>
+              <p className="text-slate-400 text-center text-sm mb-6">
+                Your access request has been sent to the administrator.
+              </p>
+
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-6">
+                <p className="text-green-300 text-sm text-center">
+                  You will receive access once your request is approved. Please check back later.
+                </p>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+              >
+                Sign Out
+              </button>
+
+              <p className="mt-6 text-center text-slate-500 text-xs">
+                Requested as: <span className="text-sky-400">{user?.email}</span>
+              </p>
+            </>
+          )}
         </div>
       </div>
     );
@@ -880,6 +1110,26 @@ function App() {
     );
   }
 
+  // Show Official Dashboard (view-only access to institutions)
+  if (userProfile.role === UserRole.Official && officialData) {
+    return (
+      <Suspense fallback={
+        <div className="bg-slate-100 dark:bg-slate-900 min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+            <p className="text-slate-600 dark:text-slate-400 text-lg">Loading Official Dashboard...</p>
+          </div>
+        </div>
+      }>
+        <OfficialDashboard
+          official={officialData}
+          userEmail={user.email!}
+          onLogout={handleLogout}
+        />
+      </Suspense>
+    );
+  }
+
   // Show District Admin viewing specific Institution
   if (districtAdminViewingInstitution && userProfile.role === UserRole.DistrictAdmin) {
     return (
@@ -926,6 +1176,7 @@ function App() {
                 showPatientList={showPatientList}
                 setShowPatientList={setShowPatientList}
                 doctors={institutionDoctors}
+                onShowReferrals={() => setShowReferralManagement(true)}
               />
             </Suspense>
           </div>
@@ -1000,162 +1251,225 @@ function App() {
     );
   }
 
-  // Show Add/Edit Patient Page
+  // Show Analytics Page - Full dedicated analytics view (lazy loaded with its own data fetching)
+  if (showAnalyticsPage && userProfile.institutionId) {
+    return (
+      <div className="min-h-screen bg-sky-100 text-slate-900">
+        <Suspense fallback={
+          <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <p className="text-slate-600 text-lg">Loading Analytics...</p>
+            </div>
+          </div>
+        }>
+          <AnalyticsPage
+            institutionId={userProfile.institutionId}
+            selectedUnit={dashboardSelectedUnit}
+            onSelectUnit={setDashboardSelectedUnit}
+            enabledFacilities={dashboardEnabledFacilities}
+            onBack={() => {
+              setShowAnalyticsPage(false);
+              window.history.back();
+            }}
+            institutionName={userProfile.institutionName}
+          />
+        </Suspense>
+      </div>
+    );
+  }
+
+  // Show AI Reports Page - Full dedicated AI reports view
+  // Admin, Doctor, Nurse, and SuperAdmin roles can access AI Reports
+  const canAccessAIReports = userProfile.role === UserRole.Admin ||
+    userProfile.role === UserRole.Doctor ||
+    userProfile.role === UserRole.Nurse ||
+    userProfile.role === UserRole.SuperAdmin;
+
+  if (showAIReportsPage && userProfile.institutionId && canAccessAIReports) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white">
+        <Suspense fallback={
+          <div className="bg-slate-900 min-h-screen flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <p className="text-slate-400 text-lg">Loading AI Reports...</p>
+            </div>
+          </div>
+        }>
+          <AIReportsPage
+            institutionId={userProfile.institutionId}
+            institutionName={userProfile.institutionName}
+            selectedUnit={dashboardSelectedUnit}
+            onSelectUnit={setDashboardSelectedUnit}
+            enabledFacilities={dashboardEnabledFacilities}
+            onBack={() => {
+              setShowAIReportsPage(false);
+              window.history.back();
+            }}
+          />
+        </Suspense>
+      </div>
+    );
+  }
+
+  // Show Add/Edit Patient Page - Full screen without app header for maximum space
   if (showAddPatientPage && userProfile.institutionId) {
     return (
-      <div className="min-h-screen bg-slate-900">
-        <Header
-          userRole={UserRole.Doctor} // Default to Doctor role for adding patients usually, or use userProfile.role
-          onLogout={handleLogout}
-          collegeName={userProfile.institutionName}
+      <Suspense fallback={
+        <div className="bg-slate-100 h-screen flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-slate-600 text-lg">Loading Patient Form...</p>
+          </div>
+        </div>
+      }>
+        <PatientForm
+          patientToEdit={patientToEdit}
+          onSave={async (patientData: Patient) => {
+            try {
+              console.log('💾 Saving patient from Add Patient page...');
+
+              // Clean the data: remove undefined values and ensure progress notes is always an array
+              const cleanedData = {
+                ...patientData,
+                progressNotes: patientData.progressNotes || [],
+              };
+
+              // Remove undefined fields to prevent Firestore errors
+              const sanitizedData = JSON.parse(JSON.stringify(cleanedData, (key, value) => {
+                return value === undefined ? null : value;
+              }));
+
+              if (patientToEdit) {
+                // Update existing patient
+                const patientRef = doc(db, 'patients', patientToEdit.id);
+                await updateDoc(patientRef, sanitizedData);
+                console.log('✅ Patient updated successfully:', patientData.id);
+              } else {
+                // Add new patient
+                const patientsRef = collection(db, 'patients');
+                const docRef = await addDoc(patientsRef, sanitizedData);
+                console.log('✅ Patient added successfully:', docRef.id);
+              }
+
+              // Close the page after successful save
+              setShowAddPatientPage(false);
+              setPatientToEdit(null);
+              alert('Patient saved successfully!');
+            } catch (error: any) {
+              console.error('❌ Error saving patient:', error);
+              alert('Failed to save patient: ' + error.message);
+            }
+          }}
+          onClose={() => {
+            setShowAddPatientPage(false);
+            setPatientToEdit(null);
+            setDefaultUnitForAdd(undefined);
+          }}
+          userRole={userProfile.role}
+          defaultUnit={defaultUnitForAdd}
+          institutionId={userProfile.institutionId}
+          institutionName={userProfile.institutionName || ''}
+          userEmail={user.email || ''}
+          userName={userProfile.displayName}
+          availableUnits={undefined}
+          doctors={institutionDoctors}
         />
-        <main>
-          <Suspense fallback={
-            <div className="bg-slate-900 min-h-screen flex items-center justify-center">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                <p className="text-slate-300 text-lg">Loading Patient Form...</p>
-              </div>
-            </div>
-          }>
-            <PatientForm
-              patientToEdit={patientToEdit}
-              onSave={async (patientData: Patient) => {
-                try {
-                  console.log('💾 Saving patient from Add Patient page...');
-
-                  // Clean the data: remove undefined values and ensure progress notes is always an array
-                  const cleanedData = {
-                    ...patientData,
-                    progressNotes: patientData.progressNotes || [],
-                  };
-
-                  // Remove undefined fields to prevent Firestore errors
-                  const sanitizedData = JSON.parse(JSON.stringify(cleanedData, (key, value) => {
-                    return value === undefined ? null : value;
-                  }));
-
-                  if (patientToEdit) {
-                    // Update existing patient
-                    const patientRef = doc(db, 'patients', patientToEdit.id);
-                    await updateDoc(patientRef, sanitizedData);
-                    console.log('✅ Patient updated successfully:', patientData.id);
-                  } else {
-                    // Add new patient
-                    const patientsRef = collection(db, 'patients');
-                    const docRef = await addDoc(patientsRef, sanitizedData);
-                    console.log('✅ Patient added successfully:', docRef.id);
-                  }
-
-                  // Close the page after successful save
-                  setShowAddPatientPage(false);
-                  setPatientToEdit(null);
-                  alert('Patient saved successfully!');
-                } catch (error: any) {
-                  console.error('❌ Error saving patient:', error);
-                  alert('Failed to save patient: ' + error.message);
-                }
-              }}
-              onClose={() => {
-                setShowAddPatientPage(false);
-                setPatientToEdit(null);
-                setDefaultUnitForAdd(undefined);
-              }}
-              userRole={userProfile.role}
-              defaultUnit={defaultUnitForAdd}
-              institutionId={userProfile.institutionId}
-              institutionName={userProfile.institutionName || ''}
-              userEmail={user.email || ''}
-              userName={userProfile.displayName}
-              availableUnits={undefined}
-              doctors={institutionDoctors}
-            />
-          </Suspense>
-        </main>
-      </div>
+      </Suspense>
     );
   }
 
   // Main Application - Wrapped with QueryProvider, ErrorBoundary and MotionConfig
   return (
     <QueryProvider>
-    <BackgroundSaveProvider>
-    <ChatProvider>
-      {/* Auto-update prompt for instant updates */}
-      <AutoUpdatePrompt />
+      <BackgroundSaveProvider>
+        <ChatProvider>
+          {/* Auto-update prompt for instant updates */}
+          <AutoUpdatePrompt />
 
-      {/* Background save indicator for clinical notes */}
-      <BackgroundSaveIndicator />
+          {/* Background save indicator for clinical notes */}
+          <BackgroundSaveIndicator />
 
-      <ErrorBoundary>
-        <MotionConfig
-          transition={{
-            type: 'spring',
-            stiffness: 300,
-            damping: 30,
-          }}
-          reducedMotion="user"
-        >
-          <div className="min-h-screen bg-sky-100 text-slate-900 no-double-tap-zoom">
-            <Header
-              userRole={userProfile.role}
-              onLogout={handleLogout}
-              collegeName={userProfile.institutionName}
-              onShowReferrals={() => setShowReferralManagement(true)}
-            />
-
-            <main>
-              <div className="container mx-auto p-4 sm:p-6">
-                <Suspense fallback={
-                  <div className="flex items-center justify-center min-h-[400px]">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
-                      <p className="text-slate-600 text-lg">Loading Dashboard...</p>
-                    </div>
-                  </div>
-                }>
-                  <Dashboard
-                    userRole={userProfile.role}
-                    institutionId={userProfile.institutionId}
-                    institutionName={userProfile.institutionName}
-                    userEmail={user.email || ''}
-                    displayName={institutionUserData?.displayName || userProfile.displayName}
-                    allowedDashboards={institutionUserData?.allowedDashboards}
-                    allRoles={userProfile.allRoles}
-                    setShowSuperAdminPanel={setShowSuperAdminPanel}
-                    setShowAdminPanel={setShowAdminPanel}
-                    onShowReferrals={() => setShowReferralManagement(true)}
-                    onShowAddPatient={(patient: any, unit?: Unit) => {
-                      setPatientToEdit(patient || null);
-                      setDefaultUnitForAdd(unit);
-                      setShowAddPatientPage(true);
-                    }}
-                    showPatientList={showPatientList}
-                    setShowPatientList={setShowPatientList}
-                    triggerAnalyticsScroll={triggerAnalyticsScroll}
-                    triggerQuickActions={triggerQuickActions}
-                    doctors={institutionDoctors}
-                  />
-                </Suspense>
-              </div>
-            </main>
-
-            <SharedBottomNav
-              activeTab={showPatientList ? 'patients' : 'home'}
-              onTabChange={handleBottomNavAction}
-              onAddPatient={() => {
-                // Add button removed from bar per user request, but handler kept if we re-enable
-                setPatientToEdit(null);
-                setDefaultUnitForAdd(undefined);
-                setShowAddPatientPage(true);
+          <ErrorBoundary>
+            <MotionConfig
+              transition={{
+                type: 'spring',
+                stiffness: 300,
+                damping: 30,
               }}
-              showAddButton={false}
-            />
-          </div>
-        </MotionConfig>
-      </ErrorBoundary>
-    </ChatProvider>
-    </BackgroundSaveProvider>
+              reducedMotion="user"
+            >
+              <div className="min-h-screen bg-sky-100 text-slate-900 no-double-tap-zoom">
+                <Header
+                  userRole={userProfile.role}
+                  onLogout={handleLogout}
+                  collegeName={userProfile.institutionName}
+                  onShowReferrals={() => setShowReferralManagement(true)}
+                />
+
+                <main>
+                  <div className="container mx-auto p-4 sm:p-6">
+                    <Suspense fallback={
+                      <div className="flex items-center justify-center min-h-[400px]">
+                        <div className="text-center">
+                          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
+                          <p className="text-slate-600 text-lg">Loading Dashboard...</p>
+                        </div>
+                      </div>
+                    }>
+                      <Dashboard
+                        userRole={userProfile.role}
+                        institutionId={userProfile.institutionId}
+                        institutionName={userProfile.institutionName}
+                        userEmail={user.email || ''}
+                        displayName={institutionUserData?.displayName || userProfile.displayName}
+                        allowedDashboards={institutionUserData?.allowedDashboards}
+                        allRoles={userProfile.allRoles}
+                        setShowSuperAdminPanel={setShowSuperAdminPanel}
+                        setShowAdminPanel={setShowAdminPanel}
+                        onShowReferrals={() => setShowReferralManagement(true)}
+                        onShowAddPatient={(patient: any, unit?: Unit) => {
+                          setPatientToEdit(patient || null);
+                          setDefaultUnitForAdd(unit);
+                          setShowAddPatientPage(true);
+                        }}
+                        onShowAnalytics={() => {
+                          setShowAnalyticsPage(true);
+                          window.history.pushState({ page: 'analytics' }, '', window.location.pathname);
+                        }}
+                        onShowAIReports={() => {
+                          setShowAIReportsPage(true);
+                          window.history.pushState({ page: 'aiReports' }, '', window.location.pathname);
+                        }}
+                        showPatientList={showPatientList}
+                        setShowPatientList={setShowPatientList}
+                        triggerAnalyticsScroll={triggerAnalyticsScroll}
+                        triggerQuickActions={triggerQuickActions}
+                        doctors={institutionDoctors}
+                        onUnitChange={setDashboardSelectedUnit}
+                        onFacilitiesLoaded={setDashboardEnabledFacilities}
+                      />
+                    </Suspense>
+                  </div>
+                </main>
+
+                <SharedBottomNav
+                  activeTab={showPatientList ? 'patients' : 'home'}
+                  onTabChange={handleBottomNavAction}
+                  onAddPatient={() => {
+                    // Add button removed from bar per user request, but handler kept if we re-enable
+                    setPatientToEdit(null);
+                    setDefaultUnitForAdd(undefined);
+                    setShowAddPatientPage(true);
+                  }}
+                  showAddButton={false}
+                />
+              </div>
+            </MotionConfig>
+          </ErrorBoundary>
+        </ChatProvider>
+      </BackgroundSaveProvider>
     </QueryProvider>
   );
 }

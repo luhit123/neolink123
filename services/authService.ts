@@ -3,16 +3,26 @@ import {
   signInWithRedirect,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInWithCustomToken,
   signOut,
   onAuthStateChanged,
   User,
   updateProfile,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { auth, googleProvider, authReady, pendingRedirectResult } from '../firebaseConfig';
+import { httpsCallable } from 'firebase/functions';
+import { auth, googleProvider, authReady, pendingRedirectResult, functions } from '../firebaseConfig';
 import { saveUserProfile, getUserProfile } from './firestoreService';
 import { UserRole } from '../types';
 import { isPWAMode, isMobileDevice } from '../utils/pwaDetection';
+
+// ============================================================================
+// ENTERPRISE AUTHENTICATION MODE
+// ============================================================================
+// Set to true to use Cloud Functions for secure server-side authentication
+// Set to false for legacy client-side authentication (less secure)
+// ============================================================================
+const USE_ENTERPRISE_AUTH = true; // Enterprise auth with asia-southeast1 region and auto-migration support
 
 // Sign in with Google
 // IMPORTANT: We use POPUP for ALL platforms including mobile/PWA
@@ -116,7 +126,7 @@ export const signInWithEmail = async (email: string, password: string) => {
   } catch (error: any) {
     console.error('Error signing in with email:', error);
     let errorMessage = 'Failed to sign in';
-    
+
     switch (error.code) {
       case 'auth/user-not-found':
         errorMessage = 'No account found with this email';
@@ -133,7 +143,7 @@ export const signInWithEmail = async (email: string, password: string) => {
       default:
         errorMessage = error.message;
     }
-    
+
     throw new Error(errorMessage);
   }
 };
@@ -142,17 +152,17 @@ export const signInWithEmail = async (email: string, password: string) => {
 export const signUpWithEmail = async (email: string, password: string, displayName: string) => {
   try {
     const result = await createUserWithEmailAndPassword(auth, email, password);
-    
+
     // Update display name
     if (result.user) {
       await updateProfile(result.user, { displayName });
     }
-    
+
     return result.user;
   } catch (error: any) {
     console.error('Error signing up:', error);
     let errorMessage = 'Failed to create account';
-    
+
     switch (error.code) {
       case 'auth/email-already-in-use':
         errorMessage = 'An account with this email already exists';
@@ -166,7 +176,7 @@ export const signUpWithEmail = async (email: string, password: string, displayNa
       default:
         errorMessage = error.message;
     }
-    
+
     throw new Error(errorMessage);
   }
 };
@@ -289,112 +299,561 @@ export const sendPasswordResetByUserID = async (userID: string): Promise<string>
   }
 };
 
-// Sign in with UserID/Email and Password (for all users: Institution Admins, Doctors, Nurses)
-export const signInWithUserID = async (userIDOrEmail: string, password: string) => {
+// ============================================================================
+// ENTERPRISE AUTHENTICATION (Cloud Functions - Server-Side)
+// ============================================================================
+// This is the SECURE method using Cloud Functions:
+// - Passwords are NEVER exposed to the client
+// - bcrypt hashing (cost factor 12)
+// - Rate limiting (5 attempts per 15 minutes)
+// - Account lockout (30 minutes after 5 failed attempts)
+// - Comprehensive audit logging
+// - Custom claims for role-based access
+// ============================================================================
+
+interface EnterpriseAuthResult {
+  success: boolean;
+  token?: string;
+  user?: {
+    uid: string;
+    email: string;
+    displayName: string;
+    role: string;
+    institutionId?: string;
+  };
+  error?: string;
+  lockoutUntil?: number;
+  remainingAttempts?: number;
+}
+
+/**
+ * Enterprise Authentication using Cloud Functions
+ * This is the recommended secure authentication method
+ */
+const authenticateWithCloudFunction = async (identifier: string, password: string): Promise<User> => {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('🔐 NeoLink Enterprise Authentication System');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`📝 Secure login via Cloud Function`);
+
+  const startTime = performance.now();
+
   try {
-    // Import here to avoid circular dependency
-    const { db } = await import('../firebaseConfig');
-    const { collection, query, where, getDocs } = await import('firebase/firestore');
+    // Call the secure Cloud Function
+    const authenticateUser = httpsCallable<
+      { identifier: string; password: string },
+      EnterpriseAuthResult
+    >(functions, 'authenticateUser');
 
-    let userEmail = '';
-    const isEmail = userIDOrEmail.includes('@');
+    const result = await authenticateUser({ identifier, password });
+    const authResult = result.data;
 
-    console.log('🔄 Looking up:', isEmail ? 'Email' : 'UserID', userIDOrEmail);
-
-    if (isEmail) {
-      // Input is an email - query by email field directly
-      console.log('🔍 Querying approved_users by email...');
-      const usersRef = collection(db, 'approved_users');
-      const userQuery = query(usersRef, where('email', '==', userIDOrEmail.toLowerCase()));
-      let userSnapshot;
-      try {
-        userSnapshot = await getDocs(userQuery);
-        console.log('✅ approved_users query successful, found:', userSnapshot.size, 'documents');
-      } catch (usersError: any) {
-        console.error('❌ Error querying approved_users:', usersError.code, usersError.message);
-        throw usersError;
+    if (!authResult.success) {
+      // Handle specific error cases
+      if (authResult.lockoutUntil) {
+        const lockoutMinutes = Math.ceil((authResult.lockoutUntil - Date.now()) / 60000);
+        throw new Error(`Account temporarily locked. Try again in ${lockoutMinutes} minutes.`);
       }
 
-      if (userSnapshot.empty) {
-        throw new Error('Invalid email or password');
+      if (authResult.remainingAttempts !== undefined && authResult.remainingAttempts <= 2) {
+        throw new Error(`${authResult.error}. ${authResult.remainingAttempts} attempts remaining.`);
       }
 
-      const user = userSnapshot.docs[0].data();
-      userEmail = user.email;
-
-      // Check if user is enabled
-      if (user.enabled === false) {
-        throw new Error('This account has been disabled. Please contact your administrator.');
-      }
-    } else {
-      // Input is a UserID - query by userID field
-      // First, try to find in institutions collection (for institution admins)
-      console.log('🔍 Querying institutions collection...');
-      const institutionsRef = collection(db, 'institutions');
-      const instQuery = query(institutionsRef, where('userID', '==', userIDOrEmail));
-      let instSnapshot;
-      try {
-        instSnapshot = await getDocs(instQuery);
-        console.log('✅ Institutions query successful, found:', instSnapshot.size, 'documents');
-      } catch (instError: any) {
-        console.error('❌ Error querying institutions:', instError.code, instError.message);
-        throw instError;
-      }
-
-      if (!instSnapshot.empty) {
-        // Found in institutions - this is an institution admin
-        const institution = instSnapshot.docs[0].data();
-        userEmail = institution.adminEmail;
-        console.log('✅ Found institution admin, email:', userEmail);
-      } else {
-        // Not found in institutions, try approved_users collection (for doctors, nurses, etc.)
-        console.log('🔍 Querying approved_users by userID...');
-        const usersRef = collection(db, 'approved_users');
-        const userQuery = query(usersRef, where('userID', '==', userIDOrEmail));
-        let userSnapshot;
-        try {
-          userSnapshot = await getDocs(userQuery);
-          console.log('✅ approved_users query successful, found:', userSnapshot.size, 'documents');
-        } catch (usersError: any) {
-          console.error('❌ Error querying approved_users:', usersError.code, usersError.message);
-          throw usersError;
-        }
-
-        if (userSnapshot.empty) {
-          throw new Error('Invalid UserID or password');
-        }
-
-        // Found in approved_users
-        const user = userSnapshot.docs[0].data();
-        userEmail = user.email;
-
-        // Check if user is enabled
-        if (user.enabled === false) {
-          throw new Error('This account has been disabled. Please contact your administrator.');
-        }
-      }
+      throw new Error(authResult.error || 'Authentication failed');
     }
 
-    // Sign in with Firebase Auth (let Firebase handle password validation)
+    let userCredential;
+
+    // Check if we need to use client-side auth (Firebase Auth REST API verified password)
+    if ((authResult as any).useClientAuth) {
+      // Cloud Function verified the password and set up claims
+      // Now complete sign-in with Firebase Auth client-side
+      console.log('🔄 Completing authentication with Firebase Auth...');
+      const email = authResult.user?.email || identifier;
+      userCredential = await signInWithEmailAndPassword(auth, email, password);
+    } else if (authResult.token) {
+      // Sign in with the custom token returned by Cloud Function
+      userCredential = await signInWithCustomToken(auth, authResult.token);
+    } else {
+      throw new Error('No authentication method available');
+    }
+
+    const totalTime = (performance.now() - startTime).toFixed(2);
+    console.log(`✅ Enterprise login successful in ${totalTime}ms`);
+    console.log(`👤 User: ${authResult.user?.email} (${authResult.user?.role})`);
+    console.log('🔒 Password verified server-side (never exposed to client)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    return userCredential.user;
+
+  } catch (error: any) {
+    console.error('❌ Enterprise authentication failed:', error.message);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    // Handle Firebase Functions errors
+    if (error.code === 'functions/unavailable') {
+      throw new Error('Authentication service unavailable. Please try again.');
+    }
+
+    throw error;
+  }
+};
+
+// ============================================================================
+// LEGACY AUTHENTICATION (Client-Side - Less Secure)
+// ============================================================================
+// This method is kept for backward compatibility and fallback.
+// It should only be used if Cloud Functions are not deployed.
+// ============================================================================
+
+// ============================================================================
+// SECURE AUTHENTICATION SYSTEM WITH INDEXED QUERIES
+// ============================================================================
+// Security Features:
+// 1. Parallel indexed queries for fast user lookup
+// 2. Initial password stored temporarily (cleared after first login)
+// 3. Firebase Auth handles all password hashing and verification
+// 4. Role-based access control with enabled/disabled status
+// ============================================================================
+
+// User lookup result type
+interface UserLookupResult {
+  email: string;
+  docId: string;
+  collectionName: string;
+  role: 'superAdmin' | 'districtAdmin' | 'institutionAdmin' | 'official' | 'doctor' | 'nurse' | 'unknown';
+  isEnabled: boolean;
+  initialPassword?: string; // Only for first-time login, will be cleared after
+  displayName?: string;
+  institutionId?: string;
+  userData?: any;
+}
+
+// Clear initial password after first successful login (security measure)
+const clearInitialPassword = async (collectionName: string, docId: string) => {
+  try {
+    const { db } = await import('../firebaseConfig');
+    const { doc, updateDoc, deleteField } = await import('firebase/firestore');
+
+    await updateDoc(doc(db, collectionName, docId), {
+      password: deleteField(),
+      initialPasswordCleared: true,
+      firstLoginAt: new Date().toISOString()
+    });
+    console.log('🔒 Initial password cleared from Firestore (security measure)');
+  } catch (error) {
+    // Non-critical - log but don't fail login
+    console.warn('⚠️ Could not clear initial password:', error);
+  }
+};
+
+// Parallel user lookup across all collections using indexed queries
+const lookupUserByUserID = async (userID: string): Promise<UserLookupResult | null> => {
+  const { db } = await import('../firebaseConfig');
+  const { collection, query, where, getDocs, limit } = await import('firebase/firestore');
+
+  console.log('🚀 Starting parallel indexed lookup for UserID:', userID);
+  const startTime = performance.now();
+
+  // Execute all queries in parallel for maximum speed
+  const [
+    institutionsResult,
+    officialsResult,
+    approvedUsersResult,
+    districtAdminsResult
+  ] = await Promise.allSettled([
+    // Query 1: Institution Admins (indexed on userID)
+    getDocs(query(
+      collection(db, 'institutions'),
+      where('userID', '==', userID),
+      limit(1)
+    )),
+    // Query 2: Officials (indexed on userID)
+    getDocs(query(
+      collection(db, 'officials'),
+      where('userID', '==', userID),
+      limit(1)
+    )),
+    // Query 3: Approved Users - Doctors/Nurses (indexed on userID)
+    getDocs(query(
+      collection(db, 'approved_users'),
+      where('userID', '==', userID),
+      limit(1)
+    )),
+    // Query 4: District Admins (indexed on userID)
+    getDocs(query(
+      collection(db, 'districtAdmins'),
+      where('userID', '==', userID),
+      limit(1)
+    ))
+  ]);
+
+  const queryTime = (performance.now() - startTime).toFixed(2);
+  console.log(`⚡ Parallel queries completed in ${queryTime}ms`);
+
+  // Check Institution Admin
+  if (institutionsResult.status === 'fulfilled' && !institutionsResult.value.empty) {
+    const doc = institutionsResult.value.docs[0];
+    const institution = doc.data();
+    console.log('✅ Found Institution Admin');
+    return {
+      email: institution.adminEmail,
+      docId: doc.id,
+      collectionName: 'institutions',
+      role: 'institutionAdmin',
+      isEnabled: institution.isActive !== false,
+      initialPassword: institution.initialPasswordCleared ? undefined : institution.password,
+      displayName: institution.adminName || institution.name,
+      institutionId: doc.id,
+      userData: institution
+    };
+  }
+
+  // Check District Admin
+  if (districtAdminsResult.status === 'fulfilled' && !districtAdminsResult.value.empty) {
+    const doc = districtAdminsResult.value.docs[0];
+    const districtAdmin = doc.data();
+    console.log('✅ Found District Admin');
+    return {
+      email: districtAdmin.email,
+      docId: doc.id,
+      collectionName: 'districtAdmins',
+      role: 'districtAdmin',
+      isEnabled: districtAdmin.enabled !== false,
+      initialPassword: districtAdmin.initialPasswordCleared ? undefined : districtAdmin.password,
+      displayName: districtAdmin.displayName,
+      userData: districtAdmin
+    };
+  }
+
+  // Check Official
+  if (officialsResult.status === 'fulfilled' && !officialsResult.value.empty) {
+    const doc = officialsResult.value.docs[0];
+    const official = doc.data();
+    console.log('✅ Found Official');
+    return {
+      email: official.email,
+      docId: doc.id,
+      collectionName: 'officials',
+      role: 'official',
+      isEnabled: official.enabled !== false,
+      initialPassword: official.initialPasswordCleared ? undefined : official.password,
+      displayName: official.displayName,
+      userData: official
+    };
+  }
+
+  // Check Approved User (Doctor/Nurse)
+  if (approvedUsersResult.status === 'fulfilled' && !approvedUsersResult.value.empty) {
+    const doc = approvedUsersResult.value.docs[0];
+    const user = doc.data();
+    console.log('✅ Found Approved User:', user.role);
+    return {
+      email: user.email,
+      docId: doc.id,
+      collectionName: 'approved_users',
+      role: user.role?.toLowerCase() === 'nurse' ? 'nurse' : 'doctor',
+      isEnabled: user.enabled !== false,
+      initialPassword: user.initialPasswordCleared ? undefined : user.password,
+      displayName: user.displayName,
+      institutionId: user.institutionId,
+      userData: user
+    };
+  }
+
+  console.log('❌ UserID not found in any collection');
+  return null;
+};
+
+// Parallel user lookup by email across all collections
+const lookupUserByEmail = async (email: string): Promise<UserLookupResult | null> => {
+  const { db } = await import('../firebaseConfig');
+  const { collection, query, where, getDocs, limit } = await import('firebase/firestore');
+
+  const normalizedEmail = email.toLowerCase();
+  console.log('🚀 Starting parallel indexed lookup for email:', normalizedEmail);
+  const startTime = performance.now();
+
+  // Execute all queries in parallel for maximum speed
+  const [
+    superAdminsResult,
+    districtAdminsResult,
+    institutionsResult,
+    officialsResult,
+    approvedUsersResult
+  ] = await Promise.allSettled([
+    // Query 1: SuperAdmins (indexed on email)
+    getDocs(query(
+      collection(db, 'superAdmins'),
+      where('email', '==', normalizedEmail),
+      limit(1)
+    )),
+    // Query 2: District Admins (indexed on email)
+    getDocs(query(
+      collection(db, 'districtAdmins'),
+      where('email', '==', normalizedEmail),
+      limit(1)
+    )),
+    // Query 3: Institution Admins (indexed on adminEmail)
+    getDocs(query(
+      collection(db, 'institutions'),
+      where('adminEmail', '==', normalizedEmail),
+      limit(1)
+    )),
+    // Query 4: Officials (indexed on email)
+    getDocs(query(
+      collection(db, 'officials'),
+      where('email', '==', normalizedEmail),
+      limit(1)
+    )),
+    // Query 5: Approved Users (indexed on email)
+    getDocs(query(
+      collection(db, 'approved_users'),
+      where('email', '==', normalizedEmail),
+      limit(1)
+    ))
+  ]);
+
+  const queryTime = (performance.now() - startTime).toFixed(2);
+  console.log(`⚡ Parallel queries completed in ${queryTime}ms`);
+
+  // Check SuperAdmin (highest priority)
+  if (superAdminsResult.status === 'fulfilled' && !superAdminsResult.value.empty) {
+    const doc = superAdminsResult.value.docs[0];
+    const superAdmin = doc.data();
+    console.log('✅ Found SuperAdmin');
+    return {
+      email: normalizedEmail,
+      docId: doc.id,
+      collectionName: 'superAdmins',
+      role: 'superAdmin',
+      isEnabled: superAdmin.enabled !== false,
+      displayName: superAdmin.displayName || 'Super Admin',
+      userData: superAdmin
+    };
+  }
+
+  // Check District Admin
+  if (districtAdminsResult.status === 'fulfilled' && !districtAdminsResult.value.empty) {
+    const doc = districtAdminsResult.value.docs[0];
+    const districtAdmin = doc.data();
+    console.log('✅ Found District Admin');
+    return {
+      email: normalizedEmail,
+      docId: doc.id,
+      collectionName: 'districtAdmins',
+      role: 'districtAdmin',
+      isEnabled: districtAdmin.enabled !== false,
+      initialPassword: districtAdmin.initialPasswordCleared ? undefined : districtAdmin.password,
+      displayName: districtAdmin.displayName,
+      userData: districtAdmin
+    };
+  }
+
+  // Check Institution Admin
+  if (institutionsResult.status === 'fulfilled' && !institutionsResult.value.empty) {
+    const doc = institutionsResult.value.docs[0];
+    const institution = doc.data();
+    console.log('✅ Found Institution Admin');
+    return {
+      email: normalizedEmail,
+      docId: doc.id,
+      collectionName: 'institutions',
+      role: 'institutionAdmin',
+      isEnabled: institution.isActive !== false,
+      initialPassword: institution.initialPasswordCleared ? undefined : institution.password,
+      displayName: institution.adminName || institution.name,
+      institutionId: doc.id,
+      userData: institution
+    };
+  }
+
+  // Check Official
+  if (officialsResult.status === 'fulfilled' && !officialsResult.value.empty) {
+    const doc = officialsResult.value.docs[0];
+    const official = doc.data();
+    console.log('✅ Found Official');
+    return {
+      email: normalizedEmail,
+      docId: doc.id,
+      collectionName: 'officials',
+      role: 'official',
+      isEnabled: official.enabled !== false,
+      initialPassword: official.initialPasswordCleared ? undefined : official.password,
+      displayName: official.displayName,
+      userData: official
+    };
+  }
+
+  // Check Approved User (Doctor/Nurse)
+  if (approvedUsersResult.status === 'fulfilled' && !approvedUsersResult.value.empty) {
+    const doc = approvedUsersResult.value.docs[0];
+    const user = doc.data();
+    console.log('✅ Found Approved User:', user.role);
+    return {
+      email: normalizedEmail,
+      docId: doc.id,
+      collectionName: 'approved_users',
+      role: user.role?.toLowerCase() === 'nurse' ? 'nurse' : 'doctor',
+      isEnabled: user.enabled !== false,
+      initialPassword: user.initialPasswordCleared ? undefined : user.password,
+      displayName: user.displayName,
+      institutionId: user.institutionId,
+      userData: user
+    };
+  }
+
+  console.log('ℹ️ Email not found in any collection - may be new user');
+  return null;
+};
+
+// Main sign-in function - uses Enterprise Auth (Cloud Functions) when available
+export const signInWithUserID = async (userIDOrEmail: string, password: string) => {
+  // ========================================================================
+  // ENTERPRISE AUTHENTICATION (Recommended)
+  // ========================================================================
+  // When USE_ENTERPRISE_AUTH is true, authentication is handled server-side
+  // via Cloud Functions with:
+  // - bcrypt password hashing
+  // - Rate limiting & account lockout
+  // - Comprehensive audit logging
+  // - No password exposure to client
+  // ========================================================================
+
+  if (USE_ENTERPRISE_AUTH) {
     try {
+      return await authenticateWithCloudFunction(userIDOrEmail, password);
+    } catch (error: any) {
+      // If Cloud Functions unavailable, fall back to legacy auth
+      if (error.code === 'functions/unavailable' || error.message?.includes('unavailable')) {
+        console.warn('⚠️ Cloud Functions unavailable, falling back to legacy authentication');
+        // Continue to legacy auth below
+      } else {
+        // Re-throw the error for other cases
+        throw error;
+      }
+    }
+  }
+
+  // ========================================================================
+  // LEGACY AUTHENTICATION (Fallback)
+  // ========================================================================
+  // This is the client-side authentication method.
+  // Used when Cloud Functions are not deployed or unavailable.
+  // ========================================================================
+
+  try {
+    const startTime = performance.now();
+    const isEmail = userIDOrEmail.includes('@');
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔐 NeoLink Authentication System (Legacy Mode)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`📝 Login attempt: ${isEmail ? 'Email' : 'UserID'} = ${userIDOrEmail}`);
+
+    // Step 1: Lookup user using parallel indexed queries
+    let lookupResult: UserLookupResult | null;
+
+    if (isEmail) {
+      lookupResult = await lookupUserByEmail(userIDOrEmail);
+    } else {
+      lookupResult = await lookupUserByUserID(userIDOrEmail);
+    }
+
+    // Step 2: Handle lookup result
+    if (!lookupResult && !isEmail) {
+      // UserID not found - use generic error for security
+      throw new Error('Invalid UserID or password');
+    }
+
+    // For email login without existing record, allow Firebase Auth to handle
+    const userEmail = lookupResult?.email || userIDOrEmail.toLowerCase();
+
+    // Step 3: Check if account is disabled
+    if (lookupResult && !lookupResult.isEnabled) {
+      const roleMessages: Record<string, string> = {
+        superAdmin: 'This SuperAdmin account has been disabled.',
+        districtAdmin: 'This District Admin account has been disabled. Please contact the SuperAdmin.',
+        institutionAdmin: 'This institution has been deactivated. Please contact the SuperAdmin.',
+        official: 'This Official account has been disabled. Please contact the SuperAdmin.',
+        doctor: 'This account has been disabled. Please contact your administrator.',
+        nurse: 'This account has been disabled. Please contact your administrator.',
+      };
+      throw new Error(roleMessages[lookupResult.role] || 'This account has been disabled.');
+    }
+
+    console.log(`👤 Role detected: ${lookupResult?.role || 'unknown'}`);
+    console.log(`🔑 First-time login: ${lookupResult?.initialPassword ? 'Yes' : 'No'}`);
+
+    // Step 4: Authenticate with Firebase Auth
+    let isFirstLogin = false;
+
+    try {
+      // Try Firebase Auth sign-in first
       const result = await signInWithEmailAndPassword(auth, userEmail, password);
+      const totalTime = (performance.now() - startTime).toFixed(2);
+      console.log(`✅ Login successful in ${totalTime}ms`);
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return result.user;
     } catch (authError: any) {
-      // If Firebase Auth account doesn't exist, create it
-      if (authError.code === 'auth/user-not-found') {
-        console.log('Firebase Auth account not found, creating new account...');
-        const newUser = await createUserWithEmailAndPassword(auth, userEmail, password);
-        console.log('✅ Firebase Auth account created successfully');
-        return newUser.user;
+      console.log('🔄 Firebase Auth returned:', authError.code);
+
+      // Handle first-time login
+      if (authError.code === 'auth/user-not-found' || authError.code === 'auth/invalid-credential') {
+
+        // Check if this is a first-time login with initial password
+        if (lookupResult?.initialPassword) {
+          console.log('🔐 First-time login detected - verifying initial password...');
+
+          // Verify against initial password (stored temporarily in Firestore)
+          if (password !== lookupResult.initialPassword) {
+            console.log('❌ Password does not match initial credentials');
+            throw new Error('Invalid UserID or password');
+          }
+
+          console.log('✅ Initial password verified');
+          isFirstLogin = true;
+
+          // Create Firebase Auth account
+          try {
+            const newUser = await createUserWithEmailAndPassword(auth, userEmail, password);
+
+            // Update profile with display name
+            if (lookupResult.displayName && newUser.user) {
+              await updateProfile(newUser.user, { displayName: lookupResult.displayName });
+            }
+
+            // SECURITY: Clear initial password from Firestore after successful account creation
+            await clearInitialPassword(lookupResult.collectionName, lookupResult.docId);
+
+            const totalTime = (performance.now() - startTime).toFixed(2);
+            console.log(`✅ First-time login successful in ${totalTime}ms`);
+            console.log('🔒 Initial password cleared from database');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            return newUser.user;
+          } catch (createError: any) {
+            if (createError.code === 'auth/email-already-in-use') {
+              // Account exists in Firebase but password is wrong
+              console.log('❌ Firebase account exists but password is incorrect');
+              throw new Error('Invalid UserID or password');
+            }
+            throw createError;
+          }
+        } else {
+          // No initial password and Firebase Auth failed = wrong password
+          console.log('❌ Authentication failed - no initial password available');
+          throw new Error('Invalid UserID or password');
+        }
       }
 
-      // For any other auth errors, throw them as-is
+      // Handle other Firebase Auth errors
       throw authError;
     }
   } catch (error: any) {
-    console.error('Error signing in with UserID:', error);
+    console.error('❌ Authentication failed:', error.message);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    // Don't expose specific errors for security
+    // Return user-friendly error messages (don't expose internal details)
     if (error.message.includes('Invalid UserID') || error.message.includes('disabled')) {
       throw error;
     }
@@ -411,6 +870,9 @@ export const signInWithUserID = async (userIDOrEmail: string, password: string) 
         break;
       case 'auth/too-many-requests':
         errorMessage = 'Too many failed attempts. Please try again later.';
+        break;
+      case 'auth/network-request-failed':
+        errorMessage = 'Network error. Please check your internet connection.';
         break;
       default:
         errorMessage = error.message || 'Failed to sign in';

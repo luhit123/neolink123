@@ -522,6 +522,115 @@ export const initializeUserPassword = functions.region(FUNCTION_REGION).https.on
 });
 
 // ============================================================================
+// SYNC ALL USERS TO FIREBASE AUTH (Enables Password Reset)
+// ============================================================================
+export const syncUsersToFirebaseAuth = functions.region(FUNCTION_REGION).https.onRequest(async (req, res) => {
+  const results: any[] = [];
+
+  const collections = [
+    { name: 'superAdmins', emailField: 'email', passwordField: 'password', role: 'SuperAdmin' },
+    { name: 'districtAdmins', emailField: 'email', passwordField: 'password', role: 'DistrictAdmin' },
+    { name: 'institutions', emailField: 'adminEmail', passwordField: 'password', role: 'Admin' },
+    { name: 'officials', emailField: 'email', passwordField: 'password', role: 'Official' },
+    { name: 'approved_users', emailField: 'email', passwordField: 'password', role: null },
+  ];
+
+  for (const col of collections) {
+    const snapshot = await db.collection(col.name).get();
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const email = data[col.emailField];
+
+      if (!email) continue;
+
+      // Get password from various possible fields
+      const password = data.password || data.adminPassword || data.initialPassword || '';
+      const passwordHash = data.passwordHash || '';
+
+      // Skip if no password at all
+      if (!password && !passwordHash) {
+        results.push({ email, status: 'SKIPPED', reason: 'no password in Firestore' });
+        continue;
+      }
+
+      try {
+        let firebaseUser: admin.auth.UserRecord;
+        let action: string;
+
+        try {
+          // Check if user exists in Firebase Auth
+          firebaseUser = await auth.getUserByEmail(email.toLowerCase());
+
+          // User exists - check if they have password provider
+          const hasPasswordProvider = firebaseUser.providerData.some(
+            p => p.providerId === 'password'
+          );
+
+          if (!hasPasswordProvider && password && !isBcryptHash(password)) {
+            // Add password to existing user
+            await auth.updateUser(firebaseUser.uid, { password });
+            action = 'UPDATED (added password provider)';
+          } else if (!hasPasswordProvider) {
+            // Has bcrypt hash - use default password
+            await auth.updateUser(firebaseUser.uid, { password: 'NeoLink@2024' });
+            action = 'UPDATED (set default password)';
+          } else {
+            action = 'EXISTS (has password provider)';
+          }
+        } catch (e: any) {
+          if (e.code === 'auth/user-not-found') {
+            // Create new Firebase Auth user
+            const userPassword = (password && !isBcryptHash(password)) ? password : 'NeoLink@2024';
+            firebaseUser = await auth.createUser({
+              email: email.toLowerCase(),
+              password: userPassword,
+              displayName: data.displayName || data.adminName || data.name || email,
+              emailVerified: true,
+            });
+            action = 'CREATED';
+          } else {
+            throw e;
+          }
+        }
+
+        // Update Firestore with Firebase UID
+        await doc.ref.update({
+          firebaseUid: firebaseUser!.uid,
+          syncedToFirebaseAuth: new Date().toISOString(),
+        }).catch(() => {});
+
+        results.push({
+          email,
+          role: col.role || data.role,
+          status: action,
+          uid: firebaseUser!.uid,
+        });
+      } catch (error: any) {
+        results.push({ email, status: 'ERROR', error: error.message });
+      }
+    }
+  }
+
+  const created = results.filter(r => r.status === 'CREATED').length;
+  const updated = results.filter(r => r.status?.includes('UPDATED')).length;
+  const existing = results.filter(r => r.status?.includes('EXISTS')).length;
+
+  res.json({
+    success: true,
+    message: `Synced ${created + updated} users to Firebase Auth. Password reset emails will now work.`,
+    summary: {
+      created,
+      updated,
+      alreadyExists: existing,
+      errors: results.filter(r => r.status === 'ERROR').length,
+      skipped: results.filter(r => r.status === 'SKIPPED').length,
+    },
+    results,
+  });
+});
+
+// ============================================================================
 // SET PASSWORD FOR USERS WITHOUT ONE
 // ============================================================================
 export const autoFixPasswords = functions.region(FUNCTION_REGION).https.onRequest(async (req, res) => {

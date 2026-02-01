@@ -21,6 +21,7 @@ export {
   getAuthAuditLogs,
   initializeUserPassword,
   autoFixPasswords,
+  syncUsersToFirebaseAuth,
 } from './auth';
 
 // Export Scalable User Lookup Functions & Triggers

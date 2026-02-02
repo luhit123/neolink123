@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Patient, Unit, AgeUnit, UserRole, ProgressNote, AdmissionType, Category, PlaceOfDelivery, ModeOfTransport, ModeOfDelivery, AdmissionIndication, BloodGroup, MaternalRiskFactor, MaternalHistory } from '../types';
+import SimpleDateTimeInput from './forms/SimpleDateTimeInput';
+import { Patient, Unit, AgeUnit, UserRole, ProgressNote, AdmissionType, Category, PlaceOfDelivery, ModeOfTransport, ModeOfDelivery, AdmissionIndication, BloodGroup, MaternalRiskFactor, MaternalHistory, MultipleBirthType } from '../types';
 import { XIcon, PlusIcon, TrashIcon } from './common/Icons';
 import ReferralForm from './ReferralForm';
 import AddressInput, { AddressData } from './forms/AddressInput';
 import LoadingOverlay from './LoadingOverlay';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { calculateAgeFromBirthDate, calculateAgeAtDate, calculateEDDFromLMP, calculateGestationalAge, getGestationalAgeCategoryColor, formatDateForDisplay } from '../utils/ageCalculator';
+import { calculateAgeFromBirthDate, calculateAgeAtDate, calculateEDDFromLMP, calculateGestationalAge, getGestationalAgeCategoryColor, formatDateForDisplay, shouldUseAgeInDays } from '../utils/ageCalculator';
 import { interpretDeathDiagnosis } from '../services/openaiService';
 import { generateNTID, isValidNTID } from '../utils/ntidGenerator';
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
+import { trackPatientEdit, addEditHistoryToPatient, generateChangesSummary, comparePatients } from '../services/editTrackingService';
+import { saveFormTiming } from '../services/formTimingService';
+import FormTimer from './FormTimer';
+import CelebrationAnimation from './CelebrationAnimation';
 
 interface PatientFormProps {
   patientToEdit?: Patient | null;
@@ -47,6 +50,49 @@ const PatientForm: React.FC<PatientFormProps> = ({
   const [showReferralForm, setShowReferralForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Form Timer State
+  const [isTimerRunning, setIsTimerRunning] = useState(true); // Start timer immediately
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [formStartTime] = useState(new Date().toISOString());
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationTimeTaken, setCelebrationTimeTaken] = useState(0);
+
+  // Multiple Birth State (Twins, Triplets, etc.)
+  const [multipleBirthType, setMultipleBirthType] = useState<MultipleBirthType>(MultipleBirthType.Single);
+  const [currentBabyNumber, setCurrentBabyNumber] = useState(1);
+  const [multipleBirthId, setMultipleBirthId] = useState<string>('');
+  const [savedSiblingIds, setSavedSiblingIds] = useState<string[]>([]);
+  const [sharedBirthData, setSharedBirthData] = useState<Partial<Patient> | null>(null);
+  const [showNextBabyModal, setShowNextBabyModal] = useState(false);
+  const [babiesToAdmit, setBabiesToAdmit] = useState<number>(1); // How many babies to actually admit (some may be deceased)
+
+  // Get total babies born based on multiple birth type
+  const getTotalBabiesBorn = (type: MultipleBirthType): number => {
+    switch (type) {
+      case MultipleBirthType.Twins: return 2;
+      case MultipleBirthType.Triplets: return 3;
+      case MultipleBirthType.Quadruplets: return 4;
+      case MultipleBirthType.Quintuplets: return 5;
+      default: return 1;
+    }
+  };
+
+  const totalBabiesBorn = getTotalBabiesBorn(multipleBirthType);
+  const totalBabies = babiesToAdmit; // Only count babies being admitted
+  const isMultipleBirth = multipleBirthType !== MultipleBirthType.Single;
+  const hasMoreBabies = isMultipleBirth && currentBabyNumber < totalBabies;
+
+  // Baby label (Twin 1, Twin 2 for twins; Triplet 1, Triplet 2 for triplets, etc.)
+  const getBabyLabel = (babyNum: number, type: MultipleBirthType): string => {
+    switch (type) {
+      case MultipleBirthType.Twins: return `Twin ${babyNum}`;
+      case MultipleBirthType.Triplets: return `Triplet ${babyNum}`;
+      case MultipleBirthType.Quadruplets: return `Quadruplet ${babyNum}`;
+      case MultipleBirthType.Quintuplets: return `Quintuplet ${babyNum}`;
+      default: return '';
+    }
+  };
 
   // NTID Search for readmission
   const [ntidSearch, setNtidSearch] = useState('');
@@ -262,11 +308,13 @@ const PatientForm: React.FC<PatientFormProps> = ({
       const updated = { ...prev, [name]: processedValue };
 
       // Auto-calculate age from date of birth
+      // For NICU/SNCU, always use days
       if (name === 'dateOfBirth' && processedValue) {
-        const calculatedAge = calculateAgeFromBirthDate(processedValue);
+        const useAgeInDays = shouldUseAgeInDays(prev.unit);
+        const calculatedAge = calculateAgeFromBirthDate(processedValue, useAgeInDays ? AgeUnit.Days : undefined);
         updated.age = calculatedAge.age;
         updated.ageUnit = calculatedAge.ageUnit;
-        console.log('✅ Auto-calculated age:', calculatedAge.age, calculatedAge.ageUnit);
+        console.log('✅ Auto-calculated age:', calculatedAge.age, calculatedAge.ageUnit, useAgeInDays ? '(forced days for NICU/SNCU)' : '');
       }
 
       // Auto-fill Baby's Name from Mother's Name
@@ -288,16 +336,20 @@ const PatientForm: React.FC<PatientFormProps> = ({
       }
 
       // Auto-calculate age on admission from birth date and admission datetime
+      // For NICU/SNCU, always use days
       if (name === 'admissionDateTime' && processedValue && prev.dateOfBirth) {
-        const ageAtAdmission = calculateAgeAtDate(prev.dateOfBirth, processedValue);
+        const useAgeInDays = shouldUseAgeInDays(prev.unit);
+        const ageAtAdmission = calculateAgeAtDate(prev.dateOfBirth, processedValue, useAgeInDays ? AgeUnit.Days : undefined);
         updated.ageOnAdmission = ageAtAdmission.age;
         updated.ageOnAdmissionUnit = ageAtAdmission.ageUnit;
         console.log('✅ Auto-calculated age on admission:', ageAtAdmission.age, ageAtAdmission.ageUnit);
       }
 
       // Auto-calculate age on discharge from birth date and discharge datetime
+      // For NICU/SNCU, always use days
       if (name === 'dischargeDateTime' && processedValue && prev.dateOfBirth) {
-        const ageAtDischarge = calculateAgeAtDate(prev.dateOfBirth, processedValue);
+        const useAgeInDays = shouldUseAgeInDays(prev.unit);
+        const ageAtDischarge = calculateAgeAtDate(prev.dateOfBirth, processedValue, useAgeInDays ? AgeUnit.Days : undefined);
         updated.ageOnDischarge = ageAtDischarge.age;
         updated.ageOnDischargeUnit = ageAtDischarge.ageUnit;
         console.log('✅ Auto-calculated age on discharge:', ageAtDischarge.age, ageAtDischarge.ageUnit);
@@ -340,21 +392,24 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
     setPatient(prev => {
       let updated = { ...prev, [fieldName]: isoString };
+      // For NICU/SNCU, always calculate age in days
+      const useAgeInDays = shouldUseAgeInDays(prev.unit);
+      const forceUnit = useAgeInDays ? AgeUnit.Days : undefined;
 
       // Auto-calculate age from date of birth
       if (fieldName === 'dateOfBirth') {
-        const calculatedAge = calculateAgeFromBirthDate(isoString);
+        const calculatedAge = calculateAgeFromBirthDate(isoString, forceUnit);
         updated.age = calculatedAge.age;
         updated.ageUnit = calculatedAge.ageUnit;
 
         // Recalculate other derived ages if they depend on DOB
         if (updated.admissionDateTime) {
-          const ageAtAdmission = calculateAgeAtDate(isoString, updated.admissionDateTime);
+          const ageAtAdmission = calculateAgeAtDate(isoString, updated.admissionDateTime, forceUnit);
           updated.ageOnAdmission = ageAtAdmission.age;
           updated.ageOnAdmissionUnit = ageAtAdmission.ageUnit;
         }
         if (updated.dischargeDateTime) {
-          const ageAtDischarge = calculateAgeAtDate(isoString, updated.dischargeDateTime);
+          const ageAtDischarge = calculateAgeAtDate(isoString, updated.dischargeDateTime, forceUnit);
           updated.ageOnDischarge = ageAtDischarge.age;
           updated.ageOnDischargeUnit = ageAtDischarge.ageUnit;
         }
@@ -362,7 +417,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
       // Auto-calculate age on admission
       if (fieldName === 'admissionDateTime' && prev.dateOfBirth) {
-        const ageAtAdmission = calculateAgeAtDate(prev.dateOfBirth, isoString);
+        const ageAtAdmission = calculateAgeAtDate(prev.dateOfBirth, isoString, forceUnit);
         updated.ageOnAdmission = ageAtAdmission.age;
         updated.ageOnAdmissionUnit = ageAtAdmission.ageUnit;
 
@@ -372,7 +427,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
       // Auto-calculate age on discharge
       if (fieldName === 'dischargeDateTime' && prev.dateOfBirth) {
-        const ageAtDischarge = calculateAgeAtDate(prev.dateOfBirth, isoString);
+        const ageAtDischarge = calculateAgeAtDate(prev.dateOfBirth, isoString, forceUnit);
         updated.ageOnDischarge = ageAtDischarge.age;
         updated.ageOnDischargeUnit = ageAtDischarge.ageUnit;
 
@@ -516,7 +571,6 @@ const PatientForm: React.FC<PatientFormProps> = ({
       address: address.address,
       village: address.village,
       postOffice: address.postOffice,
-      pinCode: address.pinCode,
       district: address.district,
       state: address.state
     }));
@@ -537,9 +591,29 @@ const PatientForm: React.FC<PatientFormProps> = ({
     // Give user visual feedback
     await new Promise(resolve => setTimeout(resolve, 500));
 
+    const newPatientId = patient.id || Date.now().toString();
+
+    // Get proper baby name for twins/triplets
+    const getBirthLabel = () => {
+      if (!isMultipleBirth) return '';
+      switch (multipleBirthType) {
+        case MultipleBirthType.Twins: return `Twin ${currentBabyNumber}`;
+        case MultipleBirthType.Triplets: return `Triplet ${currentBabyNumber}`;
+        case MultipleBirthType.Quadruplets: return `Quadruplet ${currentBabyNumber}`;
+        case MultipleBirthType.Quintuplets: return `Quintuplet ${currentBabyNumber}`;
+        default: return '';
+      }
+    };
+
+    // Format name for multiple births
+    const formattedName = isMultipleBirth && patient.motherName
+      ? `${getBirthLabel()} of ${patient.motherName}`
+      : patient.name;
+
     const updatedPatient = {
       ...patient,
-      id: patient.id || Date.now().toString(),
+      id: newPatientId,
+      name: formattedName || patient.name,
       // Generate NTID for new patients only
       ntid: patient.ntid || generateNTID(institutionName),
       isDraft: saveAsDraft,
@@ -548,7 +622,16 @@ const PatientForm: React.FC<PatientFormProps> = ({
       lastUpdatedByName: userName || userEmail,
       lastEditedAt: new Date().toISOString(),
       institutionId,
-      institutionName
+      institutionName,
+      // Multiple Birth fields
+      ...(isMultipleBirth && {
+        multipleBirthType,
+        multipleBirthId,
+        birthOrder: currentBabyNumber,
+        siblingPatientIds: savedSiblingIds,
+      }),
+      // Flag to tell parent not to close form yet
+      _hasMoreSiblings: hasMoreBabies,
     };
 
     // AI Interpretation for Death Diagnosis
@@ -574,16 +657,107 @@ const PatientForm: React.FC<PatientFormProps> = ({
     console.log('💾 About to call onSave with updatedPatient');
 
     try {
-      await onSave(updatedPatient);
-      console.log('💾 onSave completed');
+      // Add edit tracking to patient record
+      const patientWithEditHistory = addEditHistoryToPatient(
+        updatedPatient,
+        userName || userEmail,
+        userEmail,
+        patientToEdit || null
+      );
 
-      // Show success message
-      setSaveSuccess(true);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Track edit to Firebase audit log
+      await trackPatientEdit(
+        patientToEdit || null,
+        patientWithEditHistory,
+        userName || userEmail,
+        userEmail,
+        userRole,
+        institutionId,
+        institutionName
+      );
 
-      // Close after success
-      setIsSaving(false);
-      setSaveSuccess(false);
+      await onSave(patientWithEditHistory);
+      console.log('💾 onSave completed with edit tracking');
+
+      // Stop timer and record timing
+      setIsTimerRunning(false);
+      const finalTime = elapsedSeconds;
+      setCelebrationTimeTaken(finalTime);
+
+      // Save form timing for research
+      await saveFormTiming({
+        formType: 'admission',
+        patientId: newPatientId,
+        patientName: patientWithEditHistory.name,
+        patientNtid: patientWithEditHistory.ntid,
+        institutionId,
+        institutionName,
+        userId: userEmail,
+        userEmail,
+        userName: userName || userEmail,
+        userRole,
+        startTime: formStartTime,
+        endTime: new Date().toISOString(),
+        durationSeconds: finalTime,
+        unit: patient.unit,
+        isEdit: !!patientToEdit
+      });
+
+      // Show celebration animation
+      setShowCelebration(true);
+
+      // Handle multiple birth - prepare for next baby
+      if (hasMoreBabies) {
+        console.log('👶 Multiple birth: Preparing for baby', currentBabyNumber + 1);
+
+        // Store shared data for next baby (mother info, delivery info, etc.)
+        const sharedData: Partial<Patient> = {
+          // Mother & Family info
+          motherName: patient.motherName,
+          fatherName: patient.fatherName,
+          // Contact info
+          contactNo1: patient.contactNo1,
+          contactRelation1: patient.contactRelation1,
+          contactNo2: patient.contactNo2,
+          contactRelation2: patient.contactRelation2,
+          // Address
+          address: patient.address,
+          village: patient.village,
+          postOffice: patient.postOffice,
+          district: patient.district,
+          state: patient.state,
+          category: patient.category,
+          // Birth/Delivery info
+          dateOfBirth: patient.dateOfBirth,
+          modeOfDelivery: patient.modeOfDelivery,
+          placeOfDelivery: patient.placeOfDelivery,
+          placeOfDeliveryName: patient.placeOfDeliveryName,
+          // Admission info
+          admissionType: patient.admissionType,
+          admissionDateTime: patient.admissionDateTime,
+          referringHospital: patient.referringHospital,
+          referringDistrict: patient.referringDistrict,
+          modeOfTransport: patient.modeOfTransport,
+          // Maternal history
+          maternalHistory: patient.maternalHistory,
+          // Registration numbers
+          mctsNo: patient.mctsNo,
+        };
+
+        setSharedBirthData(sharedData);
+        setSavedSiblingIds(prev => [...prev, newPatientId]);
+
+        // Show modal to add next baby (hide celebration for multiple births)
+        setShowCelebration(false);
+        setIsSaving(false);
+        setSaveSuccess(false);
+        setShowNextBabyModal(true);
+      } else {
+        // Show celebration for single birth or last baby
+        // The celebration will auto-dismiss and then we can close
+        setIsSaving(false);
+        setSaveSuccess(true);
+      }
     } catch (error) {
       console.error('❌ Error saving patient:', error);
       setIsSaving(false);
@@ -615,9 +789,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
       if (foundPatient) {
         setNtidSearchResult(foundPatient);
         // Calculate current age from date of birth
+        // For NICU/SNCU, always use days
+        const useAgeInDays = shouldUseAgeInDays(patient.unit);
+        const forceUnit = useAgeInDays ? AgeUnit.Days : undefined;
         const calculatedAge = foundPatient.dateOfBirth
-          ? calculateAgeFromBirthDate(foundPatient.dateOfBirth)
-          : { age: foundPatient.age || 0, ageUnit: foundPatient.ageUnit || AgeUnit.Days };
+          ? calculateAgeFromBirthDate(foundPatient.dateOfBirth, forceUnit)
+          : { age: foundPatient.age || 0, ageUnit: forceUnit || foundPatient.ageUnit || AgeUnit.Days };
         // Auto-fill form with previous patient data (birth history, demographics)
         setPatient(prev => ({
           ...prev,
@@ -648,7 +825,6 @@ const PatientForm: React.FC<PatientFormProps> = ({
           address: foundPatient.address,
           village: foundPatient.village,
           postOffice: foundPatient.postOffice,
-          pinCode: foundPatient.pinCode,
           district: foundPatient.district,
           state: foundPatient.state,
           // Copy contacts
@@ -672,9 +848,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
           const foundData = { id: foundDoc.id, ...foundDoc.data() } as Patient;
           setNtidSearchResult(foundData);
           // Calculate current age from date of birth
+          // For NICU/SNCU, always use days
+          const useAgeInDays = shouldUseAgeInDays(patient.unit);
+          const forceUnit = useAgeInDays ? AgeUnit.Days : undefined;
           const calculatedAge = foundData.dateOfBirth
-            ? calculateAgeFromBirthDate(foundData.dateOfBirth)
-            : { age: foundData.age || 0, ageUnit: foundData.ageUnit || AgeUnit.Days };
+            ? calculateAgeFromBirthDate(foundData.dateOfBirth, forceUnit)
+            : { age: foundData.age || 0, ageUnit: forceUnit || foundData.ageUnit || AgeUnit.Days };
           // Auto-fill form (same as above)
           setPatient(prev => ({
             ...prev,
@@ -702,7 +881,6 @@ const PatientForm: React.FC<PatientFormProps> = ({
             address: foundData.address,
             village: foundData.village,
             postOffice: foundData.postOffice,
-            pinCode: foundData.pinCode,
             district: foundData.district,
             state: foundData.state,
             contactNo1: foundData.contactNo1,
@@ -764,13 +942,21 @@ const PatientForm: React.FC<PatientFormProps> = ({
               {isNurse && <p className="text-xs text-blue-600">Enter basic patient information. Doctor will complete the diagnosis.</p>}
               {patient.isDraft && isDoctor && <p className="text-xs text-amber-600">⚠️ Draft record - Please complete diagnosis and notes</p>}
             </div>
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors font-semibold flex items-center gap-1 shadow-md text-sm"
-            >
-              <XIcon className="w-4 h-4" />
-              Close
-            </button>
+            {/* Form Timer */}
+            <div className="flex items-center gap-3">
+              <FormTimer
+                isRunning={isTimerRunning}
+                onTimeUpdate={setElapsedSeconds}
+                label="Entry Time"
+              />
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors font-semibold flex items-center gap-1 shadow-md text-sm"
+              >
+                <XIcon className="w-4 h-4" />
+                Close
+              </button>
+            </div>
           </div>
         </div>
 
@@ -887,27 +1073,163 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
               {expandedSections.admissionDetails && (
                 <div className="p-4 space-y-6">
+                  {/* Multiple Birth Selection - Only show for NICU/SNCU and when not editing */}
+                  {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && !patientToEdit && (
+                    <div className="bg-gradient-to-r from-pink-50 to-blue-50 border-2 border-pink-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <svg className="w-5 h-5 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        <label className="text-sm font-bold text-pink-800">Multiple Birth?</label>
+                        {isMultipleBirth && (
+                          <span className="ml-auto bg-pink-600 text-white text-xs px-2 py-1 rounded-full font-bold">
+                            Baby {currentBabyNumber} of {totalBabies} ({getBabyLabel(currentBabyNumber, multipleBirthType)})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.values(MultipleBirthType).map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => {
+                              setMultipleBirthType(type);
+                              const babiesBorn = getTotalBabiesBorn(type);
+                              setBabiesToAdmit(babiesBorn); // Default to all babies
+                              if (type !== MultipleBirthType.Single && !multipleBirthId) {
+                                setMultipleBirthId(`MB-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+                              }
+                              if (type === MultipleBirthType.Single) {
+                                setMultipleBirthId('');
+                                setCurrentBabyNumber(1);
+                                setSavedSiblingIds([]);
+                                setBabiesToAdmit(1);
+                              }
+                            }}
+                            disabled={currentBabyNumber > 1}
+                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                              multipleBirthType === type
+                                ? 'bg-pink-600 text-white shadow-lg scale-105'
+                                : 'bg-white text-pink-700 border-2 border-pink-300 hover:border-pink-500'
+                            } ${currentBabyNumber > 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          >
+                            {type === MultipleBirthType.Single ? '👶 Single' :
+                             type === MultipleBirthType.Twins ? '👶👶 Twins' :
+                             type === MultipleBirthType.Triplets ? '👶👶👶 Triplets' :
+                             type === MultipleBirthType.Quadruplets ? '👶×4 Quadruplets' : '👶×5+ Quintuplets+'}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Which baby is being admitted - shown when multiple birth selected */}
+                      {isMultipleBirth && currentBabyNumber === 1 && (
+                        <div className="mt-4 p-3 bg-white rounded-lg border-2 border-blue-200">
+                          <label className="block text-sm font-semibold text-slate-700 mb-2">
+                            Which baby is being admitted first?
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {Array.from({ length: totalBabiesBorn }, (_, i) => i + 1).map((num) => (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => setCurrentBabyNumber(num)}
+                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                                  currentBabyNumber === num
+                                    ? 'bg-blue-600 text-white shadow-lg'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                }`}
+                              >
+                                {getBabyLabel(num, multipleBirthType)}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-xs text-blue-600 mt-2">
+                            Select which baby from the multiple birth is being admitted. E.g., if Twin 2 is admitted first, select Twin 2.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* How many babies to admit - shown when multiple birth selected */}
+                      {isMultipleBirth && (
+                        <div className="mt-4 p-3 bg-white rounded-lg border-2 border-pink-200">
+                          <label className="block text-sm font-semibold text-slate-700 mb-2">
+                            How many babies to admit in total?
+                            <span className="text-slate-500 font-normal ml-1">(if any deceased/stillborn)</span>
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {Array.from({ length: totalBabiesBorn }, (_, i) => i + 1).map((num) => (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => setBabiesToAdmit(num)}
+                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                                  babiesToAdmit === num
+                                    ? 'bg-pink-600 text-white shadow-lg'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                }`}
+                              >
+                                {num} {num === 1 ? 'baby' : 'babies'}
+                                {num < totalBabiesBorn && (
+                                  <span className="text-xs opacity-75 ml-1">
+                                    ({totalBabiesBorn - num} deceased)
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {isMultipleBirth && babiesToAdmit > 1 && (
+                        <p className="text-xs text-pink-700 mt-2">
+                          <strong>Tip:</strong> After saving {getBabyLabel(currentBabyNumber, multipleBirthType)}, you'll be prompted to add the next baby with mother's details auto-filled.
+                        </p>
+                      )}
+                      {isMultipleBirth && babiesToAdmit === 1 && (
+                        <p className="text-xs text-amber-700 mt-2">
+                          <strong>Note:</strong> Only 1 baby being admitted from this {multipleBirthType.toLowerCase()} birth. The other(s) will be recorded as deceased/stillborn.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* 1. Admission Context */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
-                      <div>
-                        <label htmlFor="admissionType" className="block text-sm font-medium text-slate-700 mb-1">
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
                           Type of Admission <span className="text-red-400">*</span>
                         </label>
-                        <select
-                          name="admissionType"
-                          id="admissionType"
-                          value={patient.admissionType || ''}
-                          onChange={handleChange}
-                          required
-                          className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="">Select Admission Type</option>
-                          {Object.values(AdmissionType).map(at => <option key={at} value={at}>{at}</option>)}
-                        </select>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.values(AdmissionType).map(at => (
+                            <button
+                              key={at}
+                              type="button"
+                              onClick={() => setPatient(prev => {
+                                const updated = { ...prev, admissionType: at };
+                                // Auto-fill place of delivery for Inborn admissions
+                                if (at === AdmissionType.Inborn) {
+                                  updated.placeOfDelivery = PlaceOfDelivery.GovernmentHospital;
+                                  updated.placeOfDeliveryName = institutionName;
+                                  updated.referringHospital = '';
+                                  updated.referringDistrict = '';
+                                }
+                                return updated;
+                              })}
+                              className={`px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
+                                patient.admissionType === at
+                                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
+                                  : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
+                              }`}
+                            >
+                              {at === AdmissionType.Inborn ? '🏥 Inborn' :
+                               at === AdmissionType.OutbornHealthFacility ? '🚑 Outborn (Health Facility)' :
+                               '🏠 Outborn (Community)'}
+                            </button>
+                          ))}
+                        </div>
                         {patient.admissionType === AdmissionType.Inborn && (
-                          <p className="text-xs text-green-400 mt-1">
-                            ✓ Place of delivery will be set to: {institutionName}
+                          <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                            <span>✓</span> Place of delivery will be set to: {institutionName}
                           </p>
                         )}
                       </div>
@@ -916,17 +1238,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
                       <label htmlFor="admissionDateTime" className="block text-sm font-medium text-slate-700 mb-1">
                         Date and Time of Admission <span className="text-red-400">*</span>
                       </label>
-                      <input
-                        type="datetime-local"
+                      <SimpleDateTimeInput
                         id="admissionDateTime"
                         name="admissionDateTime"
-                        value={patient.admissionDateTime ? new Date(patient.admissionDateTime).toISOString().slice(0, 16) : ''}
-                        onChange={(e) => {
-                          const date = e.target.value ? new Date(e.target.value) : null;
-                          handleDateChange(date, 'admissionDateTime');
-                        }}
+                        value={patient.admissionDateTime || ''}
+                        onChange={(iso) => handleDateChange(iso ? new Date(iso) : null, 'admissionDateTime')}
                         required
-                        className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                   </div>
@@ -940,17 +1257,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         <label htmlFor="dateOfBirth" className="block text-sm font-medium text-slate-700 mb-1">
                           Date and Time of Birth
                         </label>
-                        <input
-                          type="datetime-local"
+                        <SimpleDateTimeInput
                           id="dateOfBirth"
                           name="dateOfBirth"
-                          value={patient.dateOfBirth ? new Date(patient.dateOfBirth).toISOString().slice(0, 16) : ''}
-                          onChange={(e) => {
-                            const date = e.target.value ? new Date(e.target.value) : null;
-                            handleDateChange(date, 'dateOfBirth');
-                          }}
-                          max={new Date().toISOString().slice(0, 16)}
-                          className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          value={patient.dateOfBirth || ''}
+                          onChange={(iso) => handleDateChange(iso ? new Date(iso) : null, 'dateOfBirth')}
+                          max={new Date().toISOString()}
                         />
                       </div>
                     )}
@@ -1175,14 +1487,13 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
                       <h4 className="font-semibold text-blue-800">Address Details</h4>
-                      <span className="text-xs text-blue-600 ml-auto">📍 Auto-fill from PIN code</span>
+                      <span className="text-xs text-blue-600 ml-auto">📍 Select State & District</span>
                     </div>
                     <AddressInput
                       address={{
                         address: patient.address,
                         village: patient.village,
                         postOffice: patient.postOffice,
-                        pinCode: patient.pinCode,
                         district: patient.district,
                         state: patient.state
                       }}
@@ -1211,23 +1522,39 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   {/* Admission Type - For NICU/SNCU */}
                   {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
                     <div className="pt-4 border-t border-blue-500/30">
-                      <label htmlFor="admissionType" className="block text-sm font-medium text-slate-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
                         Type of Admission <span className="text-red-400">*</span>
                       </label>
-                      <select
-                        name="admissionType"
-                        id="admissionType"
-                        value={patient.admissionType || ''}
-                        onChange={handleChange}
-                        required
-                        className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Select Admission Type</option>
-                        {Object.values(AdmissionType).map(at => <option key={at} value={at}>{at}</option>)}
-                      </select>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.values(AdmissionType).map(at => (
+                          <button
+                            key={at}
+                            type="button"
+                            onClick={() => setPatient(prev => {
+                              const updated = { ...prev, admissionType: at };
+                              if (at === AdmissionType.Inborn) {
+                                updated.placeOfDelivery = PlaceOfDelivery.GovernmentHospital;
+                                updated.placeOfDeliveryName = institutionName;
+                                updated.referringHospital = '';
+                                updated.referringDistrict = '';
+                              }
+                              return updated;
+                            })}
+                            className={`px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
+                              patient.admissionType === at
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
+                                : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
+                            }`}
+                          >
+                            {at === AdmissionType.Inborn ? '🏥 Inborn' :
+                             at === AdmissionType.OutbornHealthFacility ? '🚑 Outborn (Health Facility)' :
+                             '🏠 Outborn (Community)'}
+                          </button>
+                        ))}
+                      </div>
                       {patient.admissionType === AdmissionType.Inborn && (
-                        <p className="text-xs text-green-400 mt-1">
-                          ✓ Place of delivery will be set to: {institutionName}
+                        <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                          <span>✓</span> Place of delivery will be set to: {institutionName}
                         </p>
                       )}
                     </div>
@@ -1853,34 +2180,228 @@ const PatientForm: React.FC<PatientFormProps> = ({
             {/* FINAL STEP: Review & Submit */}
             {currentStep === totalSteps && (
             <>
-            {/* Summary Card */}
-            <div className="bg-white rounded-xl border-2 border-green-300 shadow-md p-4 mb-4">
-              <h3 className="text-lg font-bold text-green-900 mb-3">Review Patient Information</h3>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-blue-50 p-2 rounded"><span className="font-bold">Name:</span> {patient.name || '-'}</div>
-                <div className="bg-blue-50 p-2 rounded"><span className="font-bold">Sex:</span> {patient.gender || '-'}</div>
-                <div className="bg-blue-50 p-2 rounded"><span className="font-bold">Age:</span> {patient.age} {patient.ageUnit}</div>
-                <div className="bg-blue-50 p-2 rounded"><span className="font-bold">Unit:</span> {patient.unit}</div>
-                <div className={`p-2 rounded col-span-2 ${patient.doctorInCharge ? 'bg-purple-50' : 'bg-red-50 border border-red-300'}`}>
-                  <span className="font-bold">Doctor In Charge:</span> {patient.doctorInCharge || <span className="text-red-600">⚠️ Required</span>}
-                </div>
-                <div className="bg-teal-50 p-2 rounded col-span-2"><span className="font-bold">Admission:</span> {patient.admissionDateTime ? new Date(patient.admissionDateTime).toLocaleString() : '-'}</div>
-                {(patient.indicationsForAdmission || []).length > 0 && (
-                  <div className="bg-green-50 p-2 rounded col-span-2"><span className="font-bold">Diagnosis:</span> {patient.indicationsForAdmission?.join(', ')}</div>
+            {/* Comprehensive Overview Card */}
+            <div className="bg-white rounded-xl border-2 border-green-400 shadow-lg overflow-hidden mb-4">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-3">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <span className="text-xl">📋</span>
+                  Admission Overview
+                </h3>
+                <p className="text-xs text-green-100">Review all details before saving</p>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* Required Fields Warning */}
+                {(!patient.name || !patient.gender || !patient.doctorInCharge) && (
+                  <div className="p-3 bg-red-50 border-2 border-red-300 rounded-lg text-sm text-red-800">
+                    <span className="font-bold">⚠️ Missing Required Fields:</span> {[
+                      !patient.name && 'Patient Name',
+                      !patient.gender && 'Gender',
+                      !patient.doctorInCharge && 'Doctor In Charge'
+                    ].filter(Boolean).join(', ')}
+                  </div>
                 )}
-                {isNICU_SNCU && patient.maternalHistory?.gravida !== undefined && (
-                  <div className="bg-pink-50 p-2 rounded col-span-2"><span className="font-bold">Maternal:</span> G{patient.maternalHistory.gravida}P{patient.maternalHistory.para || 0}A{patient.maternalHistory.abortion || 0}L{patient.maternalHistory.living || 0}</div>
+
+                {/* Patient Identity Section */}
+                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                  <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
+                    <span>👶</span> Patient Identity
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                    <div><span className="text-gray-500">NTID:</span> <span className="font-semibold">{patient.ntid || '-'}</span></div>
+                    <div><span className="text-gray-500">Name:</span> <span className="font-semibold">{patient.name || '-'}</span></div>
+                    <div><span className="text-gray-500">Gender:</span> <span className="font-semibold">{patient.gender || '-'}</span></div>
+                    <div><span className="text-gray-500">Age:</span> <span className="font-semibold">{patient.age} {patient.ageUnit}</span></div>
+                  </div>
+                </div>
+
+                {/* Parent Information */}
+                {(patient.motherName || patient.fatherName) && (
+                  <div className="bg-pink-50 rounded-lg p-3 border border-pink-200">
+                    <h4 className="font-bold text-pink-800 mb-2 flex items-center gap-2">
+                      <span>👨‍👩‍👧</span> Parent Information
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div><span className="text-gray-500">Mother:</span> <span className="font-semibold">{patient.motherName || '-'}</span></div>
+                      <div><span className="text-gray-500">Father:</span> <span className="font-semibold">{patient.fatherName || '-'}</span></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Birth Details */}
+                {(patient.dateOfBirth || patient.birthWeight || patient.modeOfDelivery) && (
+                  <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                    <h4 className="font-bold text-purple-800 mb-2 flex items-center gap-2">
+                      <span>🍼</span> Birth Details
+                    </h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                      {patient.dateOfBirth && (
+                        <div><span className="text-gray-500">DOB:</span> <span className="font-semibold">{new Date(patient.dateOfBirth).toLocaleString()}</span></div>
+                      )}
+                      {patient.birthWeight && (
+                        <div><span className="text-gray-500">Birth Weight:</span> <span className="font-semibold">{patient.birthWeight} Kg</span></div>
+                      )}
+                      {patient.modeOfDelivery && (
+                        <div><span className="text-gray-500">Delivery:</span> <span className="font-semibold">{patient.modeOfDelivery}</span></div>
+                      )}
+                      {patient.placeOfDelivery && (
+                        <div><span className="text-gray-500">Place:</span> <span className="font-semibold">{patient.placeOfDelivery}</span></div>
+                      )}
+                      {patient.gestationalAgeWeeks !== undefined && (
+                        <div className="col-span-2">
+                          <span className="text-gray-500">Gestational Age:</span>{' '}
+                          <span className="font-semibold">
+                            {patient.gestationalAgeWeeks} weeks {patient.gestationalAgeDays || 0} days
+                            {patient.gestationalAgeCategory && (
+                              <span className={`ml-2 px-2 py-0.5 rounded text-xs ${getGestationalAgeCategoryColor(patient.gestationalAgeCategory)}`}>
+                                {patient.gestationalAgeCategory}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Admission Details */}
+                <div className="bg-teal-50 rounded-lg p-3 border border-teal-200">
+                  <h4 className="font-bold text-teal-800 mb-2 flex items-center gap-2">
+                    <span>🏥</span> Admission Details
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                    <div><span className="text-gray-500">Unit:</span> <span className="font-semibold">{patient.unit}</span></div>
+                    <div><span className="text-gray-500">Type:</span> <span className="font-semibold">{patient.admissionType || '-'}</span></div>
+                    <div><span className="text-gray-500">Date/Time:</span> <span className="font-semibold">{patient.admissionDateTime ? new Date(patient.admissionDateTime).toLocaleString() : '-'}</span></div>
+                    {patient.weightOnAdmission && (
+                      <div><span className="text-gray-500">Weight:</span> <span className="font-semibold">{patient.weightOnAdmission} Kg</span></div>
+                    )}
+                    <div className={`col-span-2 ${patient.doctorInCharge ? '' : 'bg-red-100 rounded p-1'}`}>
+                      <span className="text-gray-500">Doctor In Charge:</span>{' '}
+                      <span className="font-semibold">{patient.doctorInCharge || <span className="text-red-600">⚠️ Required</span>}</span>
+                    </div>
+                    {patient.referringHospital && (
+                      <div className="col-span-2"><span className="text-gray-500">Referred From:</span> <span className="font-semibold">{patient.referringHospital}</span></div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Diagnosis/Indications */}
+                {((patient.indicationsForAdmission || []).length > 0 || patient.customIndication || patient.diagnosis) && (
+                  <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                    <h4 className="font-bold text-green-800 mb-2 flex items-center gap-2">
+                      <span>📝</span> Diagnosis / Indications
+                    </h4>
+                    <div className="text-sm space-y-1">
+                      {(patient.indicationsForAdmission || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {patient.indicationsForAdmission?.map((ind, idx) => (
+                            <span key={idx} className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">{ind}</span>
+                          ))}
+                        </div>
+                      )}
+                      {patient.customIndication && (
+                        <div><span className="text-gray-500">Other:</span> <span className="font-semibold">{patient.customIndication}</span></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Address & Contact */}
+                {(patient.address || patient.district || patient.contactNo1) && (
+                  <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                    <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                      <span>📍</span> Address & Contact
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                      {(patient.district || patient.state) && (
+                        <div><span className="text-gray-500">Location:</span> <span className="font-semibold">{[patient.village, patient.postOffice, patient.district, patient.state].filter(Boolean).join(', ')}</span></div>
+                      )}
+                      {patient.address && (
+                        <div><span className="text-gray-500">Address:</span> <span className="font-semibold">{patient.address}</span></div>
+                      )}
+                      {patient.contactNo1 && (
+                        <div><span className="text-gray-500">Contact 1:</span> <span className="font-semibold">{patient.contactNo1} ({patient.contactRelation1 || 'N/A'})</span></div>
+                      )}
+                      {patient.contactNo2 && (
+                        <div><span className="text-gray-500">Contact 2:</span> <span className="font-semibold">{patient.contactNo2} ({patient.contactRelation2 || 'N/A'})</span></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Maternal History for NICU/SNCU */}
+                {isNICU_SNCU && patient.maternalHistory && (
+                  <div className="bg-rose-50 rounded-lg p-3 border border-rose-200">
+                    <h4 className="font-bold text-rose-800 mb-2 flex items-center gap-2">
+                      <span>🤰</span> Maternal History
+                    </h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                      {patient.maternalHistory.gravida !== undefined && (
+                        <div>
+                          <span className="text-gray-500">Obstetric:</span>{' '}
+                          <span className="font-semibold">
+                            G{patient.maternalHistory.gravida}P{patient.maternalHistory.para || 0}A{patient.maternalHistory.abortion || 0}L{patient.maternalHistory.living || 0}
+                          </span>
+                        </div>
+                      )}
+                      {patient.maternalHistory.maternalAge && (
+                        <div><span className="text-gray-500">Mother's Age:</span> <span className="font-semibold">{patient.maternalHistory.maternalAge} years</span></div>
+                      )}
+                      {patient.maternalHistory.bloodGroup && (
+                        <div><span className="text-gray-500">Blood Group:</span> <span className="font-semibold">{patient.maternalHistory.bloodGroup}</span></div>
+                      )}
+                      {patient.maternalHistory.ancReceived !== undefined && (
+                        <div><span className="text-gray-500">ANC:</span> <span className="font-semibold">{patient.maternalHistory.ancReceived ? `Yes (${patient.maternalHistory.ancVisits || 0} visits)` : 'No'}</span></div>
+                      )}
+                      {patient.maternalHistory.antenatalSteroidsGiven !== undefined && (
+                        <div><span className="text-gray-500">Steroids:</span> <span className="font-semibold">{patient.maternalHistory.antenatalSteroidsGiven ? `Yes (${patient.maternalHistory.steroidDoses || 0} doses)` : 'No'}</span></div>
+                      )}
+                      {(patient.maternalHistory.riskFactors || []).length > 0 && (
+                        <div className="col-span-2 md:col-span-4">
+                          <span className="text-gray-500">Risk Factors:</span>{' '}
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {patient.maternalHistory.riskFactors?.map((rf, idx) => (
+                              <span key={idx} className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded text-xs">{rf}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Registration Numbers */}
+                {(patient.sncuRegNo || patient.mctsNo) && (
+                  <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                    <h4 className="font-bold text-amber-800 mb-2 flex items-center gap-2">
+                      <span>🔢</span> Registration Numbers
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      {patient.sncuRegNo && <div><span className="text-gray-500">SNCU Reg:</span> <span className="font-semibold">{patient.sncuRegNo}</span></div>}
+                      {patient.mctsNo && <div><span className="text-gray-500">MCTS No:</span> <span className="font-semibold">{patient.mctsNo}</span></div>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Edit History */}
+                {patientToEdit && (patient.editHistory || []).length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                      <span>📜</span> Edit History
+                    </h4>
+                    <div className="text-xs space-y-1 max-h-24 overflow-y-auto">
+                      {(patient.editHistory || []).slice(-5).reverse().map((edit, idx) => (
+                        <div key={idx} className="flex justify-between text-gray-600">
+                          <span>{edit.changes}</span>
+                          <span className="text-gray-400">{edit.editedBy} • {new Date(edit.timestamp).toLocaleDateString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
-              {(!patient.name || !patient.gender || !patient.doctorInCharge) && (
-                <div className="mt-3 p-2 bg-yellow-100 border border-yellow-400 rounded text-sm text-yellow-800">
-                  ⚠️ Missing required fields: {[
-                    !patient.name && 'Name',
-                    !patient.gender && 'Gender',
-                    !patient.doctorInCharge && 'Doctor In Charge'
-                  ].filter(Boolean).join(', ')}. Please go back and complete them.
-                </div>
-              )}
             </div>
 
             {/* Discharge Details Section - Only show when outcome is not In Progress */}
@@ -1911,7 +2432,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         <label htmlFor="dischargeDateTime" className="block text-sm font-medium text-slate-700 mb-1">
                           Date and Time of {patient.outcome === 'Step Down' ? 'Step Down' : 'Discharge'}
                         </label>
-                        <input type="datetime-local" name="dischargeDateTime" id="dischargeDateTime" value={patient.dischargeDateTime ? patient.dischargeDateTime.slice(0, 16) : (patient.releaseDate ? patient.releaseDate.slice(0, 16) : '')} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                        <SimpleDateTimeInput
+                          id="dischargeDateTime"
+                          name="dischargeDateTime"
+                          value={patient.dischargeDateTime || patient.releaseDate || ''}
+                          onChange={(iso) => handleDateChange(iso ? new Date(iso) : null, 'dischargeDateTime')}
+                        />
                       </div>
                       <div>
                         <label htmlFor="weightOnDischarge" className="block text-sm font-medium text-slate-700 mb-1">Weight on Discharge (Kg)</label>
@@ -1978,9 +2504,10 @@ const PatientForm: React.FC<PatientFormProps> = ({
                   </button>
                 )}
                 {isDoctor && (
-                  <button type="submit" className="px-4 py-1.5 rounded-lg text-white bg-green-600 hover:bg-green-700 font-bold flex items-center gap-1 text-sm">
+                  <button type="submit" className={`px-4 py-1.5 rounded-lg text-white font-bold flex items-center gap-1 text-sm ${isMultipleBirth ? 'bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700' : 'bg-green-600 hover:bg-green-700'}`}>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                    Save Patient
+                    {isMultipleBirth ? `Save Baby ${getBabyLabel(currentBabyNumber, multipleBirthType)}` : 'Save Patient'}
+                    {hasMoreBabies && <span className="ml-1 text-xs opacity-75">({currentBabyNumber}/{totalBabies})</span>}
                   </button>
                 )}
               </div>
@@ -2016,7 +2543,147 @@ const PatientForm: React.FC<PatientFormProps> = ({
         {/* Success Overlay */}
         <LoadingOverlay
           show={saveSuccess}
-          message="✓ Saved successfully!"
+          message={isMultipleBirth ? `✓ Baby ${getBabyLabel(currentBabyNumber, multipleBirthType)} saved!` : "✓ Saved successfully!"}
+        />
+
+        {/* Multiple Birth - Next Baby Modal */}
+        {showNextBabyModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in duration-300">
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-pink-500 to-purple-600 p-6 text-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center">
+                    <span className="text-3xl">✓</span>
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold">{getBabyLabel(currentBabyNumber, multipleBirthType)} Saved!</h2>
+                    <p className="text-pink-100 text-sm">
+                      {totalBabies - currentBabyNumber} more {totalBabies - currentBabyNumber === 1 ? 'baby' : 'babies'} to add
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6">
+                {/* Progress Indicators */}
+                <div className="flex justify-center gap-3 mb-6">
+                  {Array.from({ length: totalBabies }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex flex-col items-center`}
+                    >
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold mb-1 ${
+                        idx < savedSiblingIds.length
+                          ? 'bg-green-500 text-white'
+                          : idx === savedSiblingIds.length
+                          ? 'bg-pink-500 text-white ring-4 ring-pink-200 animate-pulse'
+                          : 'bg-slate-200 text-slate-400'
+                      }`}>
+                        {idx < savedSiblingIds.length ? '✓' : idx + 1}
+                      </div>
+                      <span className={`text-xs font-medium ${idx < savedSiblingIds.length ? 'text-green-600' : idx === savedSiblingIds.length ? 'text-pink-600' : 'text-slate-400'}`}>
+                        {multipleBirthType === MultipleBirthType.Twins ? `Twin ${idx + 1}` :
+                         multipleBirthType === MultipleBirthType.Triplets ? `Trip ${idx + 1}` :
+                         `Baby ${idx + 1}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+                  <p className="text-blue-800 font-semibold mb-2">For {getBabyLabel(currentBabyNumber + 1, multipleBirthType)}, only enter:</p>
+                  <ul className="text-blue-700 text-sm space-y-1">
+                    <li className="flex items-center gap-2">
+                      <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                      Gender (Male/Female)
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                      Birth Weight
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                      Time of Birth (if different)
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                      SNCU Registration No
+                    </li>
+                  </ul>
+                  <p className="text-blue-600 text-xs mt-2 italic">
+                    All other details (mother, address, etc.) are auto-filled.
+                  </p>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="bg-slate-50 p-4 flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowNextBabyModal(false);
+                    onClose();
+                  }}
+                  className="flex-1 px-4 py-3 rounded-xl border-2 border-slate-300 text-slate-700 font-semibold hover:bg-slate-100 transition-colors"
+                >
+                  Finish Later
+                </button>
+                <button
+                  onClick={() => {
+                    const nextBabyNum = currentBabyNumber + 1;
+                    setCurrentBabyNumber(nextBabyNum);
+
+                    // Reset form with shared data pre-filled, clear baby-specific fields
+                    setPatient({
+                      ...defaultPatient,
+                      ...sharedBirthData,
+                      id: '',
+                      ntid: generateNTID(institutionName),
+                      name: '', // Will be auto-generated on save
+                      gender: '' as any,
+                      birthWeight: undefined,
+                      weightOnAdmission: undefined,
+                      age: 0,
+                      ageUnit: AgeUnit.Days,
+                      ageOnAdmission: undefined,
+                      ageOnAdmissionUnit: AgeUnit.Days,
+                      indicationsForAdmission: [],
+                      customIndication: '',
+                      diagnosis: '',
+                      progressNotes: [],
+                      sncuRegNo: '',
+                    });
+
+                    setCurrentStep(1);
+                    setShowNextBabyModal(false);
+                  }}
+                  className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold hover:from-pink-600 hover:to-purple-700 transition-colors flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <span className="text-xl">👶</span>
+                  Add {getBabyLabel(currentBabyNumber + 1, multipleBirthType)}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Celebration Animation */}
+        <CelebrationAnimation
+          show={showCelebration}
+          onComplete={() => {
+            setShowCelebration(false);
+            setSaveSuccess(false);
+            // Don't auto-close for multiple births being processed
+            if (!hasMoreBabies) {
+              // Optional: Close the form after celebration
+              // onClose();
+            }
+          }}
+          timeTaken={celebrationTimeTaken}
+          formType="admission"
+          patientName={patient.name}
         />
       </div >
     </div >

@@ -14,6 +14,7 @@ import { httpsCallable } from 'firebase/functions';
 import { auth, googleProvider, authReady, pendingRedirectResult, functions } from '../firebaseConfig';
 import { saveUserProfile, getUserProfile } from './firestoreService';
 import { UserRole } from '../types';
+import { updateUserConsent } from './firestoreService';
 import { isPWAMode, isMobileDevice } from '../utils/pwaDetection';
 
 // ============================================================================
@@ -206,9 +207,32 @@ export const completeUserSetup = async (
   collegeId: string
 ) => {
   try {
-    await saveUserProfile(userId, email, displayName, role, collegeName, collegeId);
+    await saveUserProfile(userId, { email, displayName, role, collegeName, collegeId });
   } catch (error) {
     console.error('Error completing user setup:', error);
+    throw error;
+  }
+};
+
+/**
+ * Record user consent for DPDP compliance
+ * @param userId - Firebase Auth UID
+ * @param aiConsentAccepted - Whether user consented to AI data processing (default false)
+ */
+export const recordConsent = async (userId: string, aiConsentAccepted: boolean = false) => {
+  try {
+    const consentData = {
+      consentAccepted: true,
+      consentTimestamp: new Date().toISOString(),
+      consentVersion: '1.0.0', // Current policy version
+      legitimateUseClauseAccepted: true, // Government EHR legitimate use
+      aiConsentAccepted,
+      aiConsentTimestamp: aiConsentAccepted ? new Date().toISOString() : undefined
+    };
+    await updateUserConsent(userId, consentData);
+    return true;
+  } catch (error) {
+    console.error('Error recording consent:', error);
     throw error;
   }
 };
@@ -364,18 +388,17 @@ const authenticateWithCloudFunction = async (identifier: string, password: strin
 
     let userCredential;
 
-    // Check if we need to use client-side auth (Firebase Auth REST API verified password)
-    if ((authResult as any).useClientAuth) {
-      // Cloud Function verified the password and set up claims
-      // Now complete sign-in with Firebase Auth client-side
-      console.log('🔄 Completing authentication with Firebase Auth...');
-      const email = authResult.user?.email || identifier;
-      userCredential = await signInWithEmailAndPassword(auth, email, password);
-    } else if (authResult.token) {
-      // Sign in with the custom token returned by Cloud Function
+    // Sign in using the custom token from Cloud Function
+    // This is the most reliable method as it avoids timing issues with password sync
+    if (authResult.token) {
+      console.log('🔄 Signing in with custom token...');
       userCredential = await signInWithCustomToken(auth, authResult.token);
     } else {
-      throw new Error('No authentication method available');
+      // Fallback: Cloud Function verified password but didn't return token
+      // This shouldn't happen with the updated Cloud Function
+      console.log('🔄 Fallback: Completing authentication with Firebase Auth...');
+      const email = authResult.user?.email || identifier;
+      userCredential = await signInWithEmailAndPassword(auth, email, password);
     }
 
     const totalTime = (performance.now() - startTime).toFixed(2);

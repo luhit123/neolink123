@@ -4,6 +4,9 @@ import { ProgressNote, VitalSigns, ClinicalExamination, Patient, Medication } fr
 import { PatientContext } from '../../types/medgemma';
 import { VoiceScribePanel } from './VoiceScribePanel';
 import { Mic, Sparkles, Heart, Activity, Wind, Thermometer, Droplets, Clock, Brain, Stethoscope, ChevronDown, ChevronUp, Check, AlertTriangle, Pill, FileText, Zap } from 'lucide-react';
+import FormTimer from '../FormTimer';
+import CelebrationAnimation from '../CelebrationAnimation';
+import { saveFormTiming } from '../../services/formTimingService';
 
 interface ClinicalNoteModernProps {
   patient?: Patient;
@@ -13,6 +16,9 @@ interface ClinicalNoteModernProps {
   lastNote?: ProgressNote;
   userEmail?: string;
   userName?: string;
+  userRole?: string;
+  institutionId?: string;
+  institutionName?: string;
 }
 
 // Normal values by age group
@@ -59,10 +65,20 @@ const ClinicalNoteModern: React.FC<ClinicalNoteModernProps> = ({
   existingNote,
   lastNote,
   userEmail,
-  userName
+  userName,
+  userRole = 'Doctor',
+  institutionId = '',
+  institutionName = ''
 }) => {
   // Voice Scribe state
   const [showVoiceScribe, setShowVoiceScribe] = useState(false);
+
+  // Form Timer State
+  const [isTimerRunning, setIsTimerRunning] = useState(true);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [formStartTime] = useState(new Date().toISOString());
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationTimeTaken, setCelebrationTimeTaken] = useState(0);
 
   // Vitals state
   const [vitals, setVitals] = useState<VitalSigns>({
@@ -219,8 +235,14 @@ const ClinicalNoteModern: React.FC<ClinicalNoteModernProps> = ({
   const handleSave = async () => {
     setIsSaving(true);
 
+    // Stop timer
+    setIsTimerRunning(false);
+    const finalTime = elapsedSeconds;
+    setCelebrationTimeTaken(finalTime);
+
     const progressNote: ProgressNote = {
       id: existingNote?.id || Date.now().toString(),
+      date: new Date().toISOString(),
       timestamp: new Date().toISOString(),
       vitals,
       examination,
@@ -231,7 +253,31 @@ const ClinicalNoteModern: React.FC<ClinicalNoteModernProps> = ({
     };
 
     try {
+      // Save form timing for research
+      if (institutionId) {
+        await saveFormTiming({
+          formType: 'clinical_note',
+          patientId: patient?.id,
+          patientName: patient?.name,
+          patientNtid: patient?.ntid,
+          institutionId,
+          institutionName,
+          userId: userEmail || '',
+          userEmail: userEmail || '',
+          userName: userName || userEmail || '',
+          userRole,
+          startTime: formStartTime,
+          endTime: new Date().toISOString(),
+          durationSeconds: finalTime,
+          unit: patient?.unit,
+          isEdit: !!existingNote
+        });
+      }
+
       await onSave(progressNote);
+
+      // Show celebration
+      setShowCelebration(true);
     } catch (error) {
       console.error('Save error:', error);
     } finally {
@@ -254,16 +300,26 @@ const ClinicalNoteModern: React.FC<ClinicalNoteModernProps> = ({
             </p>
           </div>
 
-          {/* Voice Scribe Button - Primary CTA */}
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setShowVoiceScribe(true)}
-            className="px-5 py-3 bg-white text-purple-600 rounded-xl font-bold flex items-center gap-2 shadow-lg"
-          >
-            <Mic className="w-5 h-5" />
-            Voice Scribe
-          </motion.button>
+          <div className="flex items-center gap-3">
+            {/* Note Timer */}
+            <FormTimer
+              isRunning={isTimerRunning}
+              onTimeUpdate={setElapsedSeconds}
+              label="Note Time"
+              compact={true}
+            />
+
+            {/* Voice Scribe Button - Primary CTA */}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowVoiceScribe(true)}
+              className="px-5 py-3 bg-white text-purple-600 rounded-xl font-bold flex items-center gap-2 shadow-lg"
+            >
+              <Mic className="w-5 h-5" />
+              Voice Scribe
+            </motion.button>
+          </div>
         </div>
 
         {/* Quick Action Buttons */}
@@ -668,6 +724,18 @@ const ClinicalNoteModern: React.FC<ClinicalNoteModernProps> = ({
         onClose={() => setShowVoiceScribe(false)}
         onInsert={handleVoiceInsert}
         patient={patient}
+      />
+
+      {/* Celebration Animation */}
+      <CelebrationAnimation
+        show={showCelebration}
+        onComplete={() => {
+          setShowCelebration(false);
+          onCancel(); // Close the note form after celebration
+        }}
+        timeTaken={celebrationTimeTaken}
+        formType="clinical_note"
+        patientName={patient?.name}
       />
     </div>
   );

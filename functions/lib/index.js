@@ -1,7 +1,7 @@
 "use strict";
 var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyAuthMode = exports.authSystemStatus = exports.healthCheck = exports.medAsrTranscribe = exports.onSuperAdminWrite = exports.onDistrictAdminWrite = exports.onInstitutionWrite = exports.onApprovedUserWrite = exports.onOfficialWrite = exports.migrateAllUsersToLookup = exports.autoFixPasswords = exports.initializeUserPassword = exports.getAuthAuditLogs = exports.changePassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.authenticateUser = exports.createSecureUser = void 0;
+exports.verifyAuthMode = exports.authSystemStatus = exports.healthCheck = exports.medAsrTranscribe = exports.onSuperAdminWrite = exports.onDistrictAdminWrite = exports.onInstitutionWrite = exports.onApprovedUserWrite = exports.onOfficialWrite = exports.migrateAllUsersToLookup = exports.syncUsersToFirebaseAuth = exports.autoFixPasswords = exports.initializeUserPassword = exports.getAuthAuditLogs = exports.changePassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.authenticateUser = exports.createSecureUser = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -22,6 +22,7 @@ Object.defineProperty(exports, "changePassword", { enumerable: true, get: functi
 Object.defineProperty(exports, "getAuthAuditLogs", { enumerable: true, get: function () { return auth_1.getAuthAuditLogs; } });
 Object.defineProperty(exports, "initializeUserPassword", { enumerable: true, get: function () { return auth_1.initializeUserPassword; } });
 Object.defineProperty(exports, "autoFixPasswords", { enumerable: true, get: function () { return auth_1.autoFixPasswords; } });
+Object.defineProperty(exports, "syncUsersToFirebaseAuth", { enumerable: true, get: function () { return auth_1.syncUsersToFirebaseAuth; } });
 // Export Scalable User Lookup Functions & Triggers
 var userLookup_1 = require("./userLookup");
 Object.defineProperty(exports, "migrateAllUsersToLookup", { enumerable: true, get: function () { return userLookup_1.migrateAllUsersToLookup; } });

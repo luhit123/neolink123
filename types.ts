@@ -28,6 +28,15 @@ export enum AdmissionType {
   OutbornCommunity = "Outborn (Community Referred)"
 }
 
+// Multiple Birth Types for twins, triplets, etc.
+export enum MultipleBirthType {
+  Single = "Single",
+  Twins = "Twins",
+  Triplets = "Triplets",
+  Quadruplets = "Quadruplets",
+  Quintuplets = "Quintuplets+"
+}
+
 export enum Category {
   General = "General",
   OBC = "OBC",
@@ -319,6 +328,12 @@ export interface Patient {
   birthWeight?: number; // Birth Weight in Kg
   modeOfDelivery?: ModeOfDelivery; // How the baby was delivered
 
+  // Multiple Birth Information (Twins, Triplets, etc.)
+  multipleBirthType?: MultipleBirthType; // Single, Twins, Triplets, etc.
+  multipleBirthId?: string; // Shared ID linking all siblings from same birth
+  birthOrder?: number; // 1 = First born, 2 = Second born, etc.
+  siblingPatientIds?: string[]; // Array of patient IDs of siblings from same birth
+
   // Gestational Age at Birth (calculated from LMP and DOB)
   gestationalAgeWeeks?: number; // Completed weeks at birth
   gestationalAgeDays?: number; // Remaining days after completed weeks
@@ -390,6 +405,19 @@ export interface Patient {
   // Edit tracking
   editHistory?: EditHistory[]; // Track all edits
   lastEditedAt?: string; // ISO string of last edit
+
+  // DPDP Act Compliance - Parental Consent for Minors (Section 9)
+  parentalConsent?: {
+    guardianName: string; // Name of parent/guardian who gave consent
+    guardianRelation: 'Mother' | 'Father' | 'Legal Guardian'; // Relation to patient
+    physicalFormSigned: boolean; // Staff attests that physical form was signed
+    aiConsentGiven: boolean; // Separate consent for AI features
+    verifiedByStaff: string; // UserID of staff who verified the physical signature
+    verifiedByStaffName?: string; // Display name of staff
+    consentTimestamp: string; // When consent was recorded
+    consentVersion: string; // Privacy policy version (e.g., "1.0.0")
+    verificationMethod: 'Physical Form + Staff Attestation'; // How consent was verified
+  };
 
   // Medications - Master medication list for the patient
   medications?: Medication[]; // All medications for this patient (active + stopped)
@@ -499,6 +527,14 @@ export interface InstitutionUser {
   userID?: string; // Unique UserID for login (e.g., "GUW001", "GUW002")
   password?: string; // Password set by SuperAdmin/Admin
   allowedDashboards?: Unit[]; // Dashboards user can access (PICU, NICU, SNCU, HDU, GENERAL_WARD)
+
+  // DPDP Compliance - Consent tracking
+  consentAccepted?: boolean;
+  consentTimestamp?: string; // ISO string
+  consentVersion?: string; // e.g. "1.0.0"
+  legitimateUseClauseAccepted?: boolean; // For government legitimate use cases
+  aiConsentAccepted?: boolean; // Separate consent for OpenAI/Gemini data processing
+  aiConsentTimestamp?: string;
 }
 
 export interface UserProfile {
@@ -511,6 +547,14 @@ export interface UserProfile {
   createdAt: string;
   lastLoginAt?: string;
   allRoles?: UserRole[]; // All roles the user has (for multi-role users)
+
+  // DPDP Compliance - Consent tracking
+  consentAccepted?: boolean;
+  consentTimestamp?: string; // ISO string
+  consentVersion?: string;
+  legitimateUseClauseAccepted?: boolean;
+  aiConsentAccepted?: boolean; // Separate consent for OpenAI/Gemini data processing
+  aiConsentTimestamp?: string; // When AI consent was given
 }
 
 export interface ReferralDetails {

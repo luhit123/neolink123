@@ -61,7 +61,7 @@ const AddPatientFAB: React.FC<AddPatientFABProps> = ({ onClick, className = '' }
   };
 
   return (
-    <div className={`fixed bottom-20 md:bottom-8 right-4 md:right-8 z-50 ${className}`}>
+    <div className={`fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] md:bottom-8 right-4 md:right-8 z-[60] ${className}`}>
       {/* Tooltip - Desktop only */}
       <AnimatePresence>
         {isHovered && (

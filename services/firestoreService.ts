@@ -147,11 +147,11 @@ export const getPatients = async (collegeId: string): Promise<Patient[]> => {
     const patientsRef = collection(db, 'colleges', collegeId, 'patients');
     const q = query(patientsRef, orderBy('admissionDate', 'desc'));
     const snapshot = await getDocs(q);
-    
+
     const patients: Patient[] = [];
     for (const docSnap of snapshot.docs) {
       const patient = firestoreToPatient(docSnap.data());
-      
+
       // Load progress notes
       const notesRef = collection(db, 'colleges', collegeId, 'patients', docSnap.id, 'progressNotes');
       const notesSnapshot = await getDocs(query(notesRef, orderBy('date', 'asc')));
@@ -167,10 +167,10 @@ export const getPatients = async (collegeId: string): Promise<Patient[]> => {
           addedByEmail: data.addedByEmail,
         };
       });
-      
+
       patients.push(patient);
     }
-    
+
     return patients;
   } catch (error) {
     console.error('Error getting patients:', error);
@@ -188,9 +188,9 @@ export const addPatient = async (
   try {
     const patientsRef = collection(db, 'colleges', collegeId, 'patients');
     const patientData = patientToFirestore(patient, userId, userRole);
-    
+
     const docRef = await addDoc(patientsRef, patientData);
-    
+
     // Add progress notes as subcollection
     if (patient.progressNotes && patient.progressNotes.length > 0) {
       const batch = writeBatch(db);
@@ -212,7 +212,7 @@ export const addPatient = async (
 
       await batch.commit();
     }
-    
+
     return docRef.id;
   } catch (error) {
     console.error('Error adding patient:', error);
@@ -231,7 +231,7 @@ export const updatePatient = async (
   try {
     const patientRef = doc(db, 'colleges', collegeId, 'patients', patientId);
     const patientData = patientToFirestore(patient, userId, userRole);
-    
+
     // Update main patient document
     await updateDoc(patientRef, {
       ...patientData,
@@ -239,17 +239,17 @@ export const updatePatient = async (
       'metadata.lastUpdatedByRole': userRole,
       'metadata.lastUpdatedAt': serverTimestamp(),
     });
-    
+
     // Update progress notes
     const notesRef = collection(db, 'colleges', collegeId, 'patients', patientId, 'progressNotes');
     const existingNotes = await getDocs(notesRef);
-    
+
     // Delete existing notes
     const batch = writeBatch(db);
     existingNotes.docs.forEach((doc) => {
       batch.delete(doc.ref);
     });
-    
+
     // Add new notes
     if (patient.progressNotes && patient.progressNotes.length > 0) {
       patient.progressNotes.forEach((note) => {
@@ -266,7 +266,7 @@ export const updatePatient = async (
         });
       });
     }
-    
+
     await batch.commit();
   } catch (error) {
     console.error('Error updating patient:', error);
@@ -328,7 +328,7 @@ export const getUserProfile = async (userId: string) => {
   try {
     const userRef = doc(db, 'users', userId);
     const userSnap = await getDoc(userRef);
-    
+
     if (userSnap.exists()) {
       return userSnap.data();
     }
@@ -350,7 +350,7 @@ export async function saveUserProfile(userId: string, profile: {
   try {
     const userRef = doc(db, 'users', userId);
     const userDoc = await getDoc(userRef);
-    
+
     if (userDoc.exists()) {
       await updateDoc(userRef, {
         ...profile,
@@ -366,6 +366,30 @@ export async function saveUserProfile(userId: string, profile: {
     }
   } catch (error) {
     console.error('Error saving user profile:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update user consent for DPDP compliance
+ * @param userId - Firebase Auth UID
+ * @param consentData - Consent details
+ */
+export async function updateUserConsent(userId: string, consentData: {
+  consentAccepted: boolean;
+  consentTimestamp: string;
+  consentVersion: string;
+  legitimateUseClauseAccepted?: boolean;
+}) {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      ...consentData,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    console.log('✅ User consent recorded in Firestore');
+  } catch (error) {
+    console.error('Error updating user consent:', error);
     throw error;
   }
 }

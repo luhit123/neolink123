@@ -17,6 +17,7 @@ interface MedicationManagementProps {
 
 // Medication categories for color coding
 const MEDICATION_CATEGORIES: Record<string, { color: string; bgColor: string; borderColor: string; icon: string }> = {
+    'Phototherapy': { color: 'text-yellow-700', bgColor: 'bg-yellow-50', borderColor: 'border-yellow-400', icon: '☀️' },
     'Antibiotic': { color: 'text-red-700', bgColor: 'bg-red-50', borderColor: 'border-red-300', icon: '💊' },
     'Antifungal': { color: 'text-purple-700', bgColor: 'bg-purple-50', borderColor: 'border-purple-300', icon: '🦠' },
     'Inotrope': { color: 'text-orange-700', bgColor: 'bg-orange-50', borderColor: 'border-orange-300', icon: '❤️' },
@@ -38,6 +39,10 @@ const MEDICATION_CATEGORIES: Record<string, { color: string; bgColor: string; bo
 const categorizeMedication = (name: string): string => {
     const lowerName = name.toLowerCase();
 
+    // Phototherapy (check first as it's a common treatment)
+    if (/phototherapy|photo therapy|light therapy/.test(lowerName)) {
+        return 'Phototherapy';
+    }
     // Antibiotics
     if (/ampicillin|amoxicillin|penicillin|gentamicin|amikacin|vancomycin|meropenem|cefotaxime|ceftazidime|ceftriaxone|cefepime|piperacillin|tazobactam|metronidazole|clindamycin|azithromycin|erythromycin|ciprofloxacin|levofloxacin|colistin|linezolid|teicoplanin/.test(lowerName)) {
         return 'Antibiotic';
@@ -127,6 +132,9 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
         frequency: 'q12h'
     });
 
+    // Edit medication state
+    const [editingMedication, setEditingMedication] = useState<{ index: number; medication: Medication } | null>(null);
+
     // Separate active and stopped medications
     const activeMedications = useMemo(() =>
         medications.filter(m => m.isActive !== false), [medications]);
@@ -145,7 +153,7 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
         });
 
         // Sort categories by priority
-        const categoryOrder = ['Antibiotic', 'Antifungal', 'Inotrope', 'IV Fluid', 'TPN', 'Nutrition', 'Respiratory', 'Cardiac', 'Analgesic', 'Sedative', 'Anticonvulsant', 'GI', 'Vitamin', 'Other'];
+        const categoryOrder = ['Phototherapy', 'Antibiotic', 'Antifungal', 'Inotrope', 'IV Fluid', 'TPN', 'Nutrition', 'Respiratory', 'Cardiac', 'Analgesic', 'Sedative', 'Anticonvulsant', 'GI', 'Vitamin', 'Other'];
         const sortedGroups: typeof groups = {};
         categoryOrder.forEach(cat => {
             if (groups[cat]) sortedGroups[cat] = groups[cat];
@@ -200,6 +208,41 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
     const handleRemoveMedication = (index: number) => {
         if (confirm('Remove this medication permanently?')) {
             onUpdate(medications.filter((_, i) => i !== index));
+        }
+    };
+
+    // Edit medication handlers
+    const handleEditMedication = (index: number) => {
+        setEditingMedication({ index, medication: { ...medications[index] } });
+    };
+
+    const handleSaveEdit = () => {
+        if (editingMedication) {
+            const updatedMedications = medications.map((med, i) => {
+                if (i === editingMedication.index) {
+                    return {
+                        ...editingMedication.medication,
+                        editedBy: userName || userEmail || userRole,
+                        editedAt: new Date().toISOString()
+                    };
+                }
+                return med;
+            });
+            onUpdate(updatedMedications);
+            setEditingMedication(null);
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setEditingMedication(null);
+    };
+
+    const updateEditingMedication = (field: keyof Medication, value: any) => {
+        if (editingMedication) {
+            setEditingMedication({
+                ...editingMedication,
+                medication: { ...editingMedication.medication, [field]: value }
+            });
         }
     };
 
@@ -406,6 +449,59 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                 )}
             </AnimatePresence>
 
+            {/* Quick Phototherapy Buttons */}
+            {!readOnly && (
+                <div className="px-4 py-3 bg-gradient-to-r from-yellow-50 to-amber-50 border-b-2 border-yellow-200">
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg">☀️</span>
+                        <span className="text-sm font-bold text-yellow-800">Quick Phototherapy</span>
+                        <span className="text-xs text-yellow-600">(For Jaundice)</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            onClick={() => {
+                                const phototherapyMed = {
+                                    name: 'Single Surface Phototherapy',
+                                    dose: 'Continuous',
+                                    route: 'TOP',
+                                    frequency: 'Continuous',
+                                    addedBy: userName || userEmail || userRole,
+                                    addedAt: new Date().toISOString(),
+                                    startDate: new Date().toISOString(),
+                                    isActive: true,
+                                    isCustom: false
+                                };
+                                onUpdate([...medications, phototherapyMed]);
+                            }}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-yellow-100 hover:bg-yellow-200 border-2 border-yellow-400 text-yellow-800 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
+                        >
+                            <span className="text-xl">💡</span>
+                            <span>Single Surface</span>
+                        </button>
+                        <button
+                            onClick={() => {
+                                const phototherapyMed = {
+                                    name: 'Double Surface Phototherapy',
+                                    dose: 'Continuous',
+                                    route: 'TOP',
+                                    frequency: 'Continuous',
+                                    addedBy: userName || userEmail || userRole,
+                                    addedAt: new Date().toISOString(),
+                                    startDate: new Date().toISOString(),
+                                    isActive: true,
+                                    isCustom: false
+                                };
+                                onUpdate([...medications, phototherapyMed]);
+                            }}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-orange-100 hover:bg-orange-200 border-2 border-orange-400 text-orange-800 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
+                        >
+                            <span className="text-xl">💡💡</span>
+                            <span>Double Surface</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Main Content */}
             <div className="p-4">
                 {activeMedications.length === 0 && stoppedMedications.length === 0 ? (
@@ -488,6 +584,15 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                                                         </div>
                                                         {!readOnly && (
                                                             <div className="flex gap-1">
+                                                                <button
+                                                                    onClick={() => handleEditMedication(med.index)}
+                                                                    className="p-1.5 rounded bg-blue-100 text-blue-600"
+                                                                    title="Edit"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                    </svg>
+                                                                </button>
                                                                 <button
                                                                     onClick={() => handleStopMedication(med.index)}
                                                                     className="p-1.5 rounded bg-orange-100 text-orange-600"
@@ -592,6 +697,15 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                                                             {!readOnly && (
                                                                 <td className="px-3 py-3 text-center">
                                                                     <div className="flex items-center justify-center gap-1">
+                                                                        <button
+                                                                            onClick={() => handleEditMedication(med.index)}
+                                                                            className="p-1.5 rounded bg-blue-100 hover:bg-blue-200 text-blue-600 transition-colors"
+                                                                            title="Edit medication"
+                                                                        >
+                                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                            </svg>
+                                                                        </button>
                                                                         <button
                                                                             onClick={() => handleStopMedication(med.index)}
                                                                             className="p-1.5 rounded bg-orange-100 hover:bg-orange-200 text-orange-600 transition-colors"
@@ -767,6 +881,138 @@ const MedicationManagement: React.FC<MedicationManagementProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* Edit Medication Modal */}
+            <AnimatePresence>
+                {editingMedication && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+                        onClick={handleCancelEdit}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* Modal Header */}
+                            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-4">
+                                <h3 className="text-lg font-bold flex items-center gap-2">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                    Edit Medication
+                                </h3>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div className="p-5 space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">DRUG NAME</label>
+                                    <input
+                                        type="text"
+                                        value={editingMedication.medication.name}
+                                        onChange={(e) => updateEditingMedication('name', e.target.value)}
+                                        className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5">DOSE</label>
+                                        <input
+                                            type="text"
+                                            value={editingMedication.medication.dose}
+                                            onChange={(e) => updateEditingMedication('dose', e.target.value)}
+                                            className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5">ROUTE</label>
+                                        <select
+                                            value={editingMedication.medication.route}
+                                            onChange={(e) => updateEditingMedication('route', e.target.value)}
+                                            className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                            <option value="IV">IV</option>
+                                            <option value="PO">PO (Oral)</option>
+                                            <option value="IM">IM</option>
+                                            <option value="SC">SC</option>
+                                            <option value="INH">INH (Inhaled)</option>
+                                            <option value="TOP">TOP (Topical)</option>
+                                            <option value="PR">PR (Rectal)</option>
+                                            <option value="SL">SL (Sublingual)</option>
+                                            <option value="NG">NG (Nasogastric)</option>
+                                            <option value="NEB">NEB (Nebulizer)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">FREQUENCY</label>
+                                    <select
+                                        value={editingMedication.medication.frequency}
+                                        onChange={(e) => updateEditingMedication('frequency', e.target.value)}
+                                        className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="STAT">STAT (Once immediately)</option>
+                                        <option value="OD">OD (Once daily)</option>
+                                        <option value="BD">BD (Twice daily)</option>
+                                        <option value="TDS">TDS (Three times daily)</option>
+                                        <option value="QID">QID (Four times daily)</option>
+                                        <option value="q4h">q4h (Every 4 hours)</option>
+                                        <option value="q6h">q6h (Every 6 hours)</option>
+                                        <option value="q8h">q8h (Every 8 hours)</option>
+                                        <option value="q12h">q12h (Every 12 hours)</option>
+                                        <option value="q24h">q24h (Every 24 hours)</option>
+                                        <option value="PRN">PRN (As needed)</option>
+                                        <option value="Continuous">Continuous</option>
+                                    </select>
+                                </div>
+
+                                {/* Quick Stop Option */}
+                                {editingMedication.medication.isActive !== false && (
+                                    <div className="pt-2 border-t border-slate-200">
+                                        <button
+                                            onClick={() => {
+                                                updateEditingMedication('isActive', false);
+                                                updateEditingMedication('stopDate', new Date().toISOString());
+                                            }}
+                                            className="w-full px-4 py-2.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                                            </svg>
+                                            Stop This Medication
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="px-5 py-4 bg-slate-50 border-t border-slate-200 flex gap-3">
+                                <button
+                                    onClick={handleCancelEdit}
+                                    className="flex-1 px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-sm font-bold transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSaveEdit}
+                                    className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-sm font-bold transition-colors"
+                                >
+                                    Save Changes
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

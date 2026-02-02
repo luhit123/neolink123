@@ -16,7 +16,7 @@
  * ============================================================================
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.autoFixPasswords = exports.initializeUserPassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.getAuthAuditLogs = exports.createSecureUser = exports.changePassword = exports.authenticateUser = void 0;
+exports.autoFixPasswords = exports.syncUsersToFirebaseAuth = exports.initializeUserPassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.getAuthAuditLogs = exports.createSecureUser = exports.changePassword = exports.authenticateUser = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -240,7 +240,11 @@ exports.authenticateUser = functions.region(FUNCTION_REGION).https.onCall(async 
         let firebaseUser;
         try {
             firebaseUser = await auth.getUserByEmail(user.email);
-            await auth.updateUser(firebaseUser.uid, { password });
+            // Update the password to ensure Firebase Auth is in sync
+            await auth.updateUser(firebaseUser.uid, {
+                password,
+                displayName: user.displayName || firebaseUser.displayName,
+            });
         }
         catch (e) {
             if (e.code === 'auth/user-not-found') {
@@ -261,12 +265,19 @@ exports.authenticateUser = functions.region(FUNCTION_REGION).https.onCall(async 
             institutionId: user.institutionId || null,
             userID: user.userID || null,
         });
-        // Step 9: Update last login
+        // Step 9: Generate custom token for reliable sign-in
+        // This avoids timing issues with password propagation
+        const customToken = await auth.createCustomToken(firebaseUser.uid, {
+            role: user.role,
+            institutionId: user.institutionId || null,
+            userID: user.userID || null,
+        });
+        // Step 10: Update last login
         await db.collection(user.collection).doc(user.docId).update({
             lastLoginAt: new Date().toISOString(),
             firebaseUid: firebaseUser.uid,
         }).catch(() => { });
-        // Step 10: Audit log success
+        // Step 11: Audit log success
         await logAudit({
             action: 'LOGIN_SUCCESS',
             email: user.email,
@@ -277,7 +288,7 @@ exports.authenticateUser = functions.region(FUNCTION_REGION).https.onCall(async 
         console.log(`✅ Login success: ${user.email} (${user.role})`);
         return {
             success: true,
-            useClientAuth: true,
+            token: customToken, // Return custom token for reliable sign-in
             user: {
                 uid: firebaseUser.uid,
                 email: user.email,
@@ -429,6 +440,104 @@ exports.bulkMigratePasswords = functions.region(FUNCTION_REGION).https.onCall(as
 });
 exports.initializeUserPassword = functions.region(FUNCTION_REGION).https.onCall(async () => {
     return { success: true, message: 'Use autoFixPasswords endpoint' };
+});
+// ============================================================================
+// SYNC ALL USERS TO FIREBASE AUTH (Enables Password Reset)
+// ============================================================================
+exports.syncUsersToFirebaseAuth = functions.region(FUNCTION_REGION).https.onRequest(async (req, res) => {
+    const results = [];
+    const collections = [
+        { name: 'superAdmins', emailField: 'email', passwordField: 'password', role: 'SuperAdmin' },
+        { name: 'districtAdmins', emailField: 'email', passwordField: 'password', role: 'DistrictAdmin' },
+        { name: 'institutions', emailField: 'adminEmail', passwordField: 'password', role: 'Admin' },
+        { name: 'officials', emailField: 'email', passwordField: 'password', role: 'Official' },
+        { name: 'approved_users', emailField: 'email', passwordField: 'password', role: null },
+    ];
+    for (const col of collections) {
+        const snapshot = await db.collection(col.name).get();
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            const email = data[col.emailField];
+            if (!email)
+                continue;
+            // Get password from various possible fields
+            const password = data.password || data.adminPassword || data.initialPassword || '';
+            const passwordHash = data.passwordHash || '';
+            // Skip if no password at all
+            if (!password && !passwordHash) {
+                results.push({ email, status: 'SKIPPED', reason: 'no password in Firestore' });
+                continue;
+            }
+            try {
+                let firebaseUser;
+                let action;
+                try {
+                    // Check if user exists in Firebase Auth
+                    firebaseUser = await auth.getUserByEmail(email.toLowerCase());
+                    // User exists - check if they have password provider
+                    const hasPasswordProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
+                    if (!hasPasswordProvider && password && !isBcryptHash(password)) {
+                        // Add password to existing user
+                        await auth.updateUser(firebaseUser.uid, { password });
+                        action = 'UPDATED (added password provider)';
+                    }
+                    else if (!hasPasswordProvider) {
+                        // Has bcrypt hash - use default password
+                        await auth.updateUser(firebaseUser.uid, { password: 'NeoLink@2024' });
+                        action = 'UPDATED (set default password)';
+                    }
+                    else {
+                        action = 'EXISTS (has password provider)';
+                    }
+                }
+                catch (e) {
+                    if (e.code === 'auth/user-not-found') {
+                        // Create new Firebase Auth user
+                        const userPassword = (password && !isBcryptHash(password)) ? password : 'NeoLink@2024';
+                        firebaseUser = await auth.createUser({
+                            email: email.toLowerCase(),
+                            password: userPassword,
+                            displayName: data.displayName || data.adminName || data.name || email,
+                            emailVerified: true,
+                        });
+                        action = 'CREATED';
+                    }
+                    else {
+                        throw e;
+                    }
+                }
+                // Update Firestore with Firebase UID
+                await doc.ref.update({
+                    firebaseUid: firebaseUser.uid,
+                    syncedToFirebaseAuth: new Date().toISOString(),
+                }).catch(() => { });
+                results.push({
+                    email,
+                    role: col.role || data.role,
+                    status: action,
+                    uid: firebaseUser.uid,
+                });
+            }
+            catch (error) {
+                results.push({ email, status: 'ERROR', error: error.message });
+            }
+        }
+    }
+    const created = results.filter(r => r.status === 'CREATED').length;
+    const updated = results.filter(r => { var _a; return (_a = r.status) === null || _a === void 0 ? void 0 : _a.includes('UPDATED'); }).length;
+    const existing = results.filter(r => { var _a; return (_a = r.status) === null || _a === void 0 ? void 0 : _a.includes('EXISTS'); }).length;
+    res.json({
+        success: true,
+        message: `Synced ${created + updated} users to Firebase Auth. Password reset emails will now work.`,
+        summary: {
+            created,
+            updated,
+            alreadyExists: existing,
+            errors: results.filter(r => r.status === 'ERROR').length,
+            skipped: results.filter(r => r.status === 'SKIPPED').length,
+        },
+        results,
+    });
 });
 // ============================================================================
 // SET PASSWORD FOR USERS WITHOUT ONE

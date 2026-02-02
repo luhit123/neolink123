@@ -166,10 +166,11 @@ service cloud.firestore {
                       request.resource.data.keys().hasAll(['createdAt', 'createdBy', 'institutionId']);
 
       // Update: Must be authenticated and belong to institution
-      // Note: updatedAt/updatedBy are recommended but not strictly required to allow status changes
+      // DPDP Requirement: Every update must be tracked via metadata
       allow update: if isAuthenticated() &&
                       (isSuperAdmin() ||
-                       resource.data.institutionId == getUserData().institutionId);
+                       resource.data.institutionId == getUserData().institutionId) &&
+                      request.resource.data.metadata.keys().hasAll(['lastUpdatedBy', 'lastUpdatedAt']);
 
       // Delete: Only admins can delete (soft delete preferred)
       allow delete: if isSuperAdmin() ||
@@ -482,6 +483,47 @@ service cloud.firestore {
 
       // Only SuperAdmins can manage district admins
       allow create, update, delete: if isSuperAdmin();
+    }
+
+    // ==================== CUSTOM DISTRICTS ====================
+    // User-added districts that don't exist in the static data
+    match /customDistricts/{districtId} {
+      // All authenticated users can read custom districts
+      allow read: if isAuthenticated();
+      // Authenticated users can create new districts
+      allow create: if isAuthenticated();
+      // Only SuperAdmins can update or delete
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // ==================== PATIENT EDIT HISTORY (Audit Trail) ====================
+    // Tracks all edits made to patient records
+    match /patientEditHistory/{historyId} {
+      // Authenticated users can read edit history for their institution
+      allow read: if isAuthenticated() &&
+                    (isSuperAdmin() ||
+                     resource.data.institutionId == getUserData().institutionId);
+      // Authenticated users can create edit history entries
+      allow create: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       request.resource.data.institutionId == getUserData().institutionId);
+      // Edit history is IMMUTABLE - no updates or deletes
+      allow update, delete: if false;
+    }
+
+    // ==================== FORM TIMINGS (Research Analytics) ====================
+    // Tracks form completion times for research and performance analytics
+    match /formTimings/{timingId} {
+      // Authenticated users can read timings for their institution
+      allow read: if isAuthenticated() &&
+                    (isSuperAdmin() ||
+                     resource.data.institutionId == getUserData().institutionId);
+      // Authenticated users can create timing records
+      allow create: if isAuthenticated() &&
+                      (isSuperAdmin() ||
+                       request.resource.data.institutionId == getUserData().institutionId);
+      // Timing records are IMMUTABLE for data integrity
+      allow update, delete: if isSuperAdmin();
     }
 
     // ==================== DEFAULT DENY ====================

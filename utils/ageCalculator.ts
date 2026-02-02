@@ -1,15 +1,17 @@
-import { AgeUnit } from '../types';
+import { AgeUnit, Unit } from '../types';
 
 /**
  * Calculate age from birth date and return the appropriate age and unit
  * Automatically selects the most appropriate unit based on the duration
+ * @param dateOfBirth - ISO string of birth date
+ * @param forceUnit - If specified, always return age in this unit (used for NICU/SNCU which need days)
  */
-export function calculateAgeFromBirthDate(dateOfBirth: string): {
+export function calculateAgeFromBirthDate(dateOfBirth: string, forceUnit?: AgeUnit): {
   age: number;
   ageUnit: AgeUnit;
 } {
   if (!dateOfBirth) {
-    return { age: 0, ageUnit: AgeUnit.Days };
+    return { age: 0, ageUnit: forceUnit || AgeUnit.Days };
   }
 
   const birthDate = new Date(dateOfBirth);
@@ -18,6 +20,14 @@ export function calculateAgeFromBirthDate(dateOfBirth: string): {
   // Calculate difference in milliseconds
   const diffMs = now.getTime() - birthDate.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  // If force unit is specified (for NICU/SNCU), always return days
+  if (forceUnit === AgeUnit.Days) {
+    return {
+      age: diffDays,
+      ageUnit: AgeUnit.Days
+    };
+  }
 
   // Less than 7 days old -> use Days
   if (diffDays < 7) {
@@ -61,14 +71,36 @@ export function calculateAgeFromBirthDate(dateOfBirth: string): {
 }
 
 /**
- * Calculate age at a specific date from birth date
+ * Calculate age in days from birth date - specifically for NICU/SNCU
  */
-export function calculateAgeAtDate(dateOfBirth: string, targetDate: string): {
+export function calculateAgeInDays(dateOfBirth: string): number {
+  if (!dateOfBirth) return 0;
+
+  const birthDate = new Date(dateOfBirth);
+  const now = new Date();
+  const diffMs = now.getTime() - birthDate.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Determine if age should always be shown in days based on unit type
+ */
+export function shouldUseAgeInDays(unit: Unit): boolean {
+  return unit === Unit.NICU || unit === Unit.SNCU;
+}
+
+/**
+ * Calculate age at a specific date from birth date
+ * @param dateOfBirth - ISO string of birth date
+ * @param targetDate - ISO string of target date
+ * @param forceUnit - If specified, always return age in this unit (used for NICU/SNCU which need days)
+ */
+export function calculateAgeAtDate(dateOfBirth: string, targetDate: string, forceUnit?: AgeUnit): {
   age: number;
   ageUnit: AgeUnit;
 } {
   if (!dateOfBirth || !targetDate) {
-    return { age: 0, ageUnit: AgeUnit.Days };
+    return { age: 0, ageUnit: forceUnit || AgeUnit.Days };
   }
 
   const birthDate = new Date(dateOfBirth);
@@ -77,6 +109,14 @@ export function calculateAgeAtDate(dateOfBirth: string, targetDate: string): {
   // Calculate difference in milliseconds
   const diffMs = target.getTime() - birthDate.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  // If force unit is specified (for NICU/SNCU), always return days
+  if (forceUnit === AgeUnit.Days) {
+    return {
+      age: diffDays,
+      ageUnit: AgeUnit.Days
+    };
+  }
 
   // Less than 7 days old -> use Days
   if (diffDays < 7) {

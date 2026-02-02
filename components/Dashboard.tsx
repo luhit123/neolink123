@@ -41,6 +41,44 @@ import { ObservationPatient, ObservationOutcome } from '../types';
 // Supabase sync for hybrid architecture
 import { syncPatientToSupabase, deletePatientSync } from '../services/supabaseSyncService';
 
+// Helper to convert Firestore Timestamp to ISO string
+const timestampToISO = (value: any): string | undefined => {
+  if (!value) return undefined;
+  // Firestore Timestamp object
+  if (value && typeof value.toDate === 'function') {
+    return value.toDate().toISOString();
+  }
+  // Already a string
+  if (typeof value === 'string') {
+    return value;
+  }
+  // JavaScript Date object
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  // Firestore Timestamp-like object with seconds/nanoseconds
+  if (value && typeof value.seconds === 'number') {
+    return new Date(value.seconds * 1000).toISOString();
+  }
+  return undefined;
+};
+
+// Convert all date fields in a patient document from Firestore Timestamps to ISO strings
+const convertPatientDates = (data: any): any => {
+  return {
+    ...data,
+    admissionDate: timestampToISO(data.admissionDate) || data.admissionDate,
+    admissionDateTime: timestampToISO(data.admissionDateTime) || data.admissionDateTime,
+    releaseDate: timestampToISO(data.releaseDate),
+    dischargeDateTime: timestampToISO(data.dischargeDateTime),
+    dateOfBirth: timestampToISO(data.dateOfBirth),
+    stepDownDate: timestampToISO(data.stepDownDate),
+    finalDischargeDate: timestampToISO(data.finalDischargeDate),
+    createdAt: timestampToISO(data.createdAt),
+    lastEditedAt: timestampToISO(data.lastEditedAt),
+  };
+};
+
 interface DashboardProps {
   userRole: UserRole;
   institutionId?: string; // SuperAdmin doesn't have institutionId
@@ -118,7 +156,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
     return Unit.NICU;
   });
-  const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('All');
+  const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('Inborn');
   const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'Today' });
   const [shiftFilter, setShiftFilter] = useState<ShiftFilterConfigs>({
     enabled: false,
@@ -309,10 +347,15 @@ const Dashboard: React.FC<DashboardProps> = ({
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const allPatients = snapshot.docs.map(doc => ({
-          ...doc.data(),
-          id: doc.id,
-        } as Patient));
+        const allPatients = snapshot.docs.map(doc => {
+          const data = doc.data();
+          // Convert Firestore Timestamps to ISO strings for proper form handling
+          const convertedData = convertPatientDates(data);
+          return {
+            ...convertedData,
+            id: doc.id,
+          } as Patient;
+        });
 
         setPatients(allPatients);
         setLoading(false);
@@ -518,11 +561,12 @@ const Dashboard: React.FC<DashboardProps> = ({
       ? patients.filter(p => p.institutionId === institutionId && p.unit === selectedUnit)
       : patients.filter(p => p.unit === selectedUnit);
 
-    if (selectedUnit === Unit.NICU && nicuView !== 'All') {
+    // Apply Inborn/Outborn filter for NICU and SNCU
+    if ((selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && nicuView !== 'All') {
       if (nicuView === 'Outborn') {
         baseFiltered = baseFiltered.filter(p => p.admissionType?.includes('Outborn'));
-      } else {
-        baseFiltered = baseFiltered.filter(p => p.admissionType === nicuView);
+      } else if (nicuView === 'Inborn') {
+        baseFiltered = baseFiltered.filter(p => p.admissionType === 'Inborn');
       }
     }
 
@@ -901,7 +945,14 @@ const Dashboard: React.FC<DashboardProps> = ({
       const viewTitle = nicuView === 'All' ? '' : `- ${nicuView} Patients`;
       return `NICU Dashboard ${viewTitle}`;
     }
-    return 'PICU Dashboard';
+    if (selectedUnit === Unit.SNCU) {
+      const viewTitle = nicuView === 'All' ? '' : `- ${nicuView} Patients`;
+      return `SNCU Dashboard ${viewTitle}`;
+    }
+    if (selectedUnit === Unit.PICU) {
+      return 'PICU Dashboard';
+    }
+    return `${selectedUnit} Dashboard`;
   };
 
   const getPeriodTitle = (period: string) => {
@@ -1096,7 +1147,10 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handleSelectUnit = (unit: Unit) => {
     setSelectedUnit(unit);
-    setNicuView('All'); // Reset nicu view when switching main unit
+    // Reset to Inborn for NICU/SNCU, otherwise 'All' is fine (won't be shown anyway for other units)
+    if (unit === Unit.NICU || unit === Unit.SNCU) {
+      setNicuView('Inborn');
+    }
 
     // Notify parent of unit change
     if (onUnitChange) {
@@ -1147,7 +1201,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           }, 300);
         }}
         onEdit={handleEditPatient}
-        canEdit={hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)}
+        canEdit={hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse) || hasRole(UserRole.Admin) || hasRole(UserRole.SuperAdmin)}
         userEmail={userEmail || ''}
         userName={displayName || userEmail?.split('@')[0] || 'User'}
         userRole={userRole}
@@ -1284,7 +1338,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               onSelectUnit={setSelectedUnit}
               availableUnits={enabledFacilities}
             />
-            {selectedUnit === Unit.NICU && (
+            {(selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && (
               <>
                 <div className="h-5 w-px bg-slate-300 dark:bg-slate-600 hidden sm:block"></div>
                 <NicuViewSelection selectedView={nicuView} onSelectView={setNicuView} />
@@ -1825,7 +1879,13 @@ const Dashboard: React.FC<DashboardProps> = ({
       </BottomSheet>
 
       {/* World-Class Add Patient FAB - Works on both Mobile and Web, Hidden for Officials */}
-      {userRole !== UserRole.Official && (hasRole(UserRole.Doctor) || hasRole(UserRole.Nurse)) && (
+      {userRole !== UserRole.Official && (
+        hasRole(UserRole.Doctor) ||
+        hasRole(UserRole.Nurse) ||
+        hasRole(UserRole.Admin) ||
+        hasRole(UserRole.SuperAdmin) ||
+        hasRole(UserRole.DistrictAdmin)
+      ) && (
         <AddPatientFAB onClick={() => setShowAddPatientChoice(true)} />
       )}
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { signInWithUserID, sendPasswordResetByUserID, sendPasswordReset, signInWithGoogle } from '../services/authService';
+import { signInWithUserID, sendPasswordResetByUserID, sendPasswordReset, signInWithGoogle, recordConsent } from '../services/authService';
+import PrivacyPolicyModal from './PrivacyPolicyModal';
 import { haptics } from '../utils/haptics';
 import { validateUserID } from '../utils/userIdGenerator';
 import { isMobileDevice } from '../utils/pwaDetection';
@@ -89,6 +90,9 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [isConsentChecked, setIsConsentChecked] = useState(false);
+  const [isAiConsentChecked, setIsAiConsentChecked] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   // Input focus states for floating labels
   const [identifierFocused, setIdentifierFocused] = useState(false);
@@ -150,6 +154,13 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
     setError(null);
     haptics.tap();
 
+    if (!isConsentChecked) {
+      setError('Please accept the Privacy Policy to continue');
+      setLoading(false);
+      haptics.error();
+      return;
+    }
+
     if (!identifier.trim()) {
       setError('Please enter your UserID or Email');
       setLoading(false);
@@ -181,7 +192,9 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
 
     try {
       const loginIdentifier = isEmail ? identifier.toLowerCase().trim() : identifier.toUpperCase().trim();
-      await signInWithUserID(loginIdentifier, password);
+      const user = await signInWithUserID(loginIdentifier, password);
+      // Record user consent upon successful login (including AI consent)
+      await recordConsent(user.uid, isAiConsentChecked);
       setSuccess('Login successful! Redirecting...');
       haptics.success();
     } catch (err: any) {
@@ -197,10 +210,22 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
     setError(null);
     haptics.tap();
 
+    // DPDP Compliance: Enforce consent BEFORE Google Sign-In
+    if (!isConsentChecked) {
+      setError('Please accept the Privacy Policy before signing in with Google');
+      setGoogleLoading(false);
+      haptics.error();
+      return;
+    }
+
     try {
-      await signInWithGoogle();
-      setSuccess('Google sign-in successful! Redirecting...');
-      haptics.success();
+      const user = await signInWithGoogle();
+      if (user) {
+        // Record both privacy and AI consent
+        await recordConsent(user.uid, isAiConsentChecked);
+        setSuccess('Google sign-in successful! Redirecting...');
+        haptics.success();
+      }
     } catch (err: any) {
       console.error('Google sign-in error:', err);
       setError(err.message || 'Failed to sign in with Google');
@@ -286,7 +311,7 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
                   <div className="flex items-center justify-center gap-4 mb-3">
                     <div className={`p-3 rounded-xl bg-gradient-to-br ${slide.gradient} shadow-lg`}>
                       <div className="text-white w-8 h-8">
-                        {React.cloneElement(slide.icon as React.ReactElement, { className: 'w-8 h-8' })}
+                        {React.cloneElement(slide.icon as React.ReactElement, { className: 'w-8 h-8' } as any)}
                       </div>
                     </div>
                     <h3 className="text-xl sm:text-2xl font-bold text-white">
@@ -323,8 +348,8 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
                 key={index}
                 onClick={() => setActiveSlide(index)}
                 className={`transition-all duration-300 rounded-full ${index === activeSlide
-                    ? 'w-6 h-1.5 bg-teal-500'
-                    : 'w-1.5 h-1.5 bg-white/20 hover:bg-white/40'
+                  ? 'w-6 h-1.5 bg-teal-500'
+                  : 'w-1.5 h-1.5 bg-white/20 hover:bg-white/40'
                   }`}
               />
             ))}
@@ -523,6 +548,59 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
               </button>
             </div>
 
+            {/* DPDP Consent Checkbox */}
+            <div className={`p-4 rounded-xl border transition-all ${isConsentChecked ? 'bg-teal-500/5 border-teal-500/20' : 'bg-slate-800/20 border-white/5 hover:border-white/10'}`}>
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <div className="relative mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={isConsentChecked}
+                    onChange={(e) => setIsConsentChecked(e.target.checked)}
+                    className="sr-only"
+                    disabled={loading}
+                  />
+                  <div className={`w-5 h-5 rounded border-2 transition-all ${isConsentChecked ? 'bg-teal-500 border-teal-500' : 'border-white/20 group-hover:border-white/40'}`}>
+                    {isConsentChecked && (
+                      <svg className="w-full h-full text-white p-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+                <span className="text-xs sm:text-sm text-slate-400 leading-snug">
+                  I consent to the collection and processing of my personal and professional data in accordance with India&apos;s <button type="button" onClick={() => setShowPrivacyModal(true)} className="text-teal-400 hover:underline">DPDP Act 2023</button> as described in the <button type="button" onClick={() => setShowPrivacyModal(true)} className="text-teal-400 hover:underline">Privacy Policy</button>.
+                </span>
+              </label>
+            </div>
+
+            {/* DPDP AI Consent Checkbox (Optional - Third-Party Processors) */}
+            <div className={`p-4 rounded-xl border transition-all ${isAiConsentChecked ? 'bg-blue-500/5 border-blue-500/20' : 'bg-slate-800/20 border-white/5 hover:border-white/10'}`}>
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <div className="relative mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={isAiConsentChecked}
+                    onChange={(e) => setIsAiConsentChecked(e.target.checked)}
+                    className="sr-only"
+                    disabled={loading}
+                  />
+                  <div className={`w-5 h-5 rounded border-2 transition-all ${isAiConsentChecked ? 'bg-blue-500 border-blue-500' : 'border-white/20 group-hover:border-white/40'}`}>
+                    {isAiConsentChecked && (
+                      <svg className="w-full h-full text-white p-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <span className="text-xs sm:text-sm text-slate-400 leading-snug">
+                    <strong className="text-blue-400">(Optional)</strong> I consent to AI-powered clinical features that send <strong>de-identified</strong> health data to OpenAI and Google Gemini for analysis. <button type="button" onClick={() => setShowPrivacyModal(true)} className="text-blue-400 hover:underline">Learn more</button>
+                  </span>
+                  <p className="text-[10px] text-slate-500 mt-1">Unchecking this will disable AI clinical assistant, voice notes, and smart analytics.</p>
+                </div>
+              </label>
+            </div>
+
             {/* Sign In Button */}
             <motion.button
               type="submit"
@@ -717,8 +795,8 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
                   key={index}
                   onClick={() => setActiveSlide(index)}
                   className={`transition-all duration-300 rounded-full ${index === activeSlide
-                      ? 'w-8 h-2 bg-teal-500'
-                      : 'w-2 h-2 bg-white/20 hover:bg-white/40'
+                    ? 'w-8 h-2 bg-teal-500'
+                    : 'w-2 h-2 bg-white/20 hover:bg-white/40'
                     }`}
                 />
               ))}
@@ -928,6 +1006,11 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
           </>
         )}
       </AnimatePresence>
+      {/* Privacy Policy Modal */}
+      <PrivacyPolicyModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+      />
     </div>
   );
 };

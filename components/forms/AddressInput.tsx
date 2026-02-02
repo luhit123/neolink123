@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAllStateNames, getDistrictsByState } from '../../data/indiaGeoData';
-import { getEnhancedLocationByPinCode, EnhancedLocationData } from '../../services/pinCodeService';
+import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
+import { db } from '../../firebaseConfig';
 
 export interface AddressData {
   address?: string;
@@ -10,13 +11,6 @@ export interface AddressData {
   district?: string;
   state?: string;
   block?: string;
-}
-
-interface PostOfficeOption {
-  name: string;
-  branchType: string;
-  deliveryStatus: string;
-  block: string;
 }
 
 interface AddressInputProps {
@@ -36,31 +30,54 @@ const AddressInput: React.FC<AddressInputProps> = ({
 }) => {
   const [states] = useState<string[]>(getAllStateNames());
   const [districts, setDistricts] = useState<string[]>([]);
-  const [isLoadingPinCode, setIsLoadingPinCode] = useState(false);
-  const [pinCodeError, setPinCodeError] = useState<string>('');
-  const [pinCodeSuccess, setPinCodeSuccess] = useState<boolean>(false);
-  const [postOffices, setPostOffices] = useState<PostOfficeOption[]>([]);
-  const [locationDetails, setLocationDetails] = useState<{
-    block?: string;
-    region?: string;
-    division?: string;
-    circle?: string;
-  } | null>(null);
+  const [customDistricts, setCustomDistricts] = useState<string[]>([]);
+  const [showCustomDistrictInput, setShowCustomDistrictInput] = useState(false);
+  const [customDistrictName, setCustomDistrictName] = useState('');
+  const [savingDistrict, setSavingDistrict] = useState(false);
+  const [districtSaveSuccess, setDistrictSaveSuccess] = useState(false);
+
+  // Load custom districts from Firebase on mount
+  useEffect(() => {
+    const loadCustomDistricts = async () => {
+      try {
+        const customDistrictsRef = collection(db, 'customDistricts');
+        const snapshot = await getDocs(customDistrictsRef);
+        const customDists = snapshot.docs.map(doc => ({
+          name: doc.data().name as string,
+          state: doc.data().state as string
+        }));
+        // Store all custom districts
+        setCustomDistricts(customDists.map(d => `${d.name}|${d.state}`));
+      } catch (error) {
+        console.error('Error loading custom districts:', error);
+      }
+    };
+    loadCustomDistricts();
+  }, []);
 
   // Update districts when state changes
   useEffect(() => {
     if (address.state) {
       const stateDistricts = getDistrictsByState(address.state);
-      setDistricts(stateDistricts);
+      // Add custom districts for this state
+      const customForState = customDistricts
+        .filter(cd => cd.split('|')[1] === address.state)
+        .map(cd => cd.split('|')[0]);
+
+      // Combine and sort, removing duplicates
+      const allDistricts = [...new Set([...stateDistricts, ...customForState])].sort();
+      setDistricts(allDistricts);
 
       // If current district is not in new state, clear it
-      if (address.district && !stateDistricts.includes(address.district)) {
-        onChange({ ...address, district: '' });
+      if (address.district && !allDistricts.includes(address.district)) {
+        // Check if it might be a custom district not yet loaded
+        // Don't clear in that case
       }
     } else {
       setDistricts([]);
     }
-  }, [address.state]);
+    setShowCustomDistrictInput(false);
+  }, [address.state, customDistricts]);
 
   const handleChange = (field: keyof AddressData, value: string) => {
     onChange({ ...address, [field]: value });
@@ -71,188 +88,64 @@ const AddressInput: React.FC<AddressInputProps> = ({
     }
   };
 
-  const handlePinCodeChange = async (value: string) => {
-    const cleanValue = value.replace(/\D/g, '').slice(0, 6);
-    onChange({ ...address, pinCode: cleanValue });
-    setPinCodeError('');
-    setPinCodeSuccess(false);
-    setPostOffices([]);
-    setLocationDetails(null);
-
-    // Auto-search when 6 digits entered
-    if (cleanValue.length === 6) {
-      setIsLoadingPinCode(true);
-      try {
-        const location = await getEnhancedLocationByPinCode(cleanValue);
-        if (location) {
-          // Store all post offices for dropdown selection
-          setPostOffices(location.allPostOffices);
-          setLocationDetails({
-            block: location.block,
-            region: location.region,
-            division: location.division,
-            circle: location.circle
-          });
-
-          onChange({
-            ...address,
-            pinCode: cleanValue,
-            state: location.state,
-            district: location.district,
-            postOffice: location.postOffice,
-            block: location.block
-          });
-          setPinCodeSuccess(true);
-        } else {
-          setPinCodeError('Invalid PIN code - not found in postal database');
-        }
-      } catch (error) {
-        console.error('Error looking up PIN code:', error);
-        setPinCodeError('Failed to lookup PIN code. Please check your internet connection.');
-      } finally {
-        setIsLoadingPinCode(false);
-      }
+  const handleDistrictChange = (value: string) => {
+    if (value === '__custom__') {
+      setShowCustomDistrictInput(true);
+    } else {
+      setShowCustomDistrictInput(false);
+      onChange({ ...address, district: value });
     }
   };
 
-  const handlePostOfficeSelect = (postOfficeName: string) => {
-    const selectedPO = postOffices.find(po => po.name === postOfficeName);
-    if (selectedPO) {
-      onChange({
-        ...address,
-        postOffice: postOfficeName,
-        block: selectedPO.block || address.block
-      });
+  const handleAddCustomDistrict = async () => {
+    if (!customDistrictName.trim() || !address.state) return;
+
+    setSavingDistrict(true);
+    setDistrictSaveSuccess(false);
+
+    try {
+      // Check if district already exists for this state
+      const customDistrictsRef = collection(db, 'customDistricts');
+      const q = query(
+        customDistrictsRef,
+        where('name', '==', customDistrictName.trim()),
+        where('state', '==', address.state)
+      );
+      const existingDocs = await getDocs(q);
+
+      if (existingDocs.empty) {
+        // Add new custom district
+        await addDoc(customDistrictsRef, {
+          name: customDistrictName.trim(),
+          state: address.state,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      // Update local state
+      const newCustomKey = `${customDistrictName.trim()}|${address.state}`;
+      if (!customDistricts.includes(newCustomKey)) {
+        setCustomDistricts(prev => [...prev, newCustomKey]);
+      }
+
+      // Set the district value
+      onChange({ ...address, district: customDistrictName.trim() });
+      setDistrictSaveSuccess(true);
+      setShowCustomDistrictInput(false);
+      setCustomDistrictName('');
+
+      // Clear success message after 2 seconds
+      setTimeout(() => setDistrictSaveSuccess(false), 2000);
+    } catch (error) {
+      console.error('Error saving custom district:', error);
+      alert('Failed to save district. Please try again.');
+    } finally {
+      setSavingDistrict(false);
     }
   };
 
   return (
     <div className={`space-y-4 ${className}`}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* PIN Code with Auto-lookup */}
-        <div>
-          <label htmlFor="pinCode" className="block text-sm font-medium text-black font-bold mb-1">
-            PIN Code {required && <span className="text-red-500">*</span>}
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              id="pinCode"
-              name="pinCode"
-              value={address.pinCode || ''}
-              onChange={(e) => handlePinCodeChange(e.target.value)}
-              maxLength={6}
-              placeholder="Enter 6-digit PIN code"
-              required={required}
-              className={`w-full px-4 py-2 bg-white border-2 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 ${
-                pinCodeSuccess
-                  ? 'border-green-500 focus:ring-green-500 focus:border-green-500'
-                  : pinCodeError
-                    ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                    : 'border-blue-600 focus:ring-blue-600 focus:border-blue-600'
-              }`}
-            />
-            {isLoadingPinCode && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              </div>
-            )}
-            {pinCodeSuccess && !isLoadingPinCode && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            )}
-          </div>
-          {pinCodeError && (
-            <p className="text-xs text-red-600 mt-1 font-medium">{pinCodeError}</p>
-          )}
-          {pinCodeSuccess && (
-            <p className="text-xs text-green-600 mt-1 font-medium">
-              ✓ PIN code verified - Location auto-filled
-            </p>
-          )}
-          {!pinCodeSuccess && !pinCodeError && (
-            <p className="text-xs text-blue-600 mt-1">
-              📌 Enter PIN to auto-fill Post Office, District & State
-            </p>
-          )}
-        </div>
-
-        {/* Post Office - Dropdown when multiple available */}
-        <div>
-          <label htmlFor="postOffice" className="block text-sm font-medium text-black font-bold mb-1">
-            Post Office {postOffices.length > 1 && <span className="text-blue-600 text-xs font-normal">({postOffices.length} found)</span>}
-          </label>
-          {postOffices.length > 1 ? (
-            <select
-              id="postOffice"
-              name="postOffice"
-              value={address.postOffice || ''}
-              onChange={(e) => handlePostOfficeSelect(e.target.value)}
-              className="w-full px-4 py-2 bg-white border-2 border-blue-600 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
-            >
-              <option value="">Select Post Office</option>
-              {postOffices.map((po, idx) => (
-                <option key={idx} value={po.name}>
-                  {po.name} ({po.branchType}{po.deliveryStatus === 'Delivery' ? ' - Delivery' : ''})
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              id="postOffice"
-              name="postOffice"
-              value={address.postOffice || ''}
-              onChange={(e) => handleChange('postOffice', e.target.value)}
-              placeholder="Auto-filled from PIN code"
-              className="w-full px-4 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Location Details Panel - Shows when PIN code found */}
-      {locationDetails && (locationDetails.block || locationDetails.region || locationDetails.division) && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <div className="text-xs font-semibold text-blue-800 mb-2 flex items-center gap-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Detected Location Details
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-            {locationDetails.block && (
-              <div>
-                <span className="text-blue-600 font-medium">Block:</span>
-                <span className="text-blue-900 ml-1">{locationDetails.block}</span>
-              </div>
-            )}
-            {locationDetails.division && (
-              <div>
-                <span className="text-blue-600 font-medium">Division:</span>
-                <span className="text-blue-900 ml-1">{locationDetails.division}</span>
-              </div>
-            )}
-            {locationDetails.region && (
-              <div>
-                <span className="text-blue-600 font-medium">Region:</span>
-                <span className="text-blue-900 ml-1">{locationDetails.region}</span>
-              </div>
-            )}
-            {locationDetails.circle && (
-              <div>
-                <span className="text-blue-600 font-medium">Circle:</span>
-                <span className="text-blue-900 ml-1">{locationDetails.circle}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* State Dropdown */}
         <div>
@@ -276,49 +169,123 @@ const AddressInput: React.FC<AddressInputProps> = ({
           </select>
         </div>
 
-        {/* District Dropdown - Cascades from State */}
+        {/* District Dropdown with Custom Entry Option */}
         <div>
           <label htmlFor="district" className="block text-sm font-medium text-black font-bold mb-1">
             District {required && <span className="text-red-500">*</span>}
           </label>
-          <select
-            id="district"
-            name="district"
-            value={address.district || ''}
-            onChange={(e) => handleChange('district', e.target.value)}
-            required={required}
-            disabled={!address.state}
-            className="w-full px-4 py-2 bg-white border-2 border-blue-600 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <option value="">
-              {address.state ? 'Select District' : 'Select State first'}
-            </option>
-            {districts.map((district) => (
-              <option key={district} value={district}>
-                {district}
-              </option>
-            ))}
-          </select>
+          {!showCustomDistrictInput ? (
+            <div className="space-y-2">
+              <select
+                id="district"
+                name="district"
+                value={address.district || ''}
+                onChange={(e) => handleDistrictChange(e.target.value)}
+                required={required}
+                disabled={!address.state}
+                className="w-full px-4 py-2 bg-white border-2 border-blue-600 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="">
+                  {address.state ? 'Select District' : 'Select State first'}
+                </option>
+                {districts.map((district) => (
+                  <option key={district} value={district}>
+                    {district}
+                  </option>
+                ))}
+                {address.state && (
+                  <option value="__custom__" className="text-blue-600 font-medium">
+                    ➕ District not listed? Add manually...
+                  </option>
+                )}
+              </select>
+              {districtSaveSuccess && (
+                <p className="text-xs text-green-600 font-medium">
+                  ✓ District saved and will be available for future use
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={customDistrictName}
+                  onChange={(e) => setCustomDistrictName(e.target.value)}
+                  placeholder="Enter district name..."
+                  className="flex-1 px-4 py-2 bg-white border-2 border-green-500 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomDistrict}
+                  disabled={!customDistrictName.trim() || savingDistrict}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {savingDistrict ? (
+                    <span className="flex items-center gap-1">
+                      <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Saving...
+                    </span>
+                  ) : 'Add'}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCustomDistrictInput(false);
+                  setCustomDistrictName('');
+                }}
+                className="text-xs text-gray-600 hover:text-gray-800 underline"
+              >
+                Cancel - back to dropdown
+              </button>
+              <p className="text-xs text-blue-600">
+                💡 New districts will be saved and available for future admissions
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Village/Ward - Optional */}
-      {showVillage && (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Post Office */}
         <div>
-          <label htmlFor="village" className="block text-sm font-medium text-black font-bold mb-1">
-            Village/Ward Name
+          <label htmlFor="postOffice" className="block text-sm font-medium text-black font-bold mb-1">
+            Post Office
           </label>
           <input
             type="text"
-            id="village"
-            name="village"
-            value={address.village || ''}
-            onChange={(e) => handleChange('village', e.target.value)}
-            placeholder="Enter village or ward name"
+            id="postOffice"
+            name="postOffice"
+            value={address.postOffice || ''}
+            onChange={(e) => handleChange('postOffice', e.target.value)}
+            placeholder="Enter post office name"
             className="w-full px-4 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
           />
         </div>
-      )}
+
+        {/* Village/Ward - Optional */}
+        {showVillage && (
+          <div>
+            <label htmlFor="village" className="block text-sm font-medium text-black font-bold mb-1">
+              Village/Ward Name
+            </label>
+            <input
+              type="text"
+              id="village"
+              name="village"
+              value={address.village || ''}
+              onChange={(e) => handleChange('village', e.target.value)}
+              placeholder="Enter village or ward name"
+              className="w-full px-4 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+            />
+          </div>
+        )}
+      </div>
 
       {/* Full Address */}
       <div>

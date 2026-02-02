@@ -1353,10 +1353,15 @@ function App() {
                 console.log('✅ Patient added successfully:', docRef.id);
               }
 
-              // Close the page after successful save
-              setShowAddPatientPage(false);
-              setPatientToEdit(null);
-              alert('Patient saved successfully!');
+              // Check if there are more siblings to add (for twins/triplets)
+              const hasMoreSiblings = (patientData as any)._hasMoreSiblings;
+
+              if (!hasMoreSiblings) {
+                // Close the page after successful save (single birth or last sibling)
+                setShowAddPatientPage(false);
+                setPatientToEdit(null);
+              }
+              // Don't show alert for multiple births - the form handles its own UI
             } catch (error: any) {
               console.error('❌ Error saving patient:', error);
               alert('Failed to save patient: ' + error.message);

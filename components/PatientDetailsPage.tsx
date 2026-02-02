@@ -106,7 +106,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
     endTime: '20:00'
   });
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('In Progress');
-  const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('All');
+  const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('Inborn');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -191,8 +191,13 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
   const unitPatients = useMemo(() => {
     let baseFiltered = patients.filter(p => p.unit === selectedUnit);
 
+    // Apply Inborn/Outborn filter for NICU and SNCU (same logic as Dashboard)
     if ((selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && nicuView !== 'All') {
-      baseFiltered = baseFiltered.filter(p => p.admissionType === nicuView);
+      if (nicuView === 'Outborn') {
+        baseFiltered = baseFiltered.filter(p => p.admissionType?.includes('Outborn'));
+      } else if (nicuView === 'Inborn') {
+        baseFiltered = baseFiltered.filter(p => p.admissionType === 'Inborn');
+      }
     }
 
     let filtered = baseFiltered;
@@ -1001,6 +1006,31 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                 <p className="text-sm text-slate-500">
                   {filteredPatients.length} of {unitPatients.length} patients
                 </p>
+
+                {/* Prominent Inborn/Outborn/All segmented control for NICU/SNCU */}
+                {(selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && (
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg mt-2">
+                    {(['Inborn', 'Outborn', 'All'] as const).map(view => (
+                      <button
+                        key={view}
+                        onClick={() => setNicuView(view)}
+                        className={`px-3 py-1.5 text-sm font-bold rounded-md transition-all ${nicuView === view
+                            ? view === 'Inborn'
+                              ? 'bg-emerald-500 text-white shadow-sm'
+                              : view === 'Outborn'
+                                ? 'bg-amber-500 text-white shadow-sm'
+                                : 'bg-blue-500 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-slate-200'
+                          }`}
+                      >
+                        {view === 'Inborn' && '🏥 '}
+                        {view === 'Outborn' && '🚑 '}
+                        {view === 'All' && '📊 '}
+                        {view}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1009,11 +1039,10 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
               {/* Filter Button */}
               <button
                 onClick={() => setShowFilterDrawer(true)}
-                className={`lg:hidden relative p-2 rounded-lg transition-all ${
-                  hasActiveFilters
+                className={`lg:hidden relative p-2 rounded-lg transition-all ${hasActiveFilters
                     ? 'bg-blue-500 text-white'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
+                  }`}
               >
                 <Filter className="w-5 h-5" />
                 {hasActiveFilters && (
@@ -1233,17 +1262,15 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                   <button
                     key={status.value}
                     onClick={() => setOutcomeFilter(status.value)}
-                    className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      isActiveStatus
+                    className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${isActiveStatus
                         ? `${status.bgColor} ${status.color} shadow-sm`
                         : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <span>{status.icon}</span>
                     <span className="hidden sm:inline">{status.label}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
-                      isActiveStatus ? 'bg-white/50' : 'bg-slate-100'
-                    }`}>
+                    <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${isActiveStatus ? 'bg-white/50' : 'bg-slate-100'
+                      }`}>
                       {count}
                     </span>
                   </button>
@@ -1278,17 +1305,15 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                   <div className="flex gap-2">
                     <button
                       onClick={() => setObservationView('active')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                        observationView === 'active'
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${observationView === 'active'
                           ? 'bg-orange-500 text-white shadow-md'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                        }`}
                     >
                       <Clock className="w-4 h-4" />
                       Active
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                        observationView === 'active' ? 'bg-white/30' : 'bg-slate-200'
-                      }`}>
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${observationView === 'active' ? 'bg-white/30' : 'bg-slate-200'
+                        }`}>
                         {filteredActiveObservations.length}
                       </span>
                     </button>
@@ -1299,11 +1324,10 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                           onLoadObservationHistory();
                         }
                       }}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                        observationView === 'history'
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${observationView === 'history'
                           ? 'bg-slate-700 text-white shadow-md'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                        }`}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1416,8 +1440,8 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                             {searchQuery
                               ? `No results matching "${searchQuery}"`
                               : hasActiveFilters
-                              ? 'No active observations match the current filters'
-                              : 'No babies are currently under observation in this unit.'}
+                                ? 'No active observations match the current filters'
+                                : 'No babies are currently under observation in this unit.'}
                           </p>
                           {(searchQuery || hasActiveFilters) && (
                             <button
@@ -1453,22 +1477,20 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                             className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
                           >
                             {/* Card Header */}
-                            <div className={`px-4 py-3 text-white ${
-                              obs.outcome === ObservationOutcome.HandedOverToMother
+                            <div className={`px-4 py-3 text-white ${obs.outcome === ObservationOutcome.HandedOverToMother
                                 ? 'bg-gradient-to-r from-emerald-500 to-green-500'
                                 : 'bg-gradient-to-r from-blue-500 to-cyan-500'
-                            }`}>
+                              }`}>
                               <div className="flex items-center justify-between">
                                 <div className="min-w-0 flex-1">
                                   <h4 className="font-bold truncate">{obs.babyName}</h4>
                                   <p className="text-xs opacity-80">Mother: {obs.motherName}</p>
                                 </div>
                                 <div className="flex-shrink-0 ml-2">
-                                  <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
-                                    obs.outcome === ObservationOutcome.HandedOverToMother
+                                  <span className={`px-2 py-1 rounded-lg text-xs font-bold ${obs.outcome === ObservationOutcome.HandedOverToMother
                                       ? 'bg-white/20'
                                       : 'bg-white/20'
-                                  }`}>
+                                    }`}>
                                     {obs.outcome === ObservationOutcome.HandedOverToMother ? 'Handed Over' : 'Admitted'}
                                   </span>
                                 </div>
@@ -1517,8 +1539,8 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                             {searchQuery
                               ? `No results matching "${searchQuery}"`
                               : hasActiveFilters
-                              ? 'No completed observations match the current filters'
-                              : 'No completed observation records found.'}
+                                ? 'No completed observations match the current filters'
+                                : 'No completed observation records found.'}
                           </p>
                           {(searchQuery || hasActiveFilters) && (
                             <button
@@ -1540,23 +1562,23 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
               </div>
             ) : filteredPatients.length > 0 ? (
               <VirtualizedPatientList
-                  patients={filteredPatients}
-                  onView={onViewDetails}
-                  onEdit={onEdit}
-                  canEdit={canEdit}
-                  onQuickRecord={canEdit ? handleQuickRecord : undefined}
-                  onUpdateStatus={canEdit ? handleUpdateStatus : undefined}
-                  onGenerateDischarge={canEdit ? handleGenerateDischarge : undefined}
-                  onViewDischargeCertificate={handleViewDischargeCertificate}
-                  onPreviewDischarge={handlePreviewDischarge}
-                  onDownloadDischarge={handleDownloadDischarge}
-                  onDeathCertificate={canEdit ? handleDeathCertificate : undefined}
-                  onStepDown={canEdit ? handleStepDown : undefined}
-                  onRefer={canEdit ? handleRefer : undefined}
-                  selectionMode={selectionMode}
-                  selectedIds={selectedPatientIds}
-                  onToggleSelection={togglePatientSelection}
-                />
+                patients={filteredPatients}
+                onView={onViewDetails}
+                onEdit={onEdit}
+                canEdit={canEdit}
+                onQuickRecord={canEdit ? handleQuickRecord : undefined}
+                onUpdateStatus={canEdit ? handleUpdateStatus : undefined}
+                onGenerateDischarge={canEdit ? handleGenerateDischarge : undefined}
+                onViewDischargeCertificate={handleViewDischargeCertificate}
+                onPreviewDischarge={handlePreviewDischarge}
+                onDownloadDischarge={handleDownloadDischarge}
+                onDeathCertificate={canEdit ? handleDeathCertificate : undefined}
+                onStepDown={canEdit ? handleStepDown : undefined}
+                onRefer={canEdit ? handleRefer : undefined}
+                selectionMode={selectionMode}
+                selectedIds={selectedPatientIds}
+                onToggleSelection={togglePatientSelection}
+              />
             ) : (
               <div className="h-full flex items-center justify-center p-8">
                 <div className="text-center max-w-md">
@@ -1570,8 +1592,8 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                     {searchQuery
                       ? `No results matching "${searchQuery}"`
                       : outcomeFilter !== 'All'
-                      ? `No patients with "${outcomeFilter}" status`
-                      : 'No patients available in this unit'}
+                        ? `No patients with "${outcomeFilter}" status`
+                        : 'No patients available in this unit'}
                   </p>
                   {(outcomeFilter !== 'In Progress' || searchQuery || hasActiveFilters) && (
                     <button
@@ -1857,17 +1879,16 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 mb-4">
-                <div className={`p-3 rounded-full ${
-                  pendingStatus === 'Deceased' ? 'bg-red-100' :
-                  pendingStatus === 'Discharged' ? 'bg-green-100' :
-                  pendingStatus === 'Step Down' ? 'bg-amber-100' :
-                  pendingStatus === 'Referred' ? 'bg-purple-100' : 'bg-blue-100'
-                }`}>
+                <div className={`p-3 rounded-full ${pendingStatus === 'Deceased' ? 'bg-red-100' :
+                    pendingStatus === 'Discharged' ? 'bg-green-100' :
+                      pendingStatus === 'Step Down' ? 'bg-amber-100' :
+                        pendingStatus === 'Referred' ? 'bg-purple-100' : 'bg-blue-100'
+                  }`}>
                   {pendingStatus === 'Deceased' ? <UserX className="w-6 h-6 text-red-600" /> :
-                   pendingStatus === 'Discharged' ? <CheckCircle className="w-6 h-6 text-green-600" /> :
-                   pendingStatus === 'Step Down' ? <ArrowDownCircle className="w-6 h-6 text-amber-600" /> :
-                   pendingStatus === 'Referred' ? <Send className="w-6 h-6 text-purple-600" /> :
-                   <Activity className="w-6 h-6 text-blue-600" />}
+                    pendingStatus === 'Discharged' ? <CheckCircle className="w-6 h-6 text-green-600" /> :
+                      pendingStatus === 'Step Down' ? <ArrowDownCircle className="w-6 h-6 text-amber-600" /> :
+                        pendingStatus === 'Referred' ? <Send className="w-6 h-6 text-purple-600" /> :
+                          <Activity className="w-6 h-6 text-blue-600" />}
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Update Patient Status</h3>
@@ -1875,12 +1896,11 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                 </div>
               </div>
 
-              <div className={`rounded-lg p-4 mb-6 ${
-                pendingStatus === 'Deceased' ? 'bg-red-50 border border-red-200' :
-                pendingStatus === 'Discharged' ? 'bg-green-50 border border-green-200' :
-                pendingStatus === 'Step Down' ? 'bg-amber-50 border border-amber-200' :
-                pendingStatus === 'Referred' ? 'bg-purple-50 border border-purple-200' : 'bg-blue-50 border border-blue-200'
-              }`}>
+              <div className={`rounded-lg p-4 mb-6 ${pendingStatus === 'Deceased' ? 'bg-red-50 border border-red-200' :
+                  pendingStatus === 'Discharged' ? 'bg-green-50 border border-green-200' :
+                    pendingStatus === 'Step Down' ? 'bg-amber-50 border border-amber-200' :
+                      pendingStatus === 'Referred' ? 'bg-purple-50 border border-purple-200' : 'bg-blue-50 border border-blue-200'
+                }`}>
                 {pendingStatus === 'Discharged' ? (
                   <div className="space-y-2">
                     <p className="font-medium text-sm text-green-800">
@@ -1900,10 +1920,9 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                     </p>
                   </div>
                 ) : (
-                  <p className={`font-medium text-sm ${
-                    pendingStatus === 'Step Down' ? 'text-amber-800' :
-                    pendingStatus === 'Referred' ? 'text-purple-800' : 'text-blue-800'
-                  }`}>
+                  <p className={`font-medium text-sm ${pendingStatus === 'Step Down' ? 'text-amber-800' :
+                      pendingStatus === 'Referred' ? 'text-purple-800' : 'text-blue-800'
+                    }`}>
                     Change status from <span className="font-bold">{statusPatient.outcome}</span> to <span className="font-bold">{pendingStatus}</span>?
                   </p>
                 )}
@@ -1920,12 +1939,11 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                 <button
                   onClick={confirmStatusUpdate}
                   disabled={isUpdatingStatus}
-                  className={`flex-1 px-4 py-2 text-white rounded-lg font-semibold flex items-center justify-center gap-2 disabled:opacity-50 ${
-                    pendingStatus === 'Deceased' ? 'bg-red-600 hover:bg-red-700' :
-                    pendingStatus === 'Discharged' ? 'bg-green-600 hover:bg-green-700' :
-                    pendingStatus === 'Step Down' ? 'bg-amber-600 hover:bg-amber-700' :
-                    pendingStatus === 'Referred' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'
-                  }`}
+                  className={`flex-1 px-4 py-2 text-white rounded-lg font-semibold flex items-center justify-center gap-2 disabled:opacity-50 ${pendingStatus === 'Deceased' ? 'bg-red-600 hover:bg-red-700' :
+                      pendingStatus === 'Discharged' ? 'bg-green-600 hover:bg-green-700' :
+                        pendingStatus === 'Step Down' ? 'bg-amber-600 hover:bg-amber-700' :
+                          pendingStatus === 'Referred' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
                 >
                   {isUpdatingStatus ? (
                     <>

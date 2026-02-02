@@ -301,7 +301,11 @@ export const authenticateUser = functions.region(FUNCTION_REGION).https.onCall(a
     let firebaseUser: admin.auth.UserRecord;
     try {
       firebaseUser = await auth.getUserByEmail(user.email);
-      await auth.updateUser(firebaseUser.uid, { password });
+      // Update the password to ensure Firebase Auth is in sync
+      await auth.updateUser(firebaseUser.uid, {
+        password,
+        displayName: user.displayName || firebaseUser.displayName,
+      });
     } catch (e: any) {
       if (e.code === 'auth/user-not-found') {
         firebaseUser = await auth.createUser({
@@ -322,13 +326,21 @@ export const authenticateUser = functions.region(FUNCTION_REGION).https.onCall(a
       userID: user.userID || null,
     });
 
-    // Step 9: Update last login
+    // Step 9: Generate custom token for reliable sign-in
+    // This avoids timing issues with password propagation
+    const customToken = await auth.createCustomToken(firebaseUser.uid, {
+      role: user.role,
+      institutionId: user.institutionId || null,
+      userID: user.userID || null,
+    });
+
+    // Step 10: Update last login
     await db.collection(user.collection).doc(user.docId).update({
       lastLoginAt: new Date().toISOString(),
       firebaseUid: firebaseUser.uid,
     }).catch(() => {});
 
-    // Step 10: Audit log success
+    // Step 11: Audit log success
     await logAudit({
       action: 'LOGIN_SUCCESS',
       email: user.email,
@@ -341,7 +353,7 @@ export const authenticateUser = functions.region(FUNCTION_REGION).https.onCall(a
 
     return {
       success: true,
-      useClientAuth: true,
+      token: customToken,  // Return custom token for reliable sign-in
       user: {
         uid: firebaseUser.uid,
         email: user.email,

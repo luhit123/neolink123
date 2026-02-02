@@ -160,10 +160,11 @@ service cloud.firestore {
                      officialCanViewInstitution(resource.data.institutionId));
 
       // Create: Must be authenticated, belong to institution, and include audit fields
+      // DPDP Section 9: Parental consent REQUIRED for all NICU/PICU patients (minors)
       allow create: if isAuthenticated() &&
                       (isSuperAdmin() ||
                        request.resource.data.institutionId == getUserData().institutionId) &&
-                      request.resource.data.keys().hasAll(['createdAt', 'createdBy', 'institutionId']);
+                      request.resource.data.keys().hasAll(['createdAt', 'createdBy', 'institutionId', 'parentalConsent']);
 
       // Update: Must be authenticated and belong to institution
       // DPDP Requirement: Every update must be tracked via metadata

@@ -380,6 +380,8 @@ export async function updateUserConsent(userId: string, consentData: {
   consentTimestamp: string;
   consentVersion: string;
   legitimateUseClauseAccepted?: boolean;
+  aiConsentAccepted?: boolean;
+  aiConsentTimestamp?: string;
 }) {
   try {
     const userRef = doc(db, 'users', userId);
@@ -393,6 +395,7 @@ export async function updateUserConsent(userId: string, consentData: {
     throw error;
   }
 }
+
 
 // Update user role
 export async function updateUserRole(userId: string, role: UserRole) {

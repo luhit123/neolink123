@@ -1054,148 +1054,596 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
             {/* STEP 1: Admission & Birth Details Section */}
             {currentStep === 1 && (
-            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 overflow-hidden shadow-md">
-              <button
-                type="button"
-                onClick={() => toggleSection('admissionDetails')}
-                className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 overflow-hidden shadow-md">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('admissionDetails')}
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    <h3 className="text-lg font-bold text-white">Admission & Birth Details</h3>
+                  </div>
+                  <svg className={`w-5 h-5 text-white transition-transform ${expandedSections.admissionDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
-                  <h3 className="text-lg font-bold text-white">Admission & Birth Details</h3>
-                </div>
-                <svg className={`w-5 h-5 text-white transition-transform ${expandedSections.admissionDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
+                </button>
 
-              {expandedSections.admissionDetails && (
-                <div className="p-4 space-y-6">
-                  {/* Multiple Birth Selection - Only show for NICU/SNCU and when not editing */}
-                  {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && !patientToEdit && (
-                    <div className="bg-gradient-to-r from-pink-50 to-blue-50 border-2 border-pink-200 rounded-xl p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <svg className="w-5 h-5 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                        </svg>
-                        <label className="text-sm font-bold text-pink-800">Multiple Birth?</label>
+                {expandedSections.admissionDetails && (
+                  <div className="p-4 space-y-6">
+                    {/* Multiple Birth Selection - Only show for NICU/SNCU and when not editing */}
+                    {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && !patientToEdit && (
+                      <div className="bg-gradient-to-r from-pink-50 to-blue-50 border-2 border-pink-200 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <svg className="w-5 h-5 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                          </svg>
+                          <label className="text-sm font-bold text-pink-800">Multiple Birth?</label>
+                          {isMultipleBirth && (
+                            <span className="ml-auto bg-pink-600 text-white text-xs px-2 py-1 rounded-full font-bold">
+                              Baby {currentBabyNumber} of {totalBabies} ({getBabyLabel(currentBabyNumber, multipleBirthType)})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.values(MultipleBirthType).map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => {
+                                setMultipleBirthType(type);
+                                const babiesBorn = getTotalBabiesBorn(type);
+                                setBabiesToAdmit(babiesBorn); // Default to all babies
+                                if (type !== MultipleBirthType.Single && !multipleBirthId) {
+                                  setMultipleBirthId(`MB-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+                                }
+                                if (type === MultipleBirthType.Single) {
+                                  setMultipleBirthId('');
+                                  setCurrentBabyNumber(1);
+                                  setSavedSiblingIds([]);
+                                  setBabiesToAdmit(1);
+                                }
+                              }}
+                              disabled={currentBabyNumber > 1}
+                              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${multipleBirthType === type
+                                  ? 'bg-pink-600 text-white shadow-lg scale-105'
+                                  : 'bg-white text-pink-700 border-2 border-pink-300 hover:border-pink-500'
+                                } ${currentBabyNumber > 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                              {type === MultipleBirthType.Single ? '👶 Single' :
+                                type === MultipleBirthType.Twins ? '👶👶 Twins' :
+                                  type === MultipleBirthType.Triplets ? '👶👶👶 Triplets' :
+                                    type === MultipleBirthType.Quadruplets ? '👶×4 Quadruplets' : '👶×5+ Quintuplets+'}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Which baby is being admitted - shown when multiple birth selected */}
+                        {isMultipleBirth && currentBabyNumber === 1 && (
+                          <div className="mt-4 p-3 bg-white rounded-lg border-2 border-blue-200">
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">
+                              Which baby is being admitted first?
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              {Array.from({ length: totalBabiesBorn }, (_, i) => i + 1).map((num) => (
+                                <button
+                                  key={num}
+                                  type="button"
+                                  onClick={() => setCurrentBabyNumber(num)}
+                                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${currentBabyNumber === num
+                                      ? 'bg-blue-600 text-white shadow-lg'
+                                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    }`}
+                                >
+                                  {getBabyLabel(num, multipleBirthType)}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-xs text-blue-600 mt-2">
+                              Select which baby from the multiple birth is being admitted. E.g., if Twin 2 is admitted first, select Twin 2.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* How many babies to admit - shown when multiple birth selected */}
                         {isMultipleBirth && (
-                          <span className="ml-auto bg-pink-600 text-white text-xs px-2 py-1 rounded-full font-bold">
-                            Baby {currentBabyNumber} of {totalBabies} ({getBabyLabel(currentBabyNumber, multipleBirthType)})
-                          </span>
+                          <div className="mt-4 p-3 bg-white rounded-lg border-2 border-pink-200">
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">
+                              How many babies to admit in total?
+                              <span className="text-slate-500 font-normal ml-1">(if any deceased/stillborn)</span>
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              {Array.from({ length: totalBabiesBorn }, (_, i) => i + 1).map((num) => (
+                                <button
+                                  key={num}
+                                  type="button"
+                                  onClick={() => setBabiesToAdmit(num)}
+                                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${babiesToAdmit === num
+                                      ? 'bg-pink-600 text-white shadow-lg'
+                                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    }`}
+                                >
+                                  {num} {num === 1 ? 'baby' : 'babies'}
+                                  {num < totalBabiesBorn && (
+                                    <span className="text-xs opacity-75 ml-1">
+                                      ({totalBabiesBorn - num} deceased)
+                                    </span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {isMultipleBirth && babiesToAdmit > 1 && (
+                          <p className="text-xs text-pink-700 mt-2">
+                            <strong>Tip:</strong> After saving {getBabyLabel(currentBabyNumber, multipleBirthType)}, you'll be prompted to add the next baby with mother's details auto-filled.
+                          </p>
+                        )}
+                        {isMultipleBirth && babiesToAdmit === 1 && (
+                          <p className="text-xs text-amber-700 mt-2">
+                            <strong>Note:</strong> Only 1 baby being admitted from this {multipleBirthType.toLowerCase()} birth. The other(s) will be recorded as deceased/stillborn.
+                          </p>
                         )}
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {Object.values(MultipleBirthType).map((type) => (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => {
-                              setMultipleBirthType(type);
-                              const babiesBorn = getTotalBabiesBorn(type);
-                              setBabiesToAdmit(babiesBorn); // Default to all babies
-                              if (type !== MultipleBirthType.Single && !multipleBirthId) {
-                                setMultipleBirthId(`MB-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
-                              }
-                              if (type === MultipleBirthType.Single) {
-                                setMultipleBirthId('');
-                                setCurrentBabyNumber(1);
-                                setSavedSiblingIds([]);
-                                setBabiesToAdmit(1);
-                              }
-                            }}
-                            disabled={currentBabyNumber > 1}
-                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                              multipleBirthType === type
-                                ? 'bg-pink-600 text-white shadow-lg scale-105'
-                                : 'bg-white text-pink-700 border-2 border-pink-300 hover:border-pink-500'
-                            } ${currentBabyNumber > 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            {type === MultipleBirthType.Single ? '👶 Single' :
-                             type === MultipleBirthType.Twins ? '👶👶 Twins' :
-                             type === MultipleBirthType.Triplets ? '👶👶👶 Triplets' :
-                             type === MultipleBirthType.Quadruplets ? '👶×4 Quadruplets' : '👶×5+ Quintuplets+'}
-                          </button>
-                        ))}
-                      </div>
+                    )}
 
-                      {/* Which baby is being admitted - shown when multiple birth selected */}
-                      {isMultipleBirth && currentBabyNumber === 1 && (
-                        <div className="mt-4 p-3 bg-white rounded-lg border-2 border-blue-200">
-                          <label className="block text-sm font-semibold text-slate-700 mb-2">
-                            Which baby is being admitted first?
+                    {/* 1. Admission Context */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Type of Admission <span className="text-red-400">*</span>
                           </label>
                           <div className="flex flex-wrap gap-2">
-                            {Array.from({ length: totalBabiesBorn }, (_, i) => i + 1).map((num) => (
+                            {Object.values(AdmissionType).map(at => (
                               <button
-                                key={num}
+                                key={at}
                                 type="button"
-                                onClick={() => setCurrentBabyNumber(num)}
-                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                                  currentBabyNumber === num
-                                    ? 'bg-blue-600 text-white shadow-lg'
-                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                                }`}
+                                onClick={() => setPatient(prev => {
+                                  const updated = { ...prev, admissionType: at };
+                                  // Auto-fill place of delivery for Inborn admissions
+                                  if (at === AdmissionType.Inborn) {
+                                    updated.placeOfDelivery = PlaceOfDelivery.GovernmentHospital;
+                                    updated.placeOfDeliveryName = institutionName;
+                                    updated.referringHospital = '';
+                                    updated.referringDistrict = '';
+                                  }
+                                  return updated;
+                                })}
+                                className={`px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${patient.admissionType === at
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
+                                    : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
+                                  }`}
                               >
-                                {getBabyLabel(num, multipleBirthType)}
+                                {at === AdmissionType.Inborn ? '🏥 Inborn' :
+                                  at === AdmissionType.OutbornHealthFacility ? '🚑 Outborn (Health Facility)' :
+                                    '🏠 Outborn (Community)'}
                               </button>
                             ))}
                           </div>
-                          <p className="text-xs text-blue-600 mt-2">
-                            Select which baby from the multiple birth is being admitted. E.g., if Twin 2 is admitted first, select Twin 2.
+                          {patient.admissionType === AdmissionType.Inborn && (
+                            <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                              <span>✓</span> Place of delivery will be set to: {institutionName}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      <div>
+                        <label htmlFor="admissionDateTime" className="block text-sm font-medium text-slate-700 mb-1">
+                          Date and Time of Admission <span className="text-red-400">*</span>
+                        </label>
+                        <SimpleDateTimeInput
+                          id="admissionDateTime"
+                          name="admissionDateTime"
+                          value={patient.admissionDateTime || ''}
+                          onChange={(iso) => handleDateChange(iso ? new Date(iso) : null, 'admissionDateTime')}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <hr className="border-slate-700/50" />
+
+                    {/* 2. Birth & Weight Info */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
+                        <div>
+                          <label htmlFor="dateOfBirth" className="block text-sm font-medium text-slate-700 mb-1">
+                            Date and Time of Birth
+                          </label>
+                          <SimpleDateTimeInput
+                            id="dateOfBirth"
+                            name="dateOfBirth"
+                            value={patient.dateOfBirth || ''}
+                            onChange={(iso) => handleDateChange(iso ? new Date(iso) : null, 'dateOfBirth')}
+                            max={new Date().toISOString()}
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <label htmlFor="age" className="block text-sm font-medium text-slate-700 mb-1">Current Age <span className="text-red-400">*</span></label>
+                        <div className="flex gap-2">
+                          <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" step="0.01" className="w-2/3 px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                          <select name="ageUnit" id="ageUnit" value={patient.ageUnit} onChange={handleChange} required className="w-1/3 px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                            {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) ? (
+                        <div>
+                          <label htmlFor="birthWeight" className="block text-sm font-medium text-slate-700 mb-1">Birth Weight (Kg)</label>
+                          <input type="number" name="birthWeight" id="birthWeight" value={patient.birthWeight || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 2.500" />
+                        </div>
+                      ) : <div></div>}
+                      <div>
+                        <label htmlFor="weightOnAdmission" className="block text-sm font-medium text-slate-700 mb-1">Weight on Admission (Kg)</label>
+                        <input type="number" name="weightOnAdmission" id="weightOnAdmission" value={patient.weightOnAdmission || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 2.500" />
+                      </div>
+                    </div>
+
+                    <hr className="border-slate-700/50" />
+
+                    {/* 3. Delivery Details (NICU Only) */}
+                    {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="modeOfDelivery" className="block text-sm font-medium text-slate-700 mb-1">Mode of Delivery</label>
+                          <select name="modeOfDelivery" id="modeOfDelivery" value={patient.modeOfDelivery || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Select Mode</option>
+                            {Object.values(ModeOfDelivery).map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="placeOfDelivery" className="block text-sm font-medium text-slate-700 mb-1">
+                            Place of Delivery {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
+                          </label>
+                          <select
+                            name="placeOfDelivery"
+                            id="placeOfDelivery"
+                            value={patient.placeOfDelivery || ''}
+                            onChange={handleChange}
+                            disabled={patient.admissionType === AdmissionType.Inborn}
+                            className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            <option value="">Select Place</option>
+                            {Object.values(PlaceOfDelivery).map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
+                    {(patient.placeOfDelivery === PlaceOfDelivery.PrivateHospital || patient.placeOfDelivery === PlaceOfDelivery.GovernmentHospital) && (
+                      <div>
+                        <label htmlFor="placeOfDeliveryName" className="block text-sm font-medium text-slate-700 mb-1">
+                          Hospital Name {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
+                        </label>
+                        <input
+                          type="text"
+                          name="placeOfDeliveryName"
+                          id="placeOfDeliveryName"
+                          value={patient.placeOfDeliveryName || ''}
+                          onChange={handleChange}
+                          disabled={patient.admissionType === AdmissionType.Inborn}
+                          className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                          placeholder="Enter hospital name"
+                        />
+                      </div>
+                    )}
+
+
+                    {/* 4. Transport & Referral */}
+                    {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="modeOfTransport" className="block text-sm font-medium text-slate-700 mb-1">Mode of Transport</label>
+                          <select name="modeOfTransport" id="modeOfTransport" value={patient.modeOfTransport || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Select Mode</option>
+                            {Object.values(ModeOfTransport).map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+
+                        {(patient.admissionType === AdmissionType.OutbornHealthFacility || patient.admissionType === AdmissionType.OutbornCommunity) && (
+                          <div className="space-y-4 md:col-span-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
+                            <div>
+                              <label htmlFor="referringHospital" className="block text-sm font-medium text-slate-700 mb-1">Referred From (Hospital/Facility)</label>
+                              <input type="text" name="referringHospital" id="referringHospital" value={patient.referringHospital || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Name of referring hospital or facility" />
+                            </div>
+                            <div>
+                              <label htmlFor="referringDistrict" className="block text-sm font-medium text-slate-700 mb-1">Referring District</label>
+                              <input type="text" name="referringDistrict" id="referringDistrict" value={patient.referringDistrict || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="District name" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* STEP 2: Administrative & Demographic Information Section */}
+            {currentStep === 2 && (
+              <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('demographics')}
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <h3 className="text-lg font-bold text-white">Administrative & Demographic Information</h3>
+                  </div>
+                  <svg className={`w-5 h-5 text-white transition-transform ${expandedSections.demographics ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {expandedSections.demographics && (
+                  <div className="p-2 sm:p-4 space-y-3 sm:space-y-4">
+                    {/* DPDP Act Section 9: Parental Consent for Minors (CRITICAL) */}
+                    <div className="bg-gradient-to-br from-yellow-50 to-orange-50 border-4 border-yellow-400 rounded-xl p-4 shadow-lg">
+                      <div className="flex items-start gap-3 mb-4">
+                        <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div className="flex-1">
+                          <h4 className="text-lg font-bold text-yellow-900 mb-1">⚖️ Parental Consent Required (DPDP Act 2023)</h4>
+                          <p className="text-sm text-yellow-800">
+                            Physical consent form must be signed by parent/guardian. Staff verifies and records below.
                           </p>
                         </div>
-                      )}
+                      </div>
 
-                      {/* How many babies to admit - shown when multiple birth selected */}
-                      {isMultipleBirth && (
-                        <div className="mt-4 p-3 bg-white rounded-lg border-2 border-pink-200">
-                          <label className="block text-sm font-semibold text-slate-700 mb-2">
-                            How many babies to admit in total?
-                            <span className="text-slate-500 font-normal ml-1">(if any deceased/stillborn)</span>
-                          </label>
-                          <div className="flex flex-wrap gap-2">
-                            {Array.from({ length: totalBabiesBorn }, (_, i) => i + 1).map((num) => (
-                              <button
-                                key={num}
-                                type="button"
-                                onClick={() => setBabiesToAdmit(num)}
-                                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                                  babiesToAdmit === num
-                                    ? 'bg-pink-600 text-white shadow-lg'
-                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                                }`}
-                              >
-                                {num} {num === 1 ? 'baby' : 'babies'}
-                                {num < totalBabiesBorn && (
-                                  <span className="text-xs opacity-75 ml-1">
-                                    ({totalBabiesBorn - num} deceased)
-                                  </span>
-                                )}
-                              </button>
-                            ))}
+                      <div className="bg-white rounded-lg p-4 space-y-4 border-2 border-yellow-300">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-bold text-slate-900 mb-1">
+                              Guardian Name <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={patient.parentalConsent?.guardianName || ''}
+                              onChange={(e) => setPatient(prev => ({
+                                ...prev,
+                                parentalConsent: {
+                                  guardianName: e.target.value,
+                                  guardianRelation: prev.parentalConsent?.guardianRelation || 'Mother',
+                                  physicalFormSigned: prev.parentalConsent?.physicalFormSigned || false,
+                                  aiConsentGiven: prev.parentalConsent?.aiConsentGiven || false,
+                                  verifiedByStaff: userEmail,
+                                  verifiedByStaffName: userName || userEmail,
+                                  consentTimestamp: new Date().toISOString(),
+                                  consentVersion: '1.0.0',
+                                  verificationMethod: 'Physical Form + Staff Attestation'
+                                }
+                              }))}
+                              required
+                              className="w-full px-3 py-2 bg-white border-2 border-yellow-500 rounded-lg text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-yellow-600"
+                              placeholder="Enter parent/guardian name"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-slate-900 mb-1">
+                              Relation to Patient <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                              value={patient.parentalConsent?.guardianRelation || 'Mother'}
+                              onChange={(e) => setPatient(prev => ({
+                                ...prev,
+                                parentalConsent: {
+                                  ...prev.parentalConsent!,
+                                  guardianRelation: e.target.value as 'Mother' | 'Father' | 'Legal Guardian'
+                                }
+                              }))}
+                              required
+                              className="w-full px-3 py-2 bg-white border-2 border-yellow-500 rounded-lg text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-yellow-600"
+                            >
+                              <option value="Mother">Mother</option>
+                              <option value="Father">Father</option>
+                              <option value="Legal Guardian">Legal Guardian</option>
+                            </select>
                           </div>
                         </div>
-                      )}
-                      {isMultipleBirth && babiesToAdmit > 1 && (
-                        <p className="text-xs text-pink-700 mt-2">
-                          <strong>Tip:</strong> After saving {getBabyLabel(currentBabyNumber, multipleBirthType)}, you'll be prompted to add the next baby with mother's details auto-filled.
-                        </p>
-                      )}
-                      {isMultipleBirth && babiesToAdmit === 1 && (
-                        <p className="text-xs text-amber-700 mt-2">
-                          <strong>Note:</strong> Only 1 baby being admitted from this {multipleBirthType.toLowerCase()} birth. The other(s) will be recorded as deceased/stillborn.
-                        </p>
-                      )}
-                    </div>
-                  )}
 
-                  {/* 1. Admission Context */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Staff Attestation Checkboxes */}
+                        <div className="space-y-3 bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+                          <p className="text-sm font-bold text-blue-900 mb-2">Staff Verification (Check all that apply):</p>
+
+                          <label className="flex items-start gap-3 cursor-pointer group">
+                            <input
+                              type="checkbox"
+                              checked={patient.parentalConsent?.physicalFormSigned || false}
+                              onChange={(e) => setPatient(prev => ({
+                                ...prev,
+                                parentalConsent: {
+                                  ...prev.parentalConsent!,
+                                  physicalFormSigned: e.target.checked
+                                }
+                              }))}
+                              required
+                              className="mt-1 w-5 h-5 text-blue-600 border-blue-300 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                            <div className="flex-1">
+                              <span className="text-sm font-semibold text-blue-900">
+                                ✅ Physical consent form signed by parent/guardian and verified
+                              </span>
+                              <p className="text-xs text-blue-700 mt-1">
+                                I confirm that the parent/guardian has signed the physical DPDP consent form in my presence.
+                              </p>
+                            </div>
+                          </label>
+
+                          <label className="flex items-start gap-3 cursor-pointer group">
+                            <input
+                              type="checkbox"
+                              checked={patient.parentalConsent?.aiConsentGiven || false}
+                              onChange={(e) => setPatient(prev => ({
+                                ...prev,
+                                parentalConsent: {
+                                  ...prev.parentalConsent!,
+                                  aiConsentGiven: e.target.checked
+                                }
+                              }))}
+                              className="mt-1 w-5 h-5 text-purple-600 border-purple-300 rounded focus:ring-2 focus:ring-purple-500"
+                            />
+                            <div className="flex-1">
+                              <span className="text-sm font-semibold text-purple-900">
+                                🤖 (Optional) Parent consented to AI-powered clinical features
+                              </span>
+                              <p className="text-xs text-purple-700 mt-1">
+                                De-identified data may be sent to OpenAI/Gemini for clinical decision support.
+                              </p>
+                            </div>
+                          </label>
+                        </div>
+
+                        <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3">
+                          <p className="text-xs text-green-800">
+                            <strong>Verified by:</strong> {userName || userEmail} ({userEmail}) at {new Date().toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="sncuRegNo" className="block text-sm font-medium text-slate-700 mb-1">SNCU Reg. No.</label>
+                        <input type="text" name="sncuRegNo" id="sncuRegNo" value={patient.sncuRegNo || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., SNCU/2024/001" />
+                      </div>
+                      <div>
+                        <label htmlFor="ntid" className="block text-sm font-medium text-slate-700 mb-1">NTID (Neolink Tracking ID)</label>
+                        <div className="w-full px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-400 rounded-lg text-blue-800 font-mono font-bold text-lg tracking-wider">
+                          {patient.ntid || 'Auto-generated'}
+                        </div>
+                        <p className="text-xs text-blue-600 mt-1">Unique ID auto-generated for each patient</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="motherName" className="block text-sm font-bold text-black mb-1">Mother's Name</label>
+                        <input type="text" name="motherName" id="motherName" value={patient.motherName || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" placeholder="Enter mother's name" />
+                      </div>
+                      <div>
+                        <label htmlFor="fatherName" className="block text-sm font-bold text-black mb-1">Father's Name</label>
+                        <input type="text" name="fatherName" id="fatherName" value={patient.fatherName || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" placeholder="Father's full name" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="name" className="block text-sm font-bold text-black mb-1">Baby's Name <span className="text-red-500">*</span></label>
+                        <input type="text" name="name" id="name" value={patient.name} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" placeholder="Auto-filled from mother's name" />
+                        <p className="text-xs text-blue-600 mt-1">Auto-fills as "Baby of [Mother's Name]"</p>
+                      </div>
+                      <div>
+                        <label htmlFor="unit" className="block text-sm font-bold text-black mb-1">Unit <span className="text-red-500">*</span></label>
+                        <select name="unit" id="unit" value={patient.unit} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields}>
+                          {(availableUnits || Object.values(Unit)).map(u => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label htmlFor="gender" className="block text-sm font-medium text-slate-700 mb-1">Sex <span className="text-red-400">*</span></label>
+                        <select name="gender" id="gender" value={patient.gender || ''} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                          <option value="">Select Sex</option>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Ambiguous">Ambiguous</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+                        <select name="category" id="category" value={patient.category || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                          <option value="">Select Category</option>
+                          {Object.values(Category).map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="doctorInCharge" className="block text-sm font-medium text-slate-700 mb-1">
+                          Doctor In Charge <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            name="doctorInCharge"
+                            id="doctorInCharge"
+                            list="doctors-list"
+                            value={patient.doctorInCharge || ''}
+                            onChange={handleChange}
+                            required
+                            className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder={doctors.length > 0 ? "Select or type doctor name" : "Enter doctor name"}
+                            autoComplete="off"
+                          />
+                          {doctors.length > 0 && (
+                            <datalist id="doctors-list">
+                              {doctors.map((doc, idx) => (
+                                <option key={idx} value={doc} />
+                              ))}
+                            </datalist>
+                          )}
+                        </div>
+                        {doctors.length > 0 && (
+                          <p className="text-xs text-slate-500 mt-1">Type to search or select from suggestions</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Enhanced Address Input with PIN Code Lookup */}
+                    <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <h4 className="font-semibold text-blue-800">Address Details</h4>
+                        <span className="text-xs text-blue-600 ml-auto">📍 Select State & District</span>
+                      </div>
+                      <AddressInput
+                        address={{
+                          address: patient.address,
+                          village: patient.village,
+                          postOffice: patient.postOffice,
+                          district: patient.district,
+                          state: patient.state
+                        }}
+                        onChange={handleAddressChange}
+                        showVillage={true}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-slate-700">Contact 1</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input type="tel" name="contactNo1" id="contactNo1" value={patient.contactNo1 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Phone number" />
+                          <input type="text" name="contactRelation1" id="contactRelation1" value={patient.contactRelation1 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Relation" />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-slate-700">Contact 2</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input type="tel" name="contactNo2" id="contactNo2" value={patient.contactNo2 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Phone number" />
+                          <input type="text" name="contactRelation2" id="contactRelation2" value={patient.contactRelation2 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Relation" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Admission Type - For NICU/SNCU */}
                     {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
-                      <div className="md:col-span-2">
+                      <div className="pt-4 border-t border-blue-500/30">
                         <label className="block text-sm font-medium text-slate-700 mb-2">
                           Type of Admission <span className="text-red-400">*</span>
                         </label>
@@ -1206,7 +1654,6 @@ const PatientForm: React.FC<PatientFormProps> = ({
                               type="button"
                               onClick={() => setPatient(prev => {
                                 const updated = { ...prev, admissionType: at };
-                                // Auto-fill place of delivery for Inborn admissions
                                 if (at === AdmissionType.Inborn) {
                                   updated.placeOfDelivery = PlaceOfDelivery.GovernmentHospital;
                                   updated.placeOfDeliveryName = institutionName;
@@ -1215,15 +1662,14 @@ const PatientForm: React.FC<PatientFormProps> = ({
                                 }
                                 return updated;
                               })}
-                              className={`px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
-                                patient.admissionType === at
+                              className={`px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${patient.admissionType === at
                                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
                                   : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
-                              }`}
+                                }`}
                             >
                               {at === AdmissionType.Inborn ? '🏥 Inborn' :
-                               at === AdmissionType.OutbornHealthFacility ? '🚑 Outborn (Health Facility)' :
-                               '🏠 Outborn (Community)'}
+                                at === AdmissionType.OutbornHealthFacility ? '🚑 Outborn (Health Facility)' :
+                                  '🏠 Outborn (Community)'}
                             </button>
                           ))}
                         </div>
@@ -1234,334 +1680,9 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         )}
                       </div>
                     )}
-                    <div>
-                      <label htmlFor="admissionDateTime" className="block text-sm font-medium text-slate-700 mb-1">
-                        Date and Time of Admission <span className="text-red-400">*</span>
-                      </label>
-                      <SimpleDateTimeInput
-                        id="admissionDateTime"
-                        name="admissionDateTime"
-                        value={patient.admissionDateTime || ''}
-                        onChange={(iso) => handleDateChange(iso ? new Date(iso) : null, 'admissionDateTime')}
-                        required
-                      />
-                    </div>
                   </div>
-
-                  <hr className="border-slate-700/50" />
-
-                  {/* 2. Birth & Weight Info */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
-                      <div>
-                        <label htmlFor="dateOfBirth" className="block text-sm font-medium text-slate-700 mb-1">
-                          Date and Time of Birth
-                        </label>
-                        <SimpleDateTimeInput
-                          id="dateOfBirth"
-                          name="dateOfBirth"
-                          value={patient.dateOfBirth || ''}
-                          onChange={(iso) => handleDateChange(iso ? new Date(iso) : null, 'dateOfBirth')}
-                          max={new Date().toISOString()}
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <label htmlFor="age" className="block text-sm font-medium text-slate-700 mb-1">Current Age <span className="text-red-400">*</span></label>
-                      <div className="flex gap-2">
-                        <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" step="0.01" className="w-2/3 px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                        <select name="ageUnit" id="ageUnit" value={patient.ageUnit} onChange={handleChange} required className="w-1/3 px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
-                          {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) ? (
-                      <div>
-                        <label htmlFor="birthWeight" className="block text-sm font-medium text-slate-700 mb-1">Birth Weight (Kg)</label>
-                        <input type="number" name="birthWeight" id="birthWeight" value={patient.birthWeight || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 2.500" />
-                      </div>
-                    ) : <div></div>}
-                    <div>
-                      <label htmlFor="weightOnAdmission" className="block text-sm font-medium text-slate-700 mb-1">Weight on Admission (Kg)</label>
-                      <input type="number" name="weightOnAdmission" id="weightOnAdmission" value={patient.weightOnAdmission || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 2.500" />
-                    </div>
-                  </div>
-
-                  <hr className="border-slate-700/50" />
-
-                  {/* 3. Delivery Details (NICU Only) */}
-                  {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="modeOfDelivery" className="block text-sm font-medium text-slate-700 mb-1">Mode of Delivery</label>
-                        <select name="modeOfDelivery" id="modeOfDelivery" value={patient.modeOfDelivery || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                          <option value="">Select Mode</option>
-                          {Object.values(ModeOfDelivery).map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label htmlFor="placeOfDelivery" className="block text-sm font-medium text-slate-700 mb-1">
-                          Place of Delivery {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
-                        </label>
-                        <select
-                          name="placeOfDelivery"
-                          id="placeOfDelivery"
-                          value={patient.placeOfDelivery || ''}
-                          onChange={handleChange}
-                          disabled={patient.admissionType === AdmissionType.Inborn}
-                          className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          <option value="">Select Place</option>
-                          {Object.values(PlaceOfDelivery).map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {(patient.placeOfDelivery === PlaceOfDelivery.PrivateHospital || patient.placeOfDelivery === PlaceOfDelivery.GovernmentHospital) && (
-                    <div>
-                      <label htmlFor="placeOfDeliveryName" className="block text-sm font-medium text-slate-700 mb-1">
-                        Hospital Name {patient.admissionType === AdmissionType.Inborn && <span className="text-xs text-green-400">(Auto-filled)</span>}
-                      </label>
-                      <input
-                        type="text"
-                        name="placeOfDeliveryName"
-                        id="placeOfDeliveryName"
-                        value={patient.placeOfDeliveryName || ''}
-                        onChange={handleChange}
-                        disabled={patient.admissionType === AdmissionType.Inborn}
-                        className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
-                        placeholder="Enter hospital name"
-                      />
-                    </div>
-                  )}
-
-
-                  {/* 4. Transport & Referral */}
-                  {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="modeOfTransport" className="block text-sm font-medium text-slate-700 mb-1">Mode of Transport</label>
-                        <select name="modeOfTransport" id="modeOfTransport" value={patient.modeOfTransport || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                          <option value="">Select Mode</option>
-                          {Object.values(ModeOfTransport).map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                      </div>
-
-                      {(patient.admissionType === AdmissionType.OutbornHealthFacility || patient.admissionType === AdmissionType.OutbornCommunity) && (
-                        <div className="space-y-4 md:col-span-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-4">
-                          <div>
-                            <label htmlFor="referringHospital" className="block text-sm font-medium text-slate-700 mb-1">Referred From (Hospital/Facility)</label>
-                            <input type="text" name="referringHospital" id="referringHospital" value={patient.referringHospital || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Name of referring hospital or facility" />
-                          </div>
-                          <div>
-                            <label htmlFor="referringDistrict" className="block text-sm font-medium text-slate-700 mb-1">Referring District</label>
-                            <input type="text" name="referringDistrict" id="referringDistrict" value={patient.referringDistrict || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="District name" />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            )}
-
-            {/* STEP 2: Administrative & Demographic Information Section */}
-            {currentStep === 2 && (
-            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggleSection('demographics')}
-                className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  <h3 className="text-lg font-bold text-white">Administrative & Demographic Information</h3>
-                </div>
-                <svg className={`w-5 h-5 text-white transition-transform ${expandedSections.demographics ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {expandedSections.demographics && (
-                <div className="p-2 sm:p-4 space-y-3 sm:space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="sncuRegNo" className="block text-sm font-medium text-slate-700 mb-1">SNCU Reg. No.</label>
-                      <input type="text" name="sncuRegNo" id="sncuRegNo" value={patient.sncuRegNo || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., SNCU/2024/001" />
-                    </div>
-                    <div>
-                      <label htmlFor="ntid" className="block text-sm font-medium text-slate-700 mb-1">NTID (Neolink Tracking ID)</label>
-                      <div className="w-full px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-400 rounded-lg text-blue-800 font-mono font-bold text-lg tracking-wider">
-                        {patient.ntid || 'Auto-generated'}
-                      </div>
-                      <p className="text-xs text-blue-600 mt-1">Unique ID auto-generated for each patient</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="motherName" className="block text-sm font-bold text-black mb-1">Mother's Name</label>
-                      <input type="text" name="motherName" id="motherName" value={patient.motherName || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" placeholder="Enter mother's name" />
-                    </div>
-                    <div>
-                      <label htmlFor="fatherName" className="block text-sm font-bold text-black mb-1">Father's Name</label>
-                      <input type="text" name="fatherName" id="fatherName" value={patient.fatherName || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" placeholder="Father's full name" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="name" className="block text-sm font-bold text-black mb-1">Baby's Name <span className="text-red-500">*</span></label>
-                      <input type="text" name="name" id="name" value={patient.name} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600" placeholder="Auto-filled from mother's name" />
-                      <p className="text-xs text-blue-600 mt-1">Auto-fills as "Baby of [Mother's Name]"</p>
-                    </div>
-                    <div>
-                      <label htmlFor="unit" className="block text-sm font-bold text-black mb-1">Unit <span className="text-red-500">*</span></label>
-                      <select name="unit" id="unit" value={patient.unit} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled={!canEditSensitiveFields}>
-                        {(availableUnits || Object.values(Unit)).map(u => <option key={u} value={u}>{u}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label htmlFor="gender" className="block text-sm font-medium text-slate-700 mb-1">Sex <span className="text-red-400">*</span></label>
-                      <select name="gender" id="gender" value={patient.gender || ''} onChange={handleChange} required className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Select Sex</option>
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Ambiguous">Ambiguous</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-                      <select name="category" id="category" value={patient.category || ''} onChange={handleChange} className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="">Select Category</option>
-                        {Object.values(Category).map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label htmlFor="doctorInCharge" className="block text-sm font-medium text-slate-700 mb-1">
-                        Doctor In Charge <span className="text-red-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          name="doctorInCharge"
-                          id="doctorInCharge"
-                          list="doctors-list"
-                          value={patient.doctorInCharge || ''}
-                          onChange={handleChange}
-                          required
-                          className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={doctors.length > 0 ? "Select or type doctor name" : "Enter doctor name"}
-                          autoComplete="off"
-                        />
-                        {doctors.length > 0 && (
-                          <datalist id="doctors-list">
-                            {doctors.map((doc, idx) => (
-                              <option key={idx} value={doc} />
-                            ))}
-                          </datalist>
-                        )}
-                      </div>
-                      {doctors.length > 0 && (
-                        <p className="text-xs text-slate-500 mt-1">Type to search or select from suggestions</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Enhanced Address Input with PIN Code Lookup */}
-                  <div className="bg-blue-50 border-2 border-blue-400 rounded-xl p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <h4 className="font-semibold text-blue-800">Address Details</h4>
-                      <span className="text-xs text-blue-600 ml-auto">📍 Select State & District</span>
-                    </div>
-                    <AddressInput
-                      address={{
-                        address: patient.address,
-                        village: patient.village,
-                        postOffice: patient.postOffice,
-                        district: patient.district,
-                        state: patient.state
-                      }}
-                      onChange={handleAddressChange}
-                      showVillage={true}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-slate-700">Contact 1</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input type="tel" name="contactNo1" id="contactNo1" value={patient.contactNo1 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Phone number" />
-                        <input type="text" name="contactRelation1" id="contactRelation1" value={patient.contactRelation1 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Relation" />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-slate-700">Contact 2</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input type="tel" name="contactNo2" id="contactNo2" value={patient.contactNo2 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Phone number" />
-                        <input type="text" name="contactRelation2" id="contactRelation2" value={patient.contactRelation2 || ''} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Relation" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Admission Type - For NICU/SNCU */}
-                  {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU) && (
-                    <div className="pt-4 border-t border-blue-500/30">
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Type of Admission <span className="text-red-400">*</span>
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {Object.values(AdmissionType).map(at => (
-                          <button
-                            key={at}
-                            type="button"
-                            onClick={() => setPatient(prev => {
-                              const updated = { ...prev, admissionType: at };
-                              if (at === AdmissionType.Inborn) {
-                                updated.placeOfDelivery = PlaceOfDelivery.GovernmentHospital;
-                                updated.placeOfDeliveryName = institutionName;
-                                updated.referringHospital = '';
-                                updated.referringDistrict = '';
-                              }
-                              return updated;
-                            })}
-                            className={`px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
-                              patient.admissionType === at
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
-                                : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
-                            }`}
-                          >
-                            {at === AdmissionType.Inborn ? '🏥 Inborn' :
-                             at === AdmissionType.OutbornHealthFacility ? '🚑 Outborn (Health Facility)' :
-                             '🏠 Outborn (Community)'}
-                          </button>
-                        ))}
-                      </div>
-                      {patient.admissionType === AdmissionType.Inborn && (
-                        <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
-                          <span>✓</span> Place of delivery will be set to: {institutionName}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
 
 
@@ -1571,159 +1692,159 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
             {/* STEP 3: Clinical Information Section */}
             {currentStep === 3 && (
-            <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
-              <div className="px-4 py-3 bg-gradient-to-r from-teal-600 to-emerald-600">
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                  </svg>
-                  <h3 className="text-lg font-bold text-white">Clinical Information</h3>
+              <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
+                <div className="px-4 py-3 bg-gradient-to-r from-teal-600 to-emerald-600">
+                  <div className="flex items-center gap-3">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    <h3 className="text-lg font-bold text-white">Clinical Information</h3>
+                  </div>
                 </div>
-              </div>
 
-              <div className="p-2 sm:p-4 space-y-3 sm:space-y-4">
-                {/* Indications for Admission - Show if NICU/SNCU OR if indications are configured for the unit */}
-                {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU || admissionIndications.length > 0) && (
-                  <div>
-                    <label className="block text-sm font-bold text-black mb-3">
-                      Indications for Admission <span className="text-red-500">*</span>
-                    </label>
-
-                    {loadingIndications ? (
-                      <div className="text-center py-4">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                        <p className="text-sm mt-2 text-black">Loading indications...</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto bg-white p-4 rounded-lg border-2 border-blue-600">
-                        {admissionIndications.length > 0 ? (
-                          admissionIndications.map((indication) => (
-                            <label
-                              key={indication.id}
-                              className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all ${(patient.indicationsForAdmission || []).includes(indication.name)
-                                ? 'bg-blue-600 border-2 border-blue-700'
-                                : 'bg-white border-2 border-gray-300 hover:border-blue-600'
-                                }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={(patient.indicationsForAdmission || []).includes(indication.name)}
-                                onChange={() => handleIndicationToggle(indication.name)}
-                                className="mt-1 w-5 h-5 text-blue-600 bg-white border-gray-400 rounded focus:ring-blue-600 focus:ring-2"
-                              />
-                              <span className={`text-sm font-medium flex-1 ${(patient.indicationsForAdmission || []).includes(indication.name) ? 'text-white' : 'text-black'}`}>
-                                {indication.name}
-                              </span>
-                            </label>
-                          ))
-                        ) : (
-                          <div className="col-span-2 text-center py-8">
-                            <p className="text-sm text-black">No indications configured yet.</p>
-                            <p className="text-xs mt-1 text-gray-600">SuperAdmin needs to add indications in Settings.</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Custom Indication Field */}
-                    <div className="mt-4">
-                      <label htmlFor="customIndication" className="block text-sm font-bold text-black mb-1">
-                        Custom Indication / Additional Notes
+                <div className="p-2 sm:p-4 space-y-3 sm:space-y-4">
+                  {/* Indications for Admission - Show if NICU/SNCU OR if indications are configured for the unit */}
+                  {(patient.unit === Unit.NICU || patient.unit === Unit.SNCU || admissionIndications.length > 0) && (
+                    <div>
+                      <label className="block text-sm font-bold text-black mb-3">
+                        Indications for Admission <span className="text-red-500">*</span>
                       </label>
-                      <textarea
-                        name="customIndication"
-                        id="customIndication"
-                        value={patient.customIndication || ''}
-                        onChange={handleChange}
-                        rows={3}
-                        className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
-                        placeholder="Enter any other indications or additional clinical notes..."
-                      ></textarea>
-                    </div>
 
-                    {/* Primary Diagnosis Summary */}
-                    {((patient.indicationsForAdmission || []).length > 0 || patient.customIndication) && (
-                      <div className="mt-4 p-4 bg-blue-600 rounded-lg">
-                        <p className="text-sm font-bold text-white mb-3">Primary Diagnosis:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {patient.indicationsForAdmission?.map((indication, idx) => (
-                            <span key={idx} className="px-3 py-1.5 bg-white text-black text-sm font-medium rounded-full">
-                              {indication}
-                            </span>
-                          ))}
-                          {patient.customIndication && (
-                            <span className="px-3 py-1.5 bg-white text-black text-sm font-medium rounded-full">
-                              {patient.customIndication}
-                            </span>
+                      {loadingIndications ? (
+                        <div className="text-center py-4">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                          <p className="text-sm mt-2 text-black">Loading indications...</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto bg-white p-4 rounded-lg border-2 border-blue-600">
+                          {admissionIndications.length > 0 ? (
+                            admissionIndications.map((indication) => (
+                              <label
+                                key={indication.id}
+                                className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-all ${(patient.indicationsForAdmission || []).includes(indication.name)
+                                  ? 'bg-blue-600 border-2 border-blue-700'
+                                  : 'bg-white border-2 border-gray-300 hover:border-blue-600'
+                                  }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={(patient.indicationsForAdmission || []).includes(indication.name)}
+                                  onChange={() => handleIndicationToggle(indication.name)}
+                                  className="mt-1 w-5 h-5 text-blue-600 bg-white border-gray-400 rounded focus:ring-blue-600 focus:ring-2"
+                                />
+                                <span className={`text-sm font-medium flex-1 ${(patient.indicationsForAdmission || []).includes(indication.name) ? 'text-white' : 'text-black'}`}>
+                                  {indication.name}
+                                </span>
+                              </label>
+                            ))
+                          ) : (
+                            <div className="col-span-2 text-center py-8">
+                              <p className="text-sm text-black">No indications configured yet.</p>
+                              <p className="text-xs mt-1 text-gray-600">SuperAdmin needs to add indications in Settings.</p>
+                            </div>
                           )}
                         </div>
+                      )}
+
+                      {/* Custom Indication Field */}
+                      <div className="mt-4">
+                        <label htmlFor="customIndication" className="block text-sm font-bold text-black mb-1">
+                          Custom Indication / Additional Notes
+                        </label>
+                        <textarea
+                          name="customIndication"
+                          id="customIndication"
+                          value={patient.customIndication || ''}
+                          onChange={handleChange}
+                          rows={3}
+                          className="w-full px-3 py-2 bg-white border-2 border-blue-600 rounded-lg text-black placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                          placeholder="Enter any other indications or additional clinical notes..."
+                        ></textarea>
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      {/* Primary Diagnosis Summary */}
+                      {((patient.indicationsForAdmission || []).length > 0 || patient.customIndication) && (
+                        <div className="mt-4 p-4 bg-blue-600 rounded-lg">
+                          <p className="text-sm font-bold text-white mb-3">Primary Diagnosis:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {patient.indicationsForAdmission?.map((indication, idx) => (
+                              <span key={idx} className="px-3 py-1.5 bg-white text-black text-sm font-medium rounded-full">
+                                {indication}
+                              </span>
+                            ))}
+                            {patient.customIndication && (
+                              <span className="px-3 py-1.5 bg-white text-black text-sm font-medium rounded-full">
+                                {patient.customIndication}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
 
-                {/* For nurses - show read-only if diagnosis exists */}
-                {isNurse && patient.diagnosis && patient.unit !== Unit.NICU && patient.unit !== Unit.SNCU && (
-                  <div className="bg-blue-50 p-3 rounded-lg border-2 border-blue-300">
-                    <label className="block text-xs font-medium text-blue-600 mb-1">Primary Diagnosis (Doctor entered)</label>
-                    <p className="text-sm text-slate-700 font-medium">{patient.diagnosis}</p>
-                  </div>
-                )}
+                  {/* For nurses - show read-only if diagnosis exists */}
+                  {isNurse && patient.diagnosis && patient.unit !== Unit.NICU && patient.unit !== Unit.SNCU && (
+                    <div className="bg-blue-50 p-3 rounded-lg border-2 border-blue-300">
+                      <label className="block text-xs font-medium text-blue-600 mb-1">Primary Diagnosis (Doctor entered)</label>
+                      <p className="text-sm text-slate-700 font-medium">{patient.diagnosis}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
             )}
 
             {/* Readmit to ICU Section - Only show for Step Down patients (part of Step 3) */}
             {currentStep === 3 && (
-            <>
-            {patient.outcome === 'Step Down' && patient.isStepDown && (
-              <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 overflow-hidden shadow-md">
-                <div className="px-4 py-3 bg-red-900/50">
-                  <div className="flex items-center gap-3">
-                    <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    <h3 className="text-lg font-bold text-red-200">Readmission Required?</h3>
-                  </div>
-                </div>
+              <>
+                {patient.outcome === 'Step Down' && patient.isStepDown && (
+                  <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 overflow-hidden shadow-md">
+                    <div className="px-4 py-3 bg-red-900/50">
+                      <div className="flex items-center gap-3">
+                        <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <h3 className="text-lg font-bold text-red-200">Readmission Required?</h3>
+                      </div>
+                    </div>
 
-                <div className="p-4 space-y-3">
-                  <div className="bg-red-50/10 border border-red-400/30 rounded-lg p-4">
-                    <p className="text-sm text-slate-700 mb-4">
-                      This patient is currently in <strong className="text-blue-600">Step Down</strong> status from <strong className="text-blue-600">{patient.stepDownFrom}</strong>.
-                      If the patient requires readmission to intensive care, click the button below.
-                    </p>
+                    <div className="p-4 space-y-3">
+                      <div className="bg-red-50/10 border border-red-400/30 rounded-lg p-4">
+                        <p className="text-sm text-slate-700 mb-4">
+                          This patient is currently in <strong className="text-blue-600">Step Down</strong> status from <strong className="text-blue-600">{patient.stepDownFrom}</strong>.
+                          If the patient requires readmission to intensive care, click the button below.
+                        </p>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {[Unit.NICU, Unit.PICU, Unit.SNCU].map(unit => (
-                        <button
-                          key={unit}
-                          type="button"
-                          onClick={() => {
-                            setPatient(prev => ({
-                              ...prev,
-                              outcome: 'In Progress',
-                              unit: unit,
-                              isStepDown: false,
-                              readmissionFromStepDown: true,
-                            }));
-                            alert(`Patient readmitted to ${unit} successfully! Status changed to "In Progress".`);
-                          }}
-                          className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                          Readmit to {unit}
-                        </button>
-                      ))}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {[Unit.NICU, Unit.PICU, Unit.SNCU].map(unit => (
+                            <button
+                              key={unit}
+                              type="button"
+                              onClick={() => {
+                                setPatient(prev => ({
+                                  ...prev,
+                                  outcome: 'In Progress',
+                                  unit: unit,
+                                  isStepDown: false,
+                                  readmissionFromStepDown: true,
+                                }));
+                                alert(`Patient readmitted to ${unit} successfully! Status changed to "In Progress".`);
+                              }}
+                              className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                              Readmit to {unit}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
-            </>
+                )}
+              </>
             )}
 
             {/* STEP 4: Maternal History Section - Only for NICU/SNCU */}
@@ -2093,11 +2214,10 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         {Object.values(MaternalRiskFactor).map(factor => (
                           <label
                             key={factor}
-                            className={`flex items-center gap-2 p-2 rounded-lg border-2 cursor-pointer transition-all ${
-                              patient.maternalHistory?.riskFactors?.includes(factor)
+                            className={`flex items-center gap-2 p-2 rounded-lg border-2 cursor-pointer transition-all ${patient.maternalHistory?.riskFactors?.includes(factor)
                                 ? 'bg-pink-100 border-pink-500 text-pink-800'
                                 : 'bg-white border-gray-200 hover:border-pink-300 text-gray-700'
-                            }`}
+                              }`}
                           >
                             <input
                               type="checkbox"
@@ -2167,10 +2287,10 @@ const PatientForm: React.FC<PatientFormProps> = ({
                       {((patient.maternalHistory?.previousNICUAdmissions || 0) > 0 ||
                         (patient.maternalHistory?.previousNeonatalDeaths || 0) > 0 ||
                         (patient.maternalHistory?.previousStillbirths || 0) > 0) && (
-                        <p className="text-xs text-amber-600 mt-2 font-medium">
-                          ⚠️ Bad Obstetric History (BOH) - High-risk pregnancy
-                        </p>
-                      )}
+                          <p className="text-xs text-amber-600 mt-2 font-medium">
+                            ⚠️ Bad Obstetric History (BOH) - High-risk pregnancy
+                          </p>
+                        )}
                     </div>
                   </div>
                 )}
@@ -2179,300 +2299,300 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
             {/* FINAL STEP: Review & Submit */}
             {currentStep === totalSteps && (
-            <>
-            {/* Comprehensive Overview Card */}
-            <div className="bg-white rounded-xl border-2 border-green-400 shadow-lg overflow-hidden mb-4">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-3">
-                <h3 className="text-lg font-bold flex items-center gap-2">
-                  <span className="text-xl">📋</span>
-                  Admission Overview
-                </h3>
-                <p className="text-xs text-green-100">Review all details before saving</p>
-              </div>
-
-              <div className="p-4 space-y-4">
-                {/* Required Fields Warning */}
-                {(!patient.name || !patient.gender || !patient.doctorInCharge) && (
-                  <div className="p-3 bg-red-50 border-2 border-red-300 rounded-lg text-sm text-red-800">
-                    <span className="font-bold">⚠️ Missing Required Fields:</span> {[
-                      !patient.name && 'Patient Name',
-                      !patient.gender && 'Gender',
-                      !patient.doctorInCharge && 'Doctor In Charge'
-                    ].filter(Boolean).join(', ')}
+              <>
+                {/* Comprehensive Overview Card */}
+                <div className="bg-white rounded-xl border-2 border-green-400 shadow-lg overflow-hidden mb-4">
+                  {/* Header */}
+                  <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-3">
+                    <h3 className="text-lg font-bold flex items-center gap-2">
+                      <span className="text-xl">📋</span>
+                      Admission Overview
+                    </h3>
+                    <p className="text-xs text-green-100">Review all details before saving</p>
                   </div>
-                )}
 
-                {/* Patient Identity Section */}
-                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                  <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
-                    <span>👶</span> Patient Identity
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                    <div><span className="text-gray-500">NTID:</span> <span className="font-semibold">{patient.ntid || '-'}</span></div>
-                    <div><span className="text-gray-500">Name:</span> <span className="font-semibold">{patient.name || '-'}</span></div>
-                    <div><span className="text-gray-500">Gender:</span> <span className="font-semibold">{patient.gender || '-'}</span></div>
-                    <div><span className="text-gray-500">Age:</span> <span className="font-semibold">{patient.age} {patient.ageUnit}</span></div>
-                  </div>
-                </div>
+                  <div className="p-4 space-y-4">
+                    {/* Required Fields Warning */}
+                    {(!patient.name || !patient.gender || !patient.doctorInCharge) && (
+                      <div className="p-3 bg-red-50 border-2 border-red-300 rounded-lg text-sm text-red-800">
+                        <span className="font-bold">⚠️ Missing Required Fields:</span> {[
+                          !patient.name && 'Patient Name',
+                          !patient.gender && 'Gender',
+                          !patient.doctorInCharge && 'Doctor In Charge'
+                        ].filter(Boolean).join(', ')}
+                      </div>
+                    )}
 
-                {/* Parent Information */}
-                {(patient.motherName || patient.fatherName) && (
-                  <div className="bg-pink-50 rounded-lg p-3 border border-pink-200">
-                    <h4 className="font-bold text-pink-800 mb-2 flex items-center gap-2">
-                      <span>👨‍👩‍👧</span> Parent Information
-                    </h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div><span className="text-gray-500">Mother:</span> <span className="font-semibold">{patient.motherName || '-'}</span></div>
-                      <div><span className="text-gray-500">Father:</span> <span className="font-semibold">{patient.fatherName || '-'}</span></div>
+                    {/* Patient Identity Section */}
+                    <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                      <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
+                        <span>👶</span> Patient Identity
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                        <div><span className="text-gray-500">NTID:</span> <span className="font-semibold">{patient.ntid || '-'}</span></div>
+                        <div><span className="text-gray-500">Name:</span> <span className="font-semibold">{patient.name || '-'}</span></div>
+                        <div><span className="text-gray-500">Gender:</span> <span className="font-semibold">{patient.gender || '-'}</span></div>
+                        <div><span className="text-gray-500">Age:</span> <span className="font-semibold">{patient.age} {patient.ageUnit}</span></div>
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                {/* Birth Details */}
-                {(patient.dateOfBirth || patient.birthWeight || patient.modeOfDelivery) && (
-                  <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
-                    <h4 className="font-bold text-purple-800 mb-2 flex items-center gap-2">
-                      <span>🍼</span> Birth Details
-                    </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                      {patient.dateOfBirth && (
-                        <div><span className="text-gray-500">DOB:</span> <span className="font-semibold">{new Date(patient.dateOfBirth).toLocaleString()}</span></div>
-                      )}
-                      {patient.birthWeight && (
-                        <div><span className="text-gray-500">Birth Weight:</span> <span className="font-semibold">{patient.birthWeight} Kg</span></div>
-                      )}
-                      {patient.modeOfDelivery && (
-                        <div><span className="text-gray-500">Delivery:</span> <span className="font-semibold">{patient.modeOfDelivery}</span></div>
-                      )}
-                      {patient.placeOfDelivery && (
-                        <div><span className="text-gray-500">Place:</span> <span className="font-semibold">{patient.placeOfDelivery}</span></div>
-                      )}
-                      {patient.gestationalAgeWeeks !== undefined && (
-                        <div className="col-span-2">
-                          <span className="text-gray-500">Gestational Age:</span>{' '}
-                          <span className="font-semibold">
-                            {patient.gestationalAgeWeeks} weeks {patient.gestationalAgeDays || 0} days
-                            {patient.gestationalAgeCategory && (
-                              <span className={`ml-2 px-2 py-0.5 rounded text-xs ${getGestationalAgeCategoryColor(patient.gestationalAgeCategory)}`}>
-                                {patient.gestationalAgeCategory}
-                              </span>
-                            )}
-                          </span>
+                    {/* Parent Information */}
+                    {(patient.motherName || patient.fatherName) && (
+                      <div className="bg-pink-50 rounded-lg p-3 border border-pink-200">
+                        <h4 className="font-bold text-pink-800 mb-2 flex items-center gap-2">
+                          <span>👨‍👩‍👧</span> Parent Information
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div><span className="text-gray-500">Mother:</span> <span className="font-semibold">{patient.motherName || '-'}</span></div>
+                          <div><span className="text-gray-500">Father:</span> <span className="font-semibold">{patient.fatherName || '-'}</span></div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Admission Details */}
-                <div className="bg-teal-50 rounded-lg p-3 border border-teal-200">
-                  <h4 className="font-bold text-teal-800 mb-2 flex items-center gap-2">
-                    <span>🏥</span> Admission Details
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                    <div><span className="text-gray-500">Unit:</span> <span className="font-semibold">{patient.unit}</span></div>
-                    <div><span className="text-gray-500">Type:</span> <span className="font-semibold">{patient.admissionType || '-'}</span></div>
-                    <div><span className="text-gray-500">Date/Time:</span> <span className="font-semibold">{patient.admissionDateTime ? new Date(patient.admissionDateTime).toLocaleString() : '-'}</span></div>
-                    {patient.weightOnAdmission && (
-                      <div><span className="text-gray-500">Weight:</span> <span className="font-semibold">{patient.weightOnAdmission} Kg</span></div>
+                      </div>
                     )}
-                    <div className={`col-span-2 ${patient.doctorInCharge ? '' : 'bg-red-100 rounded p-1'}`}>
-                      <span className="text-gray-500">Doctor In Charge:</span>{' '}
-                      <span className="font-semibold">{patient.doctorInCharge || <span className="text-red-600">⚠️ Required</span>}</span>
-                    </div>
-                    {patient.referringHospital && (
-                      <div className="col-span-2"><span className="text-gray-500">Referred From:</span> <span className="font-semibold">{patient.referringHospital}</span></div>
-                    )}
-                  </div>
-                </div>
 
-                {/* Diagnosis/Indications */}
-                {((patient.indicationsForAdmission || []).length > 0 || patient.customIndication || patient.diagnosis) && (
-                  <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                    <h4 className="font-bold text-green-800 mb-2 flex items-center gap-2">
-                      <span>📝</span> Diagnosis / Indications
-                    </h4>
-                    <div className="text-sm space-y-1">
-                      {(patient.indicationsForAdmission || []).length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {patient.indicationsForAdmission?.map((ind, idx) => (
-                            <span key={idx} className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">{ind}</span>
+                    {/* Birth Details */}
+                    {(patient.dateOfBirth || patient.birthWeight || patient.modeOfDelivery) && (
+                      <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                        <h4 className="font-bold text-purple-800 mb-2 flex items-center gap-2">
+                          <span>🍼</span> Birth Details
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                          {patient.dateOfBirth && (
+                            <div><span className="text-gray-500">DOB:</span> <span className="font-semibold">{new Date(patient.dateOfBirth).toLocaleString()}</span></div>
+                          )}
+                          {patient.birthWeight && (
+                            <div><span className="text-gray-500">Birth Weight:</span> <span className="font-semibold">{patient.birthWeight} Kg</span></div>
+                          )}
+                          {patient.modeOfDelivery && (
+                            <div><span className="text-gray-500">Delivery:</span> <span className="font-semibold">{patient.modeOfDelivery}</span></div>
+                          )}
+                          {patient.placeOfDelivery && (
+                            <div><span className="text-gray-500">Place:</span> <span className="font-semibold">{patient.placeOfDelivery}</span></div>
+                          )}
+                          {patient.gestationalAgeWeeks !== undefined && (
+                            <div className="col-span-2">
+                              <span className="text-gray-500">Gestational Age:</span>{' '}
+                              <span className="font-semibold">
+                                {patient.gestationalAgeWeeks} weeks {patient.gestationalAgeDays || 0} days
+                                {patient.gestationalAgeCategory && (
+                                  <span className={`ml-2 px-2 py-0.5 rounded text-xs ${getGestationalAgeCategoryColor(patient.gestationalAgeCategory)}`}>
+                                    {patient.gestationalAgeCategory}
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Admission Details */}
+                    <div className="bg-teal-50 rounded-lg p-3 border border-teal-200">
+                      <h4 className="font-bold text-teal-800 mb-2 flex items-center gap-2">
+                        <span>🏥</span> Admission Details
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                        <div><span className="text-gray-500">Unit:</span> <span className="font-semibold">{patient.unit}</span></div>
+                        <div><span className="text-gray-500">Type:</span> <span className="font-semibold">{patient.admissionType || '-'}</span></div>
+                        <div><span className="text-gray-500">Date/Time:</span> <span className="font-semibold">{patient.admissionDateTime ? new Date(patient.admissionDateTime).toLocaleString() : '-'}</span></div>
+                        {patient.weightOnAdmission && (
+                          <div><span className="text-gray-500">Weight:</span> <span className="font-semibold">{patient.weightOnAdmission} Kg</span></div>
+                        )}
+                        <div className={`col-span-2 ${patient.doctorInCharge ? '' : 'bg-red-100 rounded p-1'}`}>
+                          <span className="text-gray-500">Doctor In Charge:</span>{' '}
+                          <span className="font-semibold">{patient.doctorInCharge || <span className="text-red-600">⚠️ Required</span>}</span>
+                        </div>
+                        {patient.referringHospital && (
+                          <div className="col-span-2"><span className="text-gray-500">Referred From:</span> <span className="font-semibold">{patient.referringHospital}</span></div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Diagnosis/Indications */}
+                    {((patient.indicationsForAdmission || []).length > 0 || patient.customIndication || patient.diagnosis) && (
+                      <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                        <h4 className="font-bold text-green-800 mb-2 flex items-center gap-2">
+                          <span>📝</span> Diagnosis / Indications
+                        </h4>
+                        <div className="text-sm space-y-1">
+                          {(patient.indicationsForAdmission || []).length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {patient.indicationsForAdmission?.map((ind, idx) => (
+                                <span key={idx} className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">{ind}</span>
+                              ))}
+                            </div>
+                          )}
+                          {patient.customIndication && (
+                            <div><span className="text-gray-500">Other:</span> <span className="font-semibold">{patient.customIndication}</span></div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Address & Contact */}
+                    {(patient.address || patient.district || patient.contactNo1) && (
+                      <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                        <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                          <span>📍</span> Address & Contact
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          {(patient.district || patient.state) && (
+                            <div><span className="text-gray-500">Location:</span> <span className="font-semibold">{[patient.village, patient.postOffice, patient.district, patient.state].filter(Boolean).join(', ')}</span></div>
+                          )}
+                          {patient.address && (
+                            <div><span className="text-gray-500">Address:</span> <span className="font-semibold">{patient.address}</span></div>
+                          )}
+                          {patient.contactNo1 && (
+                            <div><span className="text-gray-500">Contact 1:</span> <span className="font-semibold">{patient.contactNo1} ({patient.contactRelation1 || 'N/A'})</span></div>
+                          )}
+                          {patient.contactNo2 && (
+                            <div><span className="text-gray-500">Contact 2:</span> <span className="font-semibold">{patient.contactNo2} ({patient.contactRelation2 || 'N/A'})</span></div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Maternal History for NICU/SNCU */}
+                    {isNICU_SNCU && patient.maternalHistory && (
+                      <div className="bg-rose-50 rounded-lg p-3 border border-rose-200">
+                        <h4 className="font-bold text-rose-800 mb-2 flex items-center gap-2">
+                          <span>🤰</span> Maternal History
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                          {patient.maternalHistory.gravida !== undefined && (
+                            <div>
+                              <span className="text-gray-500">Obstetric:</span>{' '}
+                              <span className="font-semibold">
+                                G{patient.maternalHistory.gravida}P{patient.maternalHistory.para || 0}A{patient.maternalHistory.abortion || 0}L{patient.maternalHistory.living || 0}
+                              </span>
+                            </div>
+                          )}
+                          {patient.maternalHistory.maternalAge && (
+                            <div><span className="text-gray-500">Mother's Age:</span> <span className="font-semibold">{patient.maternalHistory.maternalAge} years</span></div>
+                          )}
+                          {patient.maternalHistory.bloodGroup && (
+                            <div><span className="text-gray-500">Blood Group:</span> <span className="font-semibold">{patient.maternalHistory.bloodGroup}</span></div>
+                          )}
+                          {patient.maternalHistory.ancReceived !== undefined && (
+                            <div><span className="text-gray-500">ANC:</span> <span className="font-semibold">{patient.maternalHistory.ancReceived ? `Yes (${patient.maternalHistory.ancVisits || 0} visits)` : 'No'}</span></div>
+                          )}
+                          {patient.maternalHistory.antenatalSteroidsGiven !== undefined && (
+                            <div><span className="text-gray-500">Steroids:</span> <span className="font-semibold">{patient.maternalHistory.antenatalSteroidsGiven ? `Yes (${patient.maternalHistory.steroidDoses || 0} doses)` : 'No'}</span></div>
+                          )}
+                          {(patient.maternalHistory.riskFactors || []).length > 0 && (
+                            <div className="col-span-2 md:col-span-4">
+                              <span className="text-gray-500">Risk Factors:</span>{' '}
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {patient.maternalHistory.riskFactors?.map((rf, idx) => (
+                                  <span key={idx} className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded text-xs">{rf}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Registration Numbers */}
+                    {(patient.sncuRegNo || patient.mctsNo) && (
+                      <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                        <h4 className="font-bold text-amber-800 mb-2 flex items-center gap-2">
+                          <span>🔢</span> Registration Numbers
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          {patient.sncuRegNo && <div><span className="text-gray-500">SNCU Reg:</span> <span className="font-semibold">{patient.sncuRegNo}</span></div>}
+                          {patient.mctsNo && <div><span className="text-gray-500">MCTS No:</span> <span className="font-semibold">{patient.mctsNo}</span></div>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Edit History */}
+                    {patientToEdit && (patient.editHistory || []).length > 0 && (
+                      <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                        <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                          <span>📜</span> Edit History
+                        </h4>
+                        <div className="text-xs space-y-1 max-h-24 overflow-y-auto">
+                          {(patient.editHistory || []).slice(-5).reverse().map((edit, idx) => (
+                            <div key={idx} className="flex justify-between text-gray-600">
+                              <span>{edit.changes}</span>
+                              <span className="text-gray-400">{edit.editedBy} • {new Date(edit.timestamp).toLocaleDateString()}</span>
+                            </div>
                           ))}
                         </div>
-                      )}
-                      {patient.customIndication && (
-                        <div><span className="text-gray-500">Other:</span> <span className="font-semibold">{patient.customIndication}</span></div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
 
-                {/* Address & Contact */}
-                {(patient.address || patient.district || patient.contactNo1) && (
-                  <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                    <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                      <span>📍</span> Address & Contact
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                      {(patient.district || patient.state) && (
-                        <div><span className="text-gray-500">Location:</span> <span className="font-semibold">{[patient.village, patient.postOffice, patient.district, patient.state].filter(Boolean).join(', ')}</span></div>
-                      )}
-                      {patient.address && (
-                        <div><span className="text-gray-500">Address:</span> <span className="font-semibold">{patient.address}</span></div>
-                      )}
-                      {patient.contactNo1 && (
-                        <div><span className="text-gray-500">Contact 1:</span> <span className="font-semibold">{patient.contactNo1} ({patient.contactRelation1 || 'N/A'})</span></div>
-                      )}
-                      {patient.contactNo2 && (
-                        <div><span className="text-gray-500">Contact 2:</span> <span className="font-semibold">{patient.contactNo2} ({patient.contactRelation2 || 'N/A'})</span></div>
-                      )}
-                    </div>
-                  </div>
-                )}
+                {/* Discharge Details Section - Only show when outcome is not In Progress */}
+                {patient.outcome !== 'In Progress' && (
+                  <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleSection('dischargeDetails')}
+                      className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        <h3 className="text-lg font-bold text-blue-900">
+                          {patient.outcome === 'Step Down' ? 'Step Down Details' : 'Discharge Details'}
+                        </h3>
+                      </div>
+                      <svg className={`w-5 h-5 text-blue-600 transition-transform ${expandedSections.dischargeDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
 
-                {/* Maternal History for NICU/SNCU */}
-                {isNICU_SNCU && patient.maternalHistory && (
-                  <div className="bg-rose-50 rounded-lg p-3 border border-rose-200">
-                    <h4 className="font-bold text-rose-800 mb-2 flex items-center gap-2">
-                      <span>🤰</span> Maternal History
-                    </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                      {patient.maternalHistory.gravida !== undefined && (
-                        <div>
-                          <span className="text-gray-500">Obstetric:</span>{' '}
-                          <span className="font-semibold">
-                            G{patient.maternalHistory.gravida}P{patient.maternalHistory.para || 0}A{patient.maternalHistory.abortion || 0}L{patient.maternalHistory.living || 0}
-                          </span>
-                        </div>
-                      )}
-                      {patient.maternalHistory.maternalAge && (
-                        <div><span className="text-gray-500">Mother's Age:</span> <span className="font-semibold">{patient.maternalHistory.maternalAge} years</span></div>
-                      )}
-                      {patient.maternalHistory.bloodGroup && (
-                        <div><span className="text-gray-500">Blood Group:</span> <span className="font-semibold">{patient.maternalHistory.bloodGroup}</span></div>
-                      )}
-                      {patient.maternalHistory.ancReceived !== undefined && (
-                        <div><span className="text-gray-500">ANC:</span> <span className="font-semibold">{patient.maternalHistory.ancReceived ? `Yes (${patient.maternalHistory.ancVisits || 0} visits)` : 'No'}</span></div>
-                      )}
-                      {patient.maternalHistory.antenatalSteroidsGiven !== undefined && (
-                        <div><span className="text-gray-500">Steroids:</span> <span className="font-semibold">{patient.maternalHistory.antenatalSteroidsGiven ? `Yes (${patient.maternalHistory.steroidDoses || 0} doses)` : 'No'}</span></div>
-                      )}
-                      {(patient.maternalHistory.riskFactors || []).length > 0 && (
-                        <div className="col-span-2 md:col-span-4">
-                          <span className="text-gray-500">Risk Factors:</span>{' '}
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {patient.maternalHistory.riskFactors?.map((rf, idx) => (
-                              <span key={idx} className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded text-xs">{rf}</span>
-                            ))}
+                    {expandedSections.dischargeDetails && (
+                      <div className="p-2 sm:p-4 space-y-3 sm:space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label htmlFor="dischargeDateTime" className="block text-sm font-medium text-slate-700 mb-1">
+                              Date and Time of {patient.outcome === 'Step Down' ? 'Step Down' : 'Discharge'}
+                            </label>
+                            <SimpleDateTimeInput
+                              id="dischargeDateTime"
+                              name="dischargeDateTime"
+                              value={patient.dischargeDateTime || patient.releaseDate || ''}
+                              onChange={(iso) => handleDateChange(iso ? new Date(iso) : null, 'dischargeDateTime')}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="weightOnDischarge" className="block text-sm font-medium text-slate-700 mb-1">Weight on Discharge (Kg)</label>
+                            <input type="number" name="weightOnDischarge" id="weightOnDischarge" value={patient.weightOnDischarge || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 3.200" />
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                )}
 
-                {/* Registration Numbers */}
-                {(patient.sncuRegNo || patient.mctsNo) && (
-                  <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
-                    <h4 className="font-bold text-amber-800 mb-2 flex items-center gap-2">
-                      <span>🔢</span> Registration Numbers
-                    </h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      {patient.sncuRegNo && <div><span className="text-gray-500">SNCU Reg:</span> <span className="font-semibold">{patient.sncuRegNo}</span></div>}
-                      {patient.mctsNo && <div><span className="text-gray-500">MCTS No:</span> <span className="font-semibold">{patient.mctsNo}</span></div>}
-                    </div>
-                  </div>
-                )}
-
-                {/* Edit History */}
-                {patientToEdit && (patient.editHistory || []).length > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                    <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
-                      <span>📜</span> Edit History
-                    </h4>
-                    <div className="text-xs space-y-1 max-h-24 overflow-y-auto">
-                      {(patient.editHistory || []).slice(-5).reverse().map((edit, idx) => (
-                        <div key={idx} className="flex justify-between text-gray-600">
-                          <span>{edit.changes}</span>
-                          <span className="text-gray-400">{edit.editedBy} • {new Date(edit.timestamp).toLocaleDateString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Discharge Details Section - Only show when outcome is not In Progress */}
-            {patient.outcome !== 'In Progress' && (
-              <div className="bg-white rounded-lg sm:rounded-xl border-2 border-blue-300 shadow-md overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => toggleSection('dischargeDetails')}
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    <h3 className="text-lg font-bold text-blue-900">
-                      {patient.outcome === 'Step Down' ? 'Step Down Details' : 'Discharge Details'}
-                    </h3>
-                  </div>
-                  <svg className={`w-5 h-5 text-blue-600 transition-transform ${expandedSections.dischargeDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-
-                {expandedSections.dischargeDetails && (
-                  <div className="p-2 sm:p-4 space-y-3 sm:space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="dischargeDateTime" className="block text-sm font-medium text-slate-700 mb-1">
-                          Date and Time of {patient.outcome === 'Step Down' ? 'Step Down' : 'Discharge'}
-                        </label>
-                        <SimpleDateTimeInput
-                          id="dischargeDateTime"
-                          name="dischargeDateTime"
-                          value={patient.dischargeDateTime || patient.releaseDate || ''}
-                          onChange={(iso) => handleDateChange(iso ? new Date(iso) : null, 'dischargeDateTime')}
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="weightOnDischarge" className="block text-sm font-medium text-slate-700 mb-1">Weight on Discharge (Kg)</label>
-                        <input type="number" name="weightOnDischarge" id="weightOnDischarge" value={patient.weightOnDischarge || ''} onChange={handleChange} step="0.001" min="0" className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 3.200" />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="ageOnDischarge" className="block text-sm font-medium text-slate-700 mb-1">Age on Discharge</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <input type="number" name="ageOnDischarge" id="ageOnDischarge" value={patient.ageOnDischarge || ''} onChange={handleChange} min="0" step="0.01" className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Age" />
-                          <select name="ageOnDischargeUnit" id="ageOnDischargeUnit" value={patient.ageOnDischargeUnit || AgeUnit.Days} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                            {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
-                          </select>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label htmlFor="ageOnDischarge" className="block text-sm font-medium text-slate-700 mb-1">Age on Discharge</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input type="number" name="ageOnDischarge" id="ageOnDischarge" value={patient.ageOnDischarge || ''} onChange={handleChange} min="0" step="0.01" className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Age" />
+                              <select name="ageOnDischargeUnit" id="ageOnDischargeUnit" value={patient.ageOnDischargeUnit || AgeUnit.Days} onChange={handleChange} className="px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div>
+                            <label htmlFor="releaseDate" className="block text-sm font-medium text-slate-700 mb-1">Legacy Release Date</label>
+                            <input
+                              type="date"
+                              name="releaseDate"
+                              id="releaseDate"
+                              value={patient.releaseDate ? patient.releaseDate.split('T')[0] : ''}
+                              onChange={handleChange}
+                              className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              required={patient.outcome === 'Step Down'}
+                            />
+                          </div>
                         </div>
                       </div>
-                      <div>
-                        <label htmlFor="releaseDate" className="block text-sm font-medium text-slate-700 mb-1">Legacy Release Date</label>
-                        <input
-                          type="date"
-                          name="releaseDate"
-                          id="releaseDate"
-                          value={patient.releaseDate ? patient.releaseDate.split('T')[0] : ''}
-                          onChange={handleChange}
-                          className="w-full px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          required={patient.outcome === 'Step Down'}
-                        />
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
-            </>
+              </>
             )}
 
           </div>
@@ -2574,19 +2694,18 @@ const PatientForm: React.FC<PatientFormProps> = ({
                       key={idx}
                       className={`flex flex-col items-center`}
                     >
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold mb-1 ${
-                        idx < savedSiblingIds.length
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold mb-1 ${idx < savedSiblingIds.length
                           ? 'bg-green-500 text-white'
                           : idx === savedSiblingIds.length
-                          ? 'bg-pink-500 text-white ring-4 ring-pink-200 animate-pulse'
-                          : 'bg-slate-200 text-slate-400'
-                      }`}>
+                            ? 'bg-pink-500 text-white ring-4 ring-pink-200 animate-pulse'
+                            : 'bg-slate-200 text-slate-400'
+                        }`}>
                         {idx < savedSiblingIds.length ? '✓' : idx + 1}
                       </div>
                       <span className={`text-xs font-medium ${idx < savedSiblingIds.length ? 'text-green-600' : idx === savedSiblingIds.length ? 'text-pink-600' : 'text-slate-400'}`}>
                         {multipleBirthType === MultipleBirthType.Twins ? `Twin ${idx + 1}` :
-                         multipleBirthType === MultipleBirthType.Triplets ? `Trip ${idx + 1}` :
-                         `Baby ${idx + 1}`}
+                          multipleBirthType === MultipleBirthType.Triplets ? `Trip ${idx + 1}` :
+                            `Baby ${idx + 1}`}
                       </span>
                     </div>
                   ))}

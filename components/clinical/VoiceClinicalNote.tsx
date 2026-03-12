@@ -667,7 +667,15 @@ CRITICAL RULES:
             if (patient.id) {
               try {
                 const patientRef = doc(db, 'patients', patient.id);
-                await updateDoc(patientRef, { medications: allMedications });
+                const now = new Date().toISOString();
+                await updateDoc(patientRef, {
+                  medications: allMedications,
+                  metadata: {
+                    ...(patient as any).metadata,
+                    lastUpdatedBy: userEmail || userName || 'unknown',
+                    lastUpdatedAt: now
+                  }
+                });
                 console.log('✅ Background: Medications saved to Firestore');
               } catch (firestoreError) {
                 console.log('ℹ️ Background: Firestore update skipped:', firestoreError);
@@ -1209,7 +1217,15 @@ CRITICAL RULES:
             if (patient.id) {
               try {
                 const patientRef = doc(db, 'patients', patient.id);
-                await updateDoc(patientRef, { medications: allMedications });
+                const now = new Date().toISOString();
+                await updateDoc(patientRef, {
+                  medications: allMedications,
+                  metadata: {
+                    ...(patient as any).metadata,
+                    lastUpdatedBy: userEmail || userName || 'unknown',
+                    lastUpdatedAt: now
+                  }
+                });
                 console.log('✅ Medications saved to Firestore');
               } catch (firestoreError) {
                 // Patient might not exist yet (new admission) - that's OK
@@ -1909,8 +1925,14 @@ CRITICAL RULES:
             if (patient.id) {
               try {
                 const patientRef = doc(db, 'patients', patient.id);
+                const now = new Date().toISOString();
                 await updateDoc(patientRef, {
-                  medications: allMedications
+                  medications: allMedications,
+                  metadata: {
+                    ...(patient as any).metadata,
+                    lastUpdatedBy: userEmail || userName || 'unknown',
+                    lastUpdatedAt: now
+                  }
                 });
                 console.log('✅ Medications saved to Firestore');
               } catch (firestoreError) {
@@ -1968,8 +1990,14 @@ CRITICAL RULES:
               if (patient.id) {
                 try {
                   const patientRef = doc(db, 'patients', patient.id);
+                  const now = new Date().toISOString();
                   await updateDoc(patientRef, {
-                    medications: allMedications
+                    medications: allMedications,
+                    metadata: {
+                      ...(patient as any).metadata,
+                      lastUpdatedBy: userEmail || userName || 'unknown',
+                      lastUpdatedAt: now
+                    }
                   });
                   console.log('✅ Medications saved to Firestore (fallback mode)');
                 } catch (firestoreError) {

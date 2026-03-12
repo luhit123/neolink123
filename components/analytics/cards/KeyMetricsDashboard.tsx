@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Patient, Unit } from '../../../types';
 import AnalyticsCard from '../AnalyticsCard';
+import { calculatePercentage } from '../../../utils/analytics';
 import {
   AreaChart,
   Area,
@@ -24,7 +25,7 @@ const KeyMetricsDashboard: React.FC<KeyMetricsDashboardProps> = ({
   const metrics = useMemo(() => {
     const totalDeaths = deceasedPatients.length;
     const totalAdmissions = allPatients.length;
-    const mortalityRate = totalAdmissions > 0 ? ((totalDeaths / totalAdmissions) * 100) : 0;
+    const mortalityRate = calculatePercentage(totalDeaths, totalAdmissions, 1);
 
     // Average time to death (in hours)
     let avgTimeToDeath = 0;
@@ -55,7 +56,7 @@ const KeyMetricsDashboard: React.FC<KeyMetricsDashboardProps> = ({
 
     // AI diagnosis coverage
     const aiDiagnosed = deceasedPatients.filter(p => p.aiInterpretedDeathDiagnosis).length;
-    const aiCoverage = totalDeaths > 0 ? ((aiDiagnosed / totalDeaths) * 100) : 0;
+    const aiCoverage = calculatePercentage(aiDiagnosed, totalDeaths, 1);
 
     // Early deaths (<24h)
     const earlyDeaths = deceasedPatients.filter(p => {
@@ -63,7 +64,7 @@ const KeyMetricsDashboard: React.FC<KeyMetricsDashboardProps> = ({
       const hours = (new Date(p.dateOfDeath).getTime() - new Date(p.admissionDate).getTime()) / (1000 * 60 * 60);
       return hours < 24;
     }).length;
-    const earlyDeathRate = totalDeaths > 0 ? ((earlyDeaths / totalDeaths) * 100) : 0;
+    const earlyDeathRate = calculatePercentage(earlyDeaths, totalDeaths, 1);
 
     // Unit breakdown
     const unitBreakdown = Object.values(Unit).map(unit => ({
@@ -272,7 +273,7 @@ const KeyMetricsDashboard: React.FC<KeyMetricsDashboardProps> = ({
         <div className="text-xs font-semibold text-slate-700 mb-2">Unit Breakdown</div>
         <div className="space-y-2">
           {metrics.unitBreakdown.map((unit, i) => {
-            const rate = unit.admissions > 0 ? ((unit.deaths / unit.admissions) * 100) : 0;
+            const rate = calculatePercentage(unit.deaths, unit.admissions, 1);
             return (
               <div key={i} className="flex items-center gap-2">
                 <div className="w-12 text-xs font-medium text-slate-600">{unit.short}</div>

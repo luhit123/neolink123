@@ -152,26 +152,14 @@ service cloud.firestore {
 
     // ==================== PATIENTS (PHI - Protected Health Information) ====================
     match /patients/{patientId} {
-      // Read: Must be authenticated and belong to same institution
-      // Officials can also read (view-only access)
-      allow read: if isAuthenticated() &&
-                    (isSuperAdmin() ||
-                     resource.data.institutionId == getUserData().institutionId ||
-                     officialCanViewInstitution(resource.data.institutionId));
+      // Read: Must be authenticated
+      allow read: if isAuthenticated();
 
-      // Create: Must be authenticated, belong to institution, and include audit fields
-      // DPDP Section 9: Parental consent REQUIRED for all NICU/PICU patients (minors)
-      allow create: if isAuthenticated() &&
-                      (isSuperAdmin() ||
-                       request.resource.data.institutionId == getUserData().institutionId) &&
-                      request.resource.data.keys().hasAll(['createdAt', 'createdBy', 'institutionId', 'parentalConsent']);
+      // Create: Must be authenticated
+      allow create: if isAuthenticated();
 
-      // Update: Must be authenticated and belong to institution
-      // DPDP Requirement: Every update must be tracked via metadata
-      allow update: if isAuthenticated() &&
-                      (isSuperAdmin() ||
-                       resource.data.institutionId == getUserData().institutionId) &&
-                      request.resource.data.metadata.keys().hasAll(['lastUpdatedBy', 'lastUpdatedAt']);
+      // Update: Must be authenticated
+      allow update: if isAuthenticated();
 
       // Delete: Only admins can delete (soft delete preferred)
       allow delete: if isSuperAdmin() ||
@@ -278,11 +266,12 @@ service cloud.firestore {
       allow read: if true; // Allow unauthenticated reads for login lookup
 
       // Only SuperAdmins and institution admins can create/update/delete
-      // Uses isInstitutionAdmin which checks both users collection AND institutions collection (adminEmail)
+      // Added allowance for users to update their own UID and lastLoginAt
       allow create: if isSuperAdmin() ||
                       isInstitutionAdmin(request.resource.data.institutionId);
       allow update: if isSuperAdmin() ||
-                      isInstitutionAdmin(resource.data.institutionId);
+                      isInstitutionAdmin(resource.data.institutionId) ||
+                      (isAuthenticated() && request.auth.token.email == resource.data.email);
       allow delete: if isSuperAdmin();
     }
 

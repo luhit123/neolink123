@@ -76,6 +76,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Institution Settings
   const [showInstitutionSettings, setShowInstitutionSettings] = useState(false);
   const [dischargeLanguage, setDischargeLanguage] = useState<string>('english');
+  const [shiftStartTime, setShiftStartTime] = useState<string>('00:00');
 
   // Report Requests from Officials
   const [showReportRequests, setShowReportRequests] = useState(false);
@@ -169,6 +170,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         } else {
           setDischargeLanguage('english');
         }
+
+        if (data.shiftStartTime) {
+          setShiftStartTime(data.shiftStartTime);
+        } else {
+          setShiftStartTime('00:00');
+        }
       }
     } catch (err: any) {
       console.error('❌ Error loading discharge language:', err);
@@ -185,6 +192,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } catch (err: any) {
       console.error('❌ Error saving discharge language:', err);
       setError('Failed to save discharge language: ' + err.message);
+    }
+  };
+
+  const saveShiftStartTime = async (time: string) => {
+    console.log('📝 Attempting to save shift start time:', time, 'for institution:', institutionId);
+
+    if (!institutionId) {
+      setError('Institution ID is missing. Cannot save shift start time.');
+      console.error('❌ Institution ID is undefined or empty');
+      return;
+    }
+
+    try {
+      const institutionRef = doc(db, 'institutions', institutionId);
+      console.log('📄 Institution doc ref:', institutionRef.path);
+
+      await updateDoc(institutionRef, { shiftStartTime: time });
+
+      setShiftStartTime(time);
+      setSuccess(`Shift start time updated to ${time}!`);
+      console.log('✅ Shift start time saved successfully:', time);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err: any) {
+      console.error('❌ Error saving shift start time:', err);
+      console.error('Error code:', err.code);
+      console.error('Error message:', err.message);
+      setError('Failed to save shift start time: ' + err.message);
     }
   };
 
@@ -1266,8 +1300,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     key={lang.code}
                     onClick={() => saveDischargeLanguage(lang.code)}
                     className={`p-3 rounded-xl border-2 transition-all text-left ${dischargeLanguage === lang.code
-                        ? 'border-amber-500 bg-amber-100 dark:bg-amber-900/40 shadow-lg'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-amber-300 dark:hover:border-amber-700 bg-white dark:bg-slate-800'
+                      ? 'border-amber-500 bg-amber-100 dark:bg-amber-900/40 shadow-lg'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-amber-300 dark:hover:border-amber-700 bg-white dark:bg-slate-800'
                       }`}
                   >
                     <p className={`font-bold text-sm ${dischargeLanguage === lang.code ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'
@@ -1309,6 +1343,58 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <li>• Printed on discharge summary for parents to take home</li>
                     </ul>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Shift Timing Setting */}
+            <div className="mt-8 bg-gradient-to-br from-blue-50 to-sky-50 dark:from-blue-900/20 dark:to-sky-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-sky-500 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    Shift Start Time Configuration
+                    <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 text-xs rounded-full">Reporting Boundary</span>
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Define when your hospital's reporting day begins (e.g., 08:00 AM).
+                    This affects "Today" and "Yesterday" metrics for New Admissions and Discharges.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                <div className="max-w-md">
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                    Select Shift Start Time
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="time"
+                      value={shiftStartTime}
+                      onChange={(e) => setShiftStartTime(e.target.value)}
+                      className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-lg"
+                    />
+                    <button
+                      onClick={() => saveShiftStartTime(shiftStartTime)}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
+                    >
+                      Save Change
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-4 flex items-start gap-2">
+                    <svg className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>
+                      Setting this to <strong>08:00</strong> means "Today" will include all patients from 8:00 AM today until 8:00 AM tomorrow.
+                      Historical calendar searches will remain based on standard 12:00 AM boundaries.
+                    </span>
+                  </p>
                 </div>
               </div>
             </div>
@@ -1365,12 +1451,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div
                         key={request.id}
                         className={`p-4 rounded-xl border-2 transition-all cursor-pointer hover:shadow-md ${request.status === ReportRequestStatus.Pending
-                            ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20'
-                            : request.status === ReportRequestStatus.InProgress
-                              ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
-                              : request.status === ReportRequestStatus.Completed
-                                ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
-                                : 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
+                          ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20'
+                          : request.status === ReportRequestStatus.InProgress
+                            ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
+                            : request.status === ReportRequestStatus.Completed
+                              ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
+                              : 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
                           }`}
                         onClick={() => setSelectedReportRequest(request)}
                       >
@@ -1378,12 +1464,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-2">
                               <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${request.status === ReportRequestStatus.Pending
-                                  ? 'bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200'
-                                  : request.status === ReportRequestStatus.InProgress
-                                    ? 'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200'
-                                    : request.status === ReportRequestStatus.Completed
-                                      ? 'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200'
-                                      : 'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200'
+                                ? 'bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200'
+                                : request.status === ReportRequestStatus.InProgress
+                                  ? 'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200'
+                                  : request.status === ReportRequestStatus.Completed
+                                    ? 'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200'
+                                    : 'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200'
                                 }`}>
                                 {request.status}
                               </span>
@@ -1463,12 +1549,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div>
                           <p className="text-slate-500 dark:text-slate-400">Status</p>
                           <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${selectedReportRequest.status === ReportRequestStatus.Pending
-                              ? 'bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200'
-                              : selectedReportRequest.status === ReportRequestStatus.InProgress
-                                ? 'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200'
-                                : selectedReportRequest.status === ReportRequestStatus.Completed
-                                  ? 'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200'
-                                  : 'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200'
+                            ? 'bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200'
+                            : selectedReportRequest.status === ReportRequestStatus.InProgress
+                              ? 'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200'
+                              : selectedReportRequest.status === ReportRequestStatus.Completed
+                                ? 'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200'
+                                : 'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200'
                             }`}>
                             {selectedReportRequest.status}
                           </span>
@@ -1854,8 +1940,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <label
                       key={unit}
                       className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${selectedDashboards.includes(unit)
-                          ? 'bg-medical-teal text-white shadow-md'
-                          : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600'
+                        ? 'bg-medical-teal text-white shadow-md'
+                        : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600'
                         }`}
                     >
                       <input
@@ -2019,8 +2105,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {user.enabled ? 'Active' : 'Disabled'}
                             </span>
                             <div className="flex gap-1">
-                              {user.roles.map((role: UserRole) => (
-                                <span key={role} className={`px-3 py-1 rounded-full text-xs font-semibold ${role === UserRole.Admin
+                              {user.roles.map((role: UserRole, index: number) => (
+                                <span key={`${role}-${index}`} className={`px-3 py-1 rounded-full text-xs font-semibold ${role === UserRole.Admin
                                   ? 'bg-blue-500/20 text-blue-400'
                                   : role === UserRole.Doctor
                                     ? 'bg-blue-500/20 text-blue-400'

@@ -407,14 +407,20 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
       await addDoc(collection(db, 'referrals'), referralDoc);
 
       // Update Patient Status to Referred immediately to free up bed and update dashboard
+      const now = new Date().toISOString();
       await updateDoc(doc(db, 'patients', patient.id), {
         outcome: 'Referred',
         referralReason: referralData.reasonForReferral,
         referredTo: selectedInstitution.name,
-        releaseDate: new Date().toISOString(), // Marks the bed as free from now
+        releaseDate: now, // Marks the bed as free from now
         lastUpdatedBy: userRole,
         lastUpdatedByEmail: userEmail,
-        lastEditedAt: new Date().toISOString()
+        lastEditedAt: now,
+        metadata: {
+          ...(patient as any).metadata,
+          lastUpdatedBy: userEmail || userRole || 'unknown',
+          lastUpdatedAt: now
+        }
       });
 
       // Show success modal with tracking info

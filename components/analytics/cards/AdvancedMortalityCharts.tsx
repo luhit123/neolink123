@@ -19,6 +19,7 @@ import {
   Legend
 } from 'recharts';
 import { haptics } from '../../../utils/haptics';
+import { calculatePercentage } from '../../../utils/analytics';
 
 interface AdvancedMortalityChartsProps {
   deceasedPatients: Patient[];
@@ -123,7 +124,7 @@ const AdvancedMortalityCharts: React.FC<AdvancedMortalityChartsProps> = ({
 
     return groups.map(g => ({
       ...g,
-      mortalityRate: g.admissions > 0 ? ((g.deaths / g.admissions) * 100).toFixed(1) : '0'
+      mortalityRate: calculatePercentage(g.deaths, g.admissions, 1).toFixed(1)
     }));
   }, [deceasedPatients, allPatients]);
 
@@ -155,7 +156,7 @@ const AdvancedMortalityCharts: React.FC<AdvancedMortalityChartsProps> = ({
       return {
         ...b,
         cumulative,
-        percentage: deceasedPatients.length > 0 ? ((b.count / deceasedPatients.length) * 100).toFixed(1) : '0'
+        percentage: calculatePercentage(b.count, deceasedPatients.length, 1).toFixed(1)
       };
     });
   }, [deceasedPatients]);
@@ -196,7 +197,7 @@ const AdvancedMortalityCharts: React.FC<AdvancedMortalityChartsProps> = ({
         fullMonth: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
         deaths: data.deaths,
         admissions: data.admissions,
-        mortalityRate: data.admissions > 0 ? ((data.deaths / data.admissions) * 100).toFixed(1) : '0'
+        mortalityRate: calculatePercentage(data.deaths, data.admissions, 1).toFixed(1)
       };
     });
   }, [deceasedPatients, allPatients]);
@@ -223,8 +224,7 @@ const AdvancedMortalityCharts: React.FC<AdvancedMortalityChartsProps> = ({
     const highestMortalityAge = ageGroupData.reduce((max, g) =>
       parseFloat(g.mortalityRate) > parseFloat(max.mortalityRate) ? g : max, ageGroupData[0]);
     const earlyDeaths = survivalData.slice(0, 3).reduce((sum, s) => sum + s.count, 0);
-    const earlyDeathPercent = deceasedPatients.length > 0
-      ? ((earlyDeaths / deceasedPatients.length) * 100).toFixed(0) : '0';
+    const earlyDeathPercent = calculatePercentage(earlyDeaths, deceasedPatients.length, 0).toFixed(0);
 
     return {
       peakHour,

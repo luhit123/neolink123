@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Patient, Unit } from '../types';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, AreaChart, Area, ScatterChart, Scatter, ComposedChart, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import NeolinkAIButton from './NeolinkAIButton';
+import { calculatePercentage, getCanonicalAdmissionType, getCanonicalOutcome } from '../utils/analytics';
 
 interface AdvancedAnalyticsProps {
   patients: Patient[];
@@ -26,23 +27,102 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
   const [drillDownModal, setDrillDownModal] = useState<DrillDownModal | null>(null);
   const [selectedDiagnosis, setSelectedDiagnosis] = useState<string | null>(null);
 
+  // Robust date parsing helper
+  const parseSafeDate = (dateVal: any): Date | null => {
+    if (!dateVal) return null;
+    try {
+      const date = new Date(dateVal);
+      return isNaN(date.getTime()) ? null : date;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const getDateRange = () => {
+    if (dateFilter.period === 'All Time') return null;
+
+    let startDate: Date;
+    let endDate: Date;
+    const now = new Date();
+
+    const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
+    if (periodIsMonth) {
+      const [year, month] = dateFilter.period.split('-').map(Number);
+      startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+      endDate = new Date(year, month, 0, 23, 59, 59, 999);
+      return { startDate, endDate };
+    }
+
+    switch (dateFilter.period) {
+      case 'Today':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        break;
+      case 'This Week': {
+        const day = now.getDay();
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day, 0, 0, 0, 0);
+        endDate = new Date();
+        break;
+      }
+      case 'This Month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        endDate = new Date();
+        break;
+      case 'Custom':
+        if (dateFilter.startDate && dateFilter.endDate) {
+          startDate = new Date(dateFilter.startDate);
+          startDate.setHours(0, 0, 0, 0);
+          endDate = new Date(dateFilter.endDate);
+          endDate.setHours(23, 59, 59, 999);
+        } else {
+          return null;
+        }
+        break;
+      default:
+        return null;
+    }
+
+    return { startDate, endDate };
+  };
+
   // Calculate comprehensive metrics
   const metrics = useMemo(() => {
     const total = patients.length;
-    const deceased = patients.filter(p => p.outcome === 'Deceased').length;
-    const discharged = patients.filter(p => p.outcome === 'Discharged').length;
-    const referred = patients.filter(p => p.outcome === 'Referred').length;
-    const inProgress = patients.filter(p => p.outcome === 'In Progress').length;
-    const stepDown = patients.filter(p => p.outcome === 'Step Down').length;
+    const outcomeCounts = patients.reduce((acc, patient) => {
+      const outcome = getCanonicalOutcome(patient);
+      acc[outcome] += 1;
+      return acc;
+    }, {
+      'In Progress': 0,
+      'Discharged': 0,
+      'Referred': 0,
+      'Deceased': 0,
+      'Step Down': 0,
+    } as Record<'In Progress' | 'Discharged' | 'Referred' | 'Deceased' | 'Step Down', number>);
+
+    const deceased = outcomeCounts['Deceased'];
+    const discharged = outcomeCounts['Discharged'];
+    const referred = outcomeCounts['Referred'];
+    const inProgress = outcomeCounts['In Progress'];
+    const stepDown = outcomeCounts['Step Down'];
+    const dateRange = getDateRange();
+    const stepDownTransitions = dateRange
+      ? patients.filter(p => {
+        const d = parseSafeDate(p.stepDownDate);
+        return d ? d >= dateRange.startDate && d <= dateRange.endDate : false;
+      }).length
+      : patients.filter(p => p.stepDownDate).length;
     const readmitted = patients.filter(p => p.readmissionFromStepDown).length;
 
     // Calculate lengths of stay
     const losData = patients.filter(p => p.outcome !== 'In Progress').map(p => {
-      const admission = new Date(p.admissionDate);
-      const release = p.releaseDate ? new Date(p.releaseDate) :
-        p.finalDischargeDate ? new Date(p.finalDischargeDate) :
-          p.stepDownDate ? new Date(p.stepDownDate) :
-            new Date();
+      const admission = parseSafeDate(p.admissionDateTime || p.admissionDate);
+      const release = p.releaseDate ? parseSafeDate(p.releaseDate) :
+        p.finalDischargeDate ? parseSafeDate(p.finalDischargeDate) :
+          p.stepDownDate ? parseSafeDate(p.stepDownDate) :
+            p.dischargeDateTime ? parseSafeDate(p.dischargeDateTime) :
+              new Date();
+      if (!admission || !release) return 0;
       return Math.ceil((release.getTime() - admission.getTime()) / (1000 * 60 * 60 * 24));
     });
 
@@ -56,17 +136,22 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
     const currentOccupancy = inProgress;
 
     // Calculate time-based admission rate
-    const oldestAdmission = patients.length > 0 ?
-      new Date(Math.min(...patients.map(p => new Date(p.admissionDate).getTime()))) : new Date();
+    const oldestAdmissionTime = patients.length > 0 ?
+      Math.min(...patients.map(p => {
+        const d = parseSafeDate(p.admissionDateTime || p.admissionDate);
+        return d ? d.getTime() : Infinity;
+      })) : Date.now();
+    const oldestAdmission = oldestAdmissionTime === Infinity ? new Date() : new Date(oldestAdmissionTime);
     const daysSinceOldest = Math.max(1, Math.ceil((new Date().getTime() - oldestAdmission.getTime()) / (1000 * 60 * 60 * 24)));
     const avgAdmissionsPerDay = (total / daysSinceOldest).toFixed(1);
 
     // Mortality rate
-    const mortalityRate = total > 0 ? ((deceased / total) * 100).toFixed(1) : '0';
-    const dischargeRate = total > 0 ? ((discharged / total) * 100).toFixed(1) : '0';
-    const stepDownRate = total > 0 ? ((stepDown / total) * 100).toFixed(1) : '0';
-    const readmissionRate = stepDown > 0 ? ((readmitted / stepDown) * 100).toFixed(1) : '0';
-    const successRate = total > 0 ? (((discharged + stepDown) / total) * 100).toFixed(1) : '0';
+    const mortalityRate = calculatePercentage(deceased, total, 1);
+    const dischargeRate = calculatePercentage(discharged, total, 1);
+    const stepDownRate = calculatePercentage(stepDown, total, 1);
+    const readmissionRate = calculatePercentage(readmitted, stepDownTransitions || stepDown, 1);
+    const successRate = calculatePercentage(discharged + stepDown, total, 1);
+    const survivalRate = calculatePercentage(total - deceased, total, 1);
 
     // Age distribution for NICU
     const under24hrs = patients.filter(p => p.ageUnit === 'days' && p.age < 1).length;
@@ -74,14 +159,18 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
     const under28days = patients.filter(p => p.ageUnit === 'days' && p.age <= 28 || (p.ageUnit === 'weeks' && p.age < 4)).length;
 
     // Admission types (NICU)
-    const inborn = patients.filter(p => p.admissionType === 'Inborn').length;
-    const outborn = patients.filter(p => p.admissionType === 'Outborn').length;
+    const inborn = patients.filter(p => getCanonicalAdmissionType(p) === 'Inborn').length;
+    const outborn = patients.filter(p => getCanonicalAdmissionType(p) === 'Outborn').length;
 
     // Inborn vs Outborn mortality
-    const inbornDeceased = patients.filter(p => p.admissionType === 'Inborn' && p.outcome === 'Deceased').length;
-    const outbornDeceased = patients.filter(p => p.admissionType === 'Outborn' && p.outcome === 'Deceased').length;
-    const inbornMortality = inborn > 0 ? ((inbornDeceased / inborn) * 100).toFixed(1) : '0';
-    const outbornMortality = outborn > 0 ? ((outbornDeceased / outborn) * 100).toFixed(1) : '0';
+    const inbornDeceased = patients.filter(
+      p => getCanonicalAdmissionType(p) === 'Inborn' && getCanonicalOutcome(p) === 'Deceased'
+    ).length;
+    const outbornDeceased = patients.filter(
+      p => getCanonicalAdmissionType(p) === 'Outborn' && getCanonicalOutcome(p) === 'Deceased'
+    ).length;
+    const inbornMortality = calculatePercentage(inbornDeceased, inborn, 1);
+    const outbornMortality = calculatePercentage(outbornDeceased, outborn, 1);
 
     // Gender breakdown
     const male = patients.filter(p => p.gender === 'Male').length;
@@ -99,8 +188,8 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
     const extremeLowBirthWeight = patients.filter(p => p.weight && p.weight < 1.0).length; // < 1.0 kg
 
     // Critical patients (mortality risk factors)
-    const criticalWeight = patients.filter(p => p.weight && p.weight < 1.5 && p.outcome === 'In Progress').length;
-    const criticalAge = patients.filter(p => p.ageUnit === 'days' && p.age < 1 && p.outcome === 'In Progress').length;
+    const criticalWeight = patients.filter(p => p.weight && p.weight < 1.5 && getCanonicalOutcome(p) === 'In Progress').length;
+    const criticalAge = patients.filter(p => p.ageUnit === 'days' && p.age < 1 && getCanonicalOutcome(p) === 'In Progress').length;
 
     return {
       total,
@@ -109,12 +198,14 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
       referred,
       inProgress,
       stepDown,
+      stepDownTransitions,
       readmitted,
-      mortalityRate: parseFloat(mortalityRate),
-      dischargeRate: parseFloat(dischargeRate),
-      stepDownRate: parseFloat(stepDownRate),
-      readmissionRate: parseFloat(readmissionRate),
-      successRate: parseFloat(successRate),
+      mortalityRate,
+      dischargeRate,
+      stepDownRate,
+      readmissionRate,
+      successRate,
+      survivalRate,
       avgLOS: parseFloat(avgLOS),
       medianLOS,
       maxLOS,
@@ -128,8 +219,8 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
       outborn,
       inbornDeceased,
       outbornDeceased,
-      inbornMortality: parseFloat(inbornMortality),
-      outbornMortality: parseFloat(outbornMortality),
+      inbornMortality,
+      outbornMortality,
       male,
       female,
       other,
@@ -140,7 +231,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
       criticalWeight,
       criticalAge,
     };
-  }, [patients]);
+  }, [patients, dateFilter]);
 
   // Generate hourly admission heatmap data
   const admissionHeatmap = useMemo(() => {
@@ -155,7 +246,8 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
     });
 
     patients.forEach(p => {
-      const date = new Date(p.admissionDate);
+      const date = parseSafeDate(p.admissionDateTime || p.admissionDate);
+      if (!date) return;
       const dayIndex = date.getDay();
       const hour = date.getHours();
       const entry = heatmapData.find(h => h.day === days[dayIndex] && h.hour === hour);
@@ -259,7 +351,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
         name,
         total: data.total,
         deceased: data.deceased,
-        mortalityRate: data.total > 0 ? ((data.deceased / data.total) * 100).toFixed(1) : '0',
+        mortalityRate: calculatePercentage(data.deceased, data.total, 1),
       }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
@@ -280,7 +372,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
   // Referring hospital analysis
   const referringHospitals = useMemo(() => {
     const hospitals: { [key: string]: number } = {};
-    patients.filter(p => p.admissionType === 'Outborn' && p.referringHospital).forEach(p => {
+    patients.filter(p => getCanonicalAdmissionType(p) === 'Outborn' && p.referringHospital).forEach(p => {
       const hospital = p.referringHospital || 'Unknown';
       hospitals[hospital] = (hospitals[hospital] || 0) + 1;
     });
@@ -402,7 +494,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
 
     // Referring hospital quality (for outborn)
     const referringQuality: { [key: string]: { admissions: number; deaths: number; discharged: number } } = {};
-    patients.filter(p => p.admissionType === 'Outborn' && p.referringHospital).forEach(p => {
+    patients.filter(p => getCanonicalAdmissionType(p) === 'Outborn' && p.referringHospital).forEach(p => {
       const hospital = p.referringHospital || 'Unknown';
       if (!referringQuality[hospital]) {
         referringQuality[hospital] = { admissions: 0, deaths: 0, discharged: 0 };
@@ -418,8 +510,8 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
         admissions: data.admissions,
         deaths: data.deaths,
         discharged: data.discharged,
-        mortalityRate: data.admissions > 0 ? ((data.deaths / data.admissions) * 100).toFixed(1) : '0',
-        dischargeRate: data.admissions > 0 ? ((data.discharged / data.admissions) * 100).toFixed(1) : '0',
+        mortalityRate: calculatePercentage(data.deaths, data.admissions, 1),
+        dischargeRate: calculatePercentage(data.discharged, data.admissions, 1),
       }))
       .sort((a, b) => b.admissions - a.admissions)
       .slice(0, 10);
@@ -439,17 +531,22 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
     const topDiagnoses = diagnosisBreakdown.slice(0, 5);
     return topDiagnoses.map(d => ({
       diagnosis: d.name.length > 20 ? d.name.substring(0, 20) + '...' : d.name,
-      'Discharge Rate': patients.filter(p => p.diagnosis === d.name && p.outcome === 'Discharged').length / d.total * 100,
-      'Survival Rate': (d.total - d.deceased) / d.total * 100,
+      'Discharge Rate': calculatePercentage(
+        patients.filter(p => p.diagnosis === d.name && p.outcome === 'Discharged').length,
+        d.total,
+        1
+      ),
+      'Survival Rate': calculatePercentage(d.total - d.deceased, d.total, 1),
     }));
   }, [diagnosisBreakdown, patients]);
 
   // Render KPI Card
   const KPICard = ({ title, value, subtitle, trend, icon, color, onClick, badge }: any) => (
     <div
-      className={`bg-gradient-to-br ${color} rounded-lg sm:rounded-xl p-2.5 sm:p-4 shadow-lg cursor-pointer transform transition-all duration-200 hover:scale-105 relative overflow-hidden`}
+      className={`group bg-gradient-to-br ${color} rounded-lg sm:rounded-xl p-2.5 sm:p-4 shadow-lg border border-white/15 cursor-pointer transform transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl relative overflow-hidden`}
       onClick={onClick}
     >
+      <div className="absolute inset-0 bg-gradient-to-b from-white/15 via-transparent to-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
       {badge && (
         <div className="absolute top-1 right-1 sm:top-2 sm:right-2">
           <span className="bg-white/20 backdrop-blur-sm text-white text-[9px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full">
@@ -457,7 +554,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
           </span>
         </div>
       )}
-      <div className="flex items-start justify-between mb-1 sm:mb-2">
+      <div className="relative flex items-start justify-between mb-1 sm:mb-2">
         <div className="flex-1 min-w-0">
           <p className="text-[9px] sm:text-xs font-semibold text-white/70 uppercase tracking-wide truncate">{title}</p>
           <p className="text-xl sm:text-3xl font-black text-white mt-0.5 sm:mt-1">{value}</p>
@@ -544,6 +641,14 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
             <p className="text-slate-400 text-xs sm:text-sm mt-1">
               {selectedUnit} • {dateFilter.period} • {metrics.total} Patients
             </p>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <span className="px-2 py-1 rounded-lg bg-red-500/15 border border-red-500/30 text-red-200 text-[10px] sm:text-xs font-semibold">
+                Deaths: {metrics.deceased}/{metrics.total}
+              </span>
+              <span className="px-2 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-[10px] sm:text-xs font-semibold">
+                Survival: {metrics.survivalRate.toFixed(1)}%
+              </span>
+            </div>
           </div>
         </div>
 
@@ -594,7 +699,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
               <KPICard
                 title="Active (In Progress)"
                 value={metrics.inProgress}
-                subtitle={`${((metrics.inProgress / metrics.total) * 100).toFixed(0)}% of total`}
+                subtitle={`${calculatePercentage(metrics.inProgress, metrics.total, 0).toFixed(0)}% of total`}
                 icon="🔄"
                 color="from-blue-500 to-cyan-500"
                 onClick={() => setDrillDownModal({ title: 'In Progress Patients', patients: patients.filter(p => p.outcome === 'In Progress'), metric: 'inProgress' })}
@@ -627,7 +732,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
               <KPICard
                 title="Referred Out"
                 value={metrics.referred}
-                subtitle={`${((metrics.referred / metrics.total) * 100).toFixed(0)}% of total`}
+                subtitle={`${calculatePercentage(metrics.referred, metrics.total, 0).toFixed(0)}% of total`}
                 icon="🔀"
                 color="from-orange-500 to-amber-500"
                 onClick={() => setDrillDownModal({ title: 'Referred Patients', patients: patients.filter(p => p.outcome === 'Referred'), metric: 'referred' })}
@@ -697,7 +802,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                 <KPICard
                   title="Readmissions"
                   value={metrics.readmitted}
-                  subtitle={`${metrics.readmissionRate}% of step-downs`}
+                  subtitle={`${metrics.readmissionRate}% of ${metrics.stepDownTransitions || metrics.stepDown} step-downs`}
                   icon="⚠️"
                   color="from-amber-600 to-orange-600"
                   badge="ALERT"
@@ -709,18 +814,18 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                   <KPICard
                     title="Inborn Admissions"
                     value={metrics.inborn}
-                    subtitle={`${((metrics.inborn / metrics.total) * 100).toFixed(0)}% of total`}
+                    subtitle={`${calculatePercentage(metrics.inborn, metrics.total, 0).toFixed(0)}% of total`}
                     icon="🏥"
                     color="from-green-600 to-emerald-600"
-                    onClick={() => setDrillDownModal({ title: 'Inborn Patients', patients: patients.filter(p => p.admissionType === 'Inborn'), metric: 'inborn' })}
+                    onClick={() => setDrillDownModal({ title: 'Inborn Patients', patients: patients.filter(p => getCanonicalAdmissionType(p) === 'Inborn'), metric: 'inborn' })}
                   />
                   <KPICard
                     title="Outborn Admissions"
                     value={metrics.outborn}
-                    subtitle={`${((metrics.outborn / metrics.total) * 100).toFixed(0)}% of total`}
+                    subtitle={`${calculatePercentage(metrics.outborn, metrics.total, 0).toFixed(0)}% of total`}
                     icon="🚑"
                     color="from-orange-600 to-red-600"
-                    onClick={() => setDrillDownModal({ title: 'Outborn Patients', patients: patients.filter(p => p.admissionType === 'Outborn'), metric: 'outborn' })}
+                    onClick={() => setDrillDownModal({ title: 'Outborn Patients', patients: patients.filter(p => getCanonicalAdmissionType(p) === 'Outborn'), metric: 'outborn' })}
                   />
                   <KPICard
                     title="Critical Age"
@@ -1066,10 +1171,10 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                 <div>
                   <div className="flex justify-between mb-2">
                     <span className="text-slate-300 font-semibold">Survival Rate</span>
-                    <span className="text-blue-400 font-bold text-lg">{(100 - metrics.mortalityRate).toFixed(1)}%</span>
+                    <span className="text-blue-400 font-bold text-lg">{metrics.survivalRate.toFixed(1)}%</span>
                   </div>
                   <div className="w-full h-6 bg-slate-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-1000 flex items-center justify-end pr-2" style={{ width: `${100 - metrics.mortalityRate}%` }}>
+                    <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-1000 flex items-center justify-end pr-2" style={{ width: `${metrics.survivalRate}%` }}>
                       <span className="text-white text-xs font-bold">{metrics.total - metrics.deceased} patients</span>
                     </div>
                   </div>
@@ -1084,6 +1189,11 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                       <span className="text-white text-xs font-bold">{metrics.deceased} patients</span>
                     </div>
                   </div>
+                </div>
+                <div className="pt-1 text-[11px] text-slate-400">
+                  {metrics.deceased > 0
+                    ? `Based on ${metrics.deceased} deaths out of ${metrics.total} patients in selected filters.`
+                    : `No deaths detected for selected filters, so survival is 100%.`}
                 </div>
                 {metrics.readmissionRate > 0 && (
                   <div>
@@ -1172,8 +1282,8 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                       <td className="text-center p-3 text-blue-400 font-bold">{d.total}</td>
                       <td className="text-center p-3 text-red-400 font-bold">{d.deceased}</td>
                       <td className="text-center p-3">
-                        <span className={`px-3 py-1 rounded-full font-bold ${parseFloat(d.mortalityRate) > 20 ? 'bg-red-500/20 text-red-400' :
-                          parseFloat(d.mortalityRate) > 10 ? 'bg-orange-500/20 text-orange-400' :
+                        <span className={`px-3 py-1 rounded-full font-bold ${d.mortalityRate > 20 ? 'bg-red-500/20 text-red-400' :
+                          d.mortalityRate > 10 ? 'bg-orange-500/20 text-orange-400' :
                             'bg-green-500/20 text-green-400'
                           }`}>
                           {d.mortalityRate}%
@@ -1181,7 +1291,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                       </td>
                       <td className="text-center p-3">
                         <span className="text-green-400 font-bold">
-                          {(100 - parseFloat(d.mortalityRate)).toFixed(1)}%
+                          {calculatePercentage(d.total - d.deceased, d.total, 1).toFixed(1)}%
                         </span>
                       </td>
                     </tr>
@@ -1552,7 +1662,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                 <span className="text-4xl">⭐</span>
               </div>
               <div className="text-4xl font-black text-white mb-2">
-                {(100 - metrics.mortalityRate).toFixed(0)}
+                {metrics.survivalRate.toFixed(0)}
               </div>
               <div className="text-purple-100 text-sm">
                 Based on survival rate percentage

@@ -1,8 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Patient } from '../types';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, Cell, ComposedChart } from 'recharts';
-import { DateFilterValue } from './DateFilter';
 import NeolinkAIButton from './NeolinkAIButton';
+import {
+  calculatePercentage,
+  getCanonicalOutcome,
+  getPatientAdmissionDate,
+  getPatientDeathDate,
+  getPatientDischargeDate,
+  parseAnalyticsDate,
+  toAnalyticsPatients,
+} from '../utils/analytics';
 
 interface TimeBasedAnalyticsProps {
   patients: Patient[];
@@ -12,7 +20,12 @@ interface TimeBasedAnalyticsProps {
 }
 
 const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, period, startDate, endDate }) => {
-  // Removed internal state for simple prop-driven behavior
+  const analyticsPatients = useMemo(() => toAnalyticsPatients(patients), [patients]);
+
+  // Robust date parsing helper
+  const parseSafeDate = (dateVal: any): Date | null => {
+    return parseAnalyticsDate(dateVal);
+  };
 
 
 
@@ -32,20 +45,43 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
       while (current <= last) {
         const monthName = current.toLocaleString('default', { month: 'short', year: '2-digit' });
 
-        const monthPatients = patients.filter(p => {
-          const admissionDate = new Date(p.admissionDate);
-          return admissionDate.getFullYear() === current.getFullYear() &&
+        const monthPatients = analyticsPatients.filter(p => {
+          const admissionDate = getPatientAdmissionDate(p);
+          return admissionDate && admissionDate.getFullYear() === current.getFullYear() &&
             admissionDate.getMonth() === current.getMonth();
         });
+
+        const monthStepDown = analyticsPatients.filter(p => {
+          const d = parseSafeDate(p.stepDownDate);
+          return d && d.getFullYear() === current.getFullYear() && d.getMonth() === current.getMonth();
+        }).length;
+
+        const monthDischarged = analyticsPatients.filter(p => {
+          if (getCanonicalOutcome(p) !== 'Discharged') return false;
+          const d = getPatientDischargeDate(p);
+          return d && d.getFullYear() === current.getFullYear() && d.getMonth() === current.getMonth();
+        }).length;
+
+        const monthReferred = analyticsPatients.filter(p => {
+          if (getCanonicalOutcome(p) !== 'Referred') return false;
+          const d = parseSafeDate(p.releaseDate || p.dischargeDateTime || p.finalDischargeDate);
+          return d && d.getFullYear() === current.getFullYear() && d.getMonth() === current.getMonth();
+        }).length;
+
+        const monthDeaths = analyticsPatients.filter(p => {
+          if (getCanonicalOutcome(p) !== 'Deceased') return false;
+          const d = getPatientDeathDate(p);
+          return d && d.getFullYear() === current.getFullYear() && d.getMonth() === current.getMonth();
+        }).length;
 
         months.push({
           month: monthName,
           admissions: monthPatients.length,
-          discharged: monthPatients.filter(p => p.outcome === 'Discharged').length,
-          referred: monthPatients.filter(p => p.outcome === 'Referred').length,
-          deaths: monthPatients.filter(p => p.outcome === 'Deceased').length,
-          inProgress: monthPatients.filter(p => p.outcome === 'In Progress').length,
-          stepDown: monthPatients.filter(p => p.outcome === 'Step Down').length
+          discharged: monthDischarged,
+          referred: monthReferred,
+          deaths: monthDeaths,
+          inProgress: monthPatients.filter(p => getCanonicalOutcome(p) === 'In Progress').length,
+          stepDown: monthStepDown
         });
 
         current.setMonth(current.getMonth() + 1);
@@ -60,25 +96,48 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthName = date.toLocaleString('default', { month: 'short', year: '2-digit' });
 
-      const monthPatients = patients.filter(p => {
-        const admissionDate = new Date(p.admissionDate);
-        return admissionDate.getFullYear() === date.getFullYear() &&
+      const monthPatients = analyticsPatients.filter(p => {
+        const admissionDate = getPatientAdmissionDate(p);
+        return admissionDate && admissionDate.getFullYear() === date.getFullYear() &&
           admissionDate.getMonth() === date.getMonth();
       });
+
+      const monthStepDown = analyticsPatients.filter(p => {
+        const d = parseSafeDate(p.stepDownDate);
+        return d && d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth();
+      }).length;
+
+      const monthDischarged = analyticsPatients.filter(p => {
+        if (getCanonicalOutcome(p) !== 'Discharged') return false;
+        const d = getPatientDischargeDate(p);
+        return d && d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth();
+      }).length;
+
+      const monthReferred = analyticsPatients.filter(p => {
+        if (getCanonicalOutcome(p) !== 'Referred') return false;
+        const d = parseSafeDate(p.releaseDate || p.dischargeDateTime || p.finalDischargeDate);
+        return d && d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth();
+      }).length;
+
+      const monthDeaths = analyticsPatients.filter(p => {
+        if (getCanonicalOutcome(p) !== 'Deceased') return false;
+        const d = getPatientDeathDate(p);
+        return d && d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth();
+      }).length;
 
       months.push({
         month: monthName,
         admissions: monthPatients.length,
-        discharged: monthPatients.filter(p => p.outcome === 'Discharged').length,
-        referred: monthPatients.filter(p => p.outcome === 'Referred').length,
-        deaths: monthPatients.filter(p => p.outcome === 'Deceased').length,
-        inProgress: monthPatients.filter(p => p.outcome === 'In Progress').length,
-        stepDown: monthPatients.filter(p => p.outcome === 'Step Down').length
+        discharged: monthDischarged,
+        referred: monthReferred,
+        deaths: monthDeaths,
+        inProgress: monthPatients.filter(p => getCanonicalOutcome(p) === 'In Progress').length,
+        stepDown: monthStepDown
       });
     }
 
     return months;
-  }, [patients, period, startDate, endDate]);
+  }, [analyticsPatients, period, startDate, endDate]);
 
   // Day-wise data for short ranges
   const dayWiseData = useMemo(() => {
@@ -100,19 +159,42 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
           const nextDate = new Date(date);
           nextDate.setDate(nextDate.getDate() + 1);
 
-          const dayPatients = patients.filter(p => {
-            const admissionDate = new Date(p.admissionDate);
-            return admissionDate >= date && admissionDate < nextDate;
+          const dayPatients = analyticsPatients.filter(p => {
+            const admissionDate = getPatientAdmissionDate(p);
+            return admissionDate && admissionDate >= date && admissionDate < nextDate;
           });
+
+          const dayStepDown = analyticsPatients.filter(p => {
+            const d = parseSafeDate(p.stepDownDate);
+            return d && d >= date && d < nextDate;
+          }).length;
+
+          const dayDischarged = analyticsPatients.filter(p => {
+            if (getCanonicalOutcome(p) !== 'Discharged') return false;
+            const d = getPatientDischargeDate(p);
+            return d && d >= date && d < nextDate;
+          }).length;
+
+          const dayReferred = analyticsPatients.filter(p => {
+            if (getCanonicalOutcome(p) !== 'Referred') return false;
+            const d = parseSafeDate(p.releaseDate || p.dischargeDateTime || p.finalDischargeDate);
+            return d && d >= date && d < nextDate;
+          }).length;
+
+          const dayDeaths = analyticsPatients.filter(p => {
+            if (getCanonicalOutcome(p) !== 'Deceased') return false;
+            const d = getPatientDeathDate(p);
+            return d && d >= date && d < nextDate;
+          }).length;
 
           days.push({
             day: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
             admissions: dayPatients.length,
-            discharged: dayPatients.filter(p => p.outcome === 'Discharged').length,
-            referred: dayPatients.filter(p => p.outcome === 'Referred').length,
-            deaths: dayPatients.filter(p => p.outcome === 'Deceased').length,
-            inProgress: dayPatients.filter(p => p.outcome === 'In Progress').length,
-            stepDown: dayPatients.filter(p => p.outcome === 'Step Down').length
+            discharged: dayDischarged,
+            referred: dayReferred,
+            deaths: dayDeaths,
+            inProgress: dayPatients.filter(p => getCanonicalOutcome(p) === 'In Progress').length,
+            stepDown: dayStepDown
           });
         }
 
@@ -141,54 +223,101 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
       const nextDate = new Date(date);
       nextDate.setDate(nextDate.getDate() + 1);
 
-      const dayPatients = patients.filter(p => {
-        const admissionDate = new Date(p.admissionDate);
-        return admissionDate >= date && admissionDate < nextDate;
+      const dayPatients = analyticsPatients.filter(p => {
+        const admissionDate = getPatientAdmissionDate(p);
+        return admissionDate && admissionDate >= date && admissionDate < nextDate;
       });
+
+      const dayStepDown = analyticsPatients.filter(p => {
+        const d = parseSafeDate(p.stepDownDate);
+        return d && d >= date && d < nextDate;
+      }).length;
+
+      const dayDischarged = analyticsPatients.filter(p => {
+        if (getCanonicalOutcome(p) !== 'Discharged') return false;
+        const d = getPatientDischargeDate(p);
+        return d && d >= date && d < nextDate;
+      }).length;
+
+      const dayReferred = analyticsPatients.filter(p => {
+        if (getCanonicalOutcome(p) !== 'Referred') return false;
+        const d = parseSafeDate(p.releaseDate || p.dischargeDateTime || p.finalDischargeDate);
+        return d && d >= date && d < nextDate;
+      }).length;
+
+      const dayDeaths = analyticsPatients.filter(p => {
+        if (getCanonicalOutcome(p) !== 'Deceased') return false;
+        const d = getPatientDeathDate(p);
+        return d && d >= date && d < nextDate;
+      }).length;
 
       days.push({
         day: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         admissions: dayPatients.length,
-        discharged: dayPatients.filter(p => p.outcome === 'Discharged').length,
-        referred: dayPatients.filter(p => p.outcome === 'Referred').length,
-        deaths: dayPatients.filter(p => p.outcome === 'Deceased').length,
-        inProgress: dayPatients.filter(p => p.outcome === 'In Progress').length,
-        stepDown: dayPatients.filter(p => p.outcome === 'Step Down').length
+        discharged: dayDischarged,
+        referred: dayReferred,
+        deaths: dayDeaths,
+        inProgress: dayPatients.filter(p => getCanonicalOutcome(p) === 'In Progress').length,
+        stepDown: dayStepDown
       });
     }
 
     return days;
-  }, [patients, period, startDate, endDate]);
+  }, [analyticsPatients, period, startDate, endDate]);
 
   // Year-wise data for all-time view
   const yearWiseData = useMemo(() => {
     if (period !== 'All Time' && period !== 'all') return [];
 
     const years = new Map<number, { admissions: number; discharged: number; referred: number; deaths: number; inProgress: number; stepDown: number }>();
-
-    patients.forEach(p => {
-      const year = new Date(p.admissionDate).getFullYear();
+    const ensureYear = (year: number) => {
       if (!years.has(year)) {
         years.set(year, { admissions: 0, discharged: 0, referred: 0, deaths: 0, inProgress: 0, stepDown: 0 });
       }
-      const yearData = years.get(year)!;
-      yearData.admissions++;
-      if (p.outcome === 'Discharged') yearData.discharged++;
-      if (p.outcome === 'Referred') yearData.referred++;
-      if (p.outcome === 'Deceased') yearData.deaths++;
-      if (p.outcome === 'In Progress') yearData.inProgress++;
-      if (p.outcome === 'Step Down') yearData.stepDown++;
+      return years.get(year)!;
+    };
+
+    analyticsPatients.forEach(p => {
+      const admissionDate = getPatientAdmissionDate(p);
+      const outcome = getCanonicalOutcome(p);
+
+      if (admissionDate) {
+        ensureYear(admissionDate.getFullYear()).admissions++;
+        if (outcome === 'In Progress') {
+          ensureYear(admissionDate.getFullYear()).inProgress++;
+        }
+      }
+
+      if (outcome === 'Discharged') {
+        const dischargeDate = getPatientDischargeDate(p);
+        if (dischargeDate) ensureYear(dischargeDate.getFullYear()).discharged++;
+      }
+
+      if (outcome === 'Referred') {
+        const referralDate = parseSafeDate(p.releaseDate || p.dischargeDateTime || p.finalDischargeDate);
+        if (referralDate) ensureYear(referralDate.getFullYear()).referred++;
+      }
+
+      if (outcome === 'Deceased') {
+        const deathDate = getPatientDeathDate(p);
+        if (deathDate) ensureYear(deathDate.getFullYear()).deaths++;
+      }
+
+      const stepDate = parseSafeDate(p.stepDownDate);
+      if (stepDate) {
+        ensureYear(stepDate.getFullYear()).stepDown++;
+      }
     });
 
     return Array.from(years.entries())
       .map(([year, data]) => ({ year: year.toString(), ...data }))
       .sort((a, b) => parseInt(a.year) - parseInt(b.year));
-  }, [patients, period]);
+  }, [analyticsPatients, period]);
 
   // Diagnosis Distribution
   const diagnosisData = useMemo(() => {
     const diagnosisCounts: { [key: string]: number } = {};
-    patients.forEach(p => {
+    analyticsPatients.forEach(p => {
       const diagnosis = p.diagnosis || 'Unknown';
       diagnosisCounts[diagnosis] = (diagnosisCounts[diagnosis] || 0) + 1;
     });
@@ -197,7 +326,7 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
-  }, [patients]);
+  }, [analyticsPatients]);
 
   // Length of Stay Histogram
   const lengthOfStayData = useMemo(() => {
@@ -209,9 +338,10 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
       { range: '30+ Days', count: 0 },
     ];
 
-    patients.forEach(p => {
-      const start = new Date(p.admissionDate);
-      const end = p.releaseDate ? new Date(p.releaseDate) : new Date();
+    analyticsPatients.forEach(p => {
+      const start = getPatientAdmissionDate(p);
+      const end = getPatientDischargeDate(p) || getPatientDeathDate(p) || new Date();
+      if (!start || !end) return;
       const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 
       if (days <= 3) ranges[0].count++;
@@ -222,7 +352,7 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
     });
 
     return ranges;
-  }, [patients]);
+  }, [analyticsPatients]);
 
   const chartData = useMemo(() => {
     if (period === 'Custom' && startDate && endDate) {
@@ -275,7 +405,7 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
       { name: 'LGA (>3.8kg)', min: 3.801, max: 15, total: 0, discharged: 0, referred: 0, deceased: 0, other: 0, survivalRate: 0, totalLOS: 0, avgLOS: 0 },
     ];
 
-    patients.forEach(p => {
+    analyticsPatients.forEach(p => {
       // Only count patients with birth weight recorded
       if (p.birthWeight !== undefined) {
         const weight = p.birthWeight;
@@ -283,28 +413,31 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
 
         if (bucket) {
           bucket.total++;
-          if (p.outcome === 'Discharged') bucket.discharged++;
-          else if (p.outcome === 'Referred') bucket.referred++;
-          else if (p.outcome === 'Deceased') bucket.deceased++;
+          const outcome = getCanonicalOutcome(p);
+          if (outcome === 'Discharged') bucket.discharged++;
+          else if (outcome === 'Referred') bucket.referred++;
+          else if (outcome === 'Deceased') bucket.deceased++;
           else bucket.other++; // In Progress, Step Down, etc.
 
           // Calculate Length of Stay for all patients in this bucket
-          const start = new Date(p.admissionDate);
-          const end = p.releaseDate ? new Date(p.releaseDate) : new Date();
-          const los = Math.max(0, Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
-          bucket.totalLOS += los;
+          const start = getPatientAdmissionDate(p);
+          const end = getPatientDischargeDate(p) || getPatientDeathDate(p) || new Date();
+          if (start && end) {
+            const los = Math.max(0, Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+            bucket.totalLOS += los;
+          }
         }
       }
     });
 
     // Calculate rates and averages
     buckets.forEach(b => {
-      b.survivalRate = b.total > 0 ? parseFloat(((b.discharged / b.total) * 100).toFixed(1)) : 0;
+      b.survivalRate = calculatePercentage(b.discharged, b.total, 1);
       b.avgLOS = b.total > 0 ? parseFloat((b.totalLOS / b.total).toFixed(1)) : 0;
     });
 
     return buckets; // Returns all buckets, even if total is 0
-  }, [patients]);
+  }, [analyticsPatients]);
 
   // 2. Length of Stay vs Mortality
   const losMortalityData = useMemo(() => {
@@ -316,9 +449,10 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
       { range: '30+ Days', total: 0, deceased: 0, mortalityRate: 0 },
     ];
 
-    patients.forEach(p => {
-      const start = new Date(p.admissionDate);
-      const end = p.releaseDate ? new Date(p.releaseDate) : new Date();
+    analyticsPatients.forEach(p => {
+      const start = getPatientAdmissionDate(p);
+      const end = getPatientDischargeDate(p) || getPatientDeathDate(p) || new Date();
+      if (!start || !end) return;
       const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 
       let index = -1;
@@ -330,16 +464,16 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
 
       if (index !== -1) {
         ranges[index].total++;
-        if (p.outcome === 'Deceased') ranges[index].deceased++;
+        if (getCanonicalOutcome(p) === 'Deceased') ranges[index].deceased++;
       }
     });
 
     ranges.forEach(r => {
-      r.mortalityRate = r.total > 0 ? parseFloat(((r.deceased / r.total) * 100).toFixed(1)) : 0;
+      r.mortalityRate = calculatePercentage(r.deceased, r.total, 1);
     });
 
     return ranges;
-  }, [patients]);
+  }, [analyticsPatients]);
 
   // 3. Admission vs Outcomes (Discharge & Referral) Comparison
   // Re-using chartData but structuring for specific comparison
@@ -358,38 +492,40 @@ const TimeBasedAnalytics: React.FC<TimeBasedAnalyticsProps> = ({ patients, perio
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const counts = days.map(d => ({ day: d, admissions: 0, discharged: 0, referred: 0, deaths: 0, stepDown: 0 }));
 
-    patients.forEach(p => {
-      const date = new Date(p.admissionDate);
+    analyticsPatients.forEach(p => {
+      const date = getPatientAdmissionDate(p);
+      if (!date) return;
       const dayIndex = date.getDay();
       counts[dayIndex].admissions++;
 
-      if (p.outcome === 'Discharged' && p.releaseDate) {
-        const dischargeDate = new Date(p.releaseDate);
+      if (getCanonicalOutcome(p) === 'Discharged' && getPatientDischargeDate(p)) {
+        const dischargeDate = getPatientDischargeDate(p)!;
         const dischargeDayIndex = dischargeDate.getDay();
         counts[dischargeDayIndex].discharged++;
       }
 
-      if (p.outcome === 'Referred' && p.releaseDate) {
-        const referralDate = new Date(p.releaseDate);
+      if (getCanonicalOutcome(p) === 'Referred' && p.releaseDate) {
+        const referralDate = parseSafeDate(p.releaseDate || p.dischargeDateTime || p.finalDischargeDate);
+        if (!referralDate) return;
         const referralDayIndex = referralDate.getDay();
         counts[referralDayIndex].referred++;
       }
 
-      if (p.outcome === 'Step Down' && p.stepDownDate) {
+      if (p.stepDownDate) {
         const stepDownDateObj = new Date(p.stepDownDate);
         const stepDownDayIndex = stepDownDateObj.getDay();
         counts[stepDownDayIndex].stepDown++;
       }
 
-      if (p.outcome === 'Deceased') {
-        const deathDate = p.releaseDate ? new Date(p.releaseDate) : date; // approx if release date missing
+      if (getCanonicalOutcome(p) === 'Deceased') {
+        const deathDate = getPatientDeathDate(p) || date;
         const deathDayIndex = deathDate.getDay();
         counts[deathDayIndex].deaths++;
       }
     });
 
     return counts;
-  }, [patients]);
+  }, [analyticsPatients]);
 
   return (
     <div className="space-y-8 animate-fadeIn">

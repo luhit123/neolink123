@@ -5,10 +5,13 @@ import { ProgressNote, Patient } from '../../types';
 interface NotesScrollViewProps {
   notes: ProgressNote[];
   patient?: Patient;
+  isAdmin?: boolean;
+  onEditNote?: (note: ProgressNote, index: number) => void;
+  onDeleteNote?: (note: ProgressNote, index: number) => void;
   className?: string;
 }
 
-const NotesScrollView: React.FC<NotesScrollViewProps> = ({ notes, patient, className = '' }) => {
+const NotesScrollView: React.FC<NotesScrollViewProps> = ({ notes, patient, isAdmin, onEditNote, onDeleteNote, className = '' }) => {
   if (notes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4">
@@ -30,6 +33,9 @@ const NotesScrollView: React.FC<NotesScrollViewProps> = ({ notes, patient, class
           patient={patient}
           noteIndex={index}
           totalNotes={notes.length}
+          isAdmin={isAdmin}
+          onEditNote={onEditNote}
+          onDeleteNote={onDeleteNote}
         />
       ))}
     </div>

@@ -7,7 +7,7 @@ import { handleRedirectResult } from './services/authService';
 import ErrorBoundary from './components/core/ErrorBoundary';
 import Login from './components/Login';
 import Header from './components/Header';
-import { UserRole, UserProfile, Patient, Unit, InstitutionUser, Official } from './types';
+import { UserRole, UserProfile, Patient, Unit, InstitutionUser, Official, ObservationOutcome } from './types';
 import { animations } from './theme/material3Theme';
 import SharedBottomNav from './components/SharedBottomNav';
 import { ChatProvider } from './contexts/ChatContext';
@@ -27,6 +27,9 @@ const PatientForm = lazy(() => import('./components/PatientForm'));
 const AnalyticsPage = lazy(() => import('./components/AnalyticsPage'));
 const AIReportsPage = lazy(() => import('./components/AIReportsPage'));
 const PasswordSetup = lazy(() => import('./components/PasswordSetup'));
+
+// Skeleton loading components
+import { AppLoadingSkeleton, DashboardSkeleton } from './components/AppSkeleton';
 
 // Module-level flag to ensure redirect is handled only once per page load
 let redirectHandled = false;
@@ -168,6 +171,60 @@ function App() {
       }
     }
   }, [showAIReportsPage, userProfile]);
+
+  // Real-time listener for role changes (for immediate updates when SuperAdmin changes role)
+  useEffect(() => {
+    if (!user?.email || !userProfile?.institutionId || userProfile.role === UserRole.SuperAdmin) {
+      return; // SuperAdmins don't need this listener
+    }
+
+    const email = user.email.toLowerCase();
+    const institutionId = userProfile.institutionId;
+
+    console.log('🔌 Setting up real-time role listener for:', email, 'in institution:', institutionId);
+
+    const q = query(
+      collection(db, 'approved_users'),
+      where('email', '==', email),
+      where('institutionId', '==', institutionId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const userData = snapshot.docs[0].data();
+        const newRole = userData.role as UserRole;
+
+        console.log('📡 Real-time update received. Role in Firestore:', newRole);
+
+        // Update state with latest role - React will only re-render if it's different
+        setUserProfile(prev => {
+          if (prev && prev.role !== newRole) {
+            console.log('🔄 Role changed from', prev.role, 'to', newRole);
+            return { ...prev, role: newRole };
+          }
+          return prev;
+        });
+
+        // Also update institutionUserData
+        setInstitutionUserData(prev => {
+          if (prev && prev.role !== newRole) {
+            return { ...prev, role: newRole };
+          }
+          return prev;
+        });
+      }
+    }, (error) => {
+      console.error('❌ Error listening for role changes:', error);
+    });
+
+    return () => {
+      console.log('🔌 Unsubscribing from role listener');
+      unsubscribe();
+    };
+    // Note: Only depend on email and institutionId, not role (to avoid loop)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email, userProfile?.institutionId]);
+
 
   // Smart back navigation
   useEffect(() => {
@@ -808,19 +865,7 @@ function App() {
   // Loading state - wait for BOTH loading to complete AND redirect check to finish
   // This prevents showing Login screen briefly before redirect auth is processed
   if (loading || !redirectChecked) {
-    return (
-      <div className="bg-sky-100 min-h-screen flex items-center justify-center pwa-full-height">
-        <motion.div
-          className="flex flex-col items-center gap-4"
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-medical-teal"></div>
-          <p className="text-slate-600 text-sm">Loading...</p>
-        </motion.div>
-      </div>
-    );
+    return <AppLoadingSkeleton />;
   }
 
   // Check for password setup page (accessible without login)
@@ -1027,14 +1072,7 @@ function App() {
           collegeName="Super Admin Control System"
         />
         <main>
-          <Suspense fallback={
-            <div className="bg-sky-100 min-h-screen flex items-center justify-center">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-4"></div>
-                <p className="text-slate-600 text-lg">Loading SuperAdmin Dashboard...</p>
-              </div>
-            </div>
-          }>
+          <Suspense fallback={<DashboardSkeleton title="SuperAdmin Dashboard" />}>
             <SuperAdminDashboard
               userEmail={user.email!}
               onBack={handleLogout} // SuperAdmin logs out instead of going to regular dashboard
@@ -1058,14 +1096,7 @@ function App() {
         />
         <main>
           <div className="container mx-auto p-4 sm:p-6">
-            <Suspense fallback={
-              <div className="bg-sky-100 min-h-screen flex items-center justify-center">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-blue mx-auto mb-4"></div>
-                  <p className="text-slate-600 text-lg">Loading Admin Dashboard...</p>
-                </div>
-              </div>
-            }>
+            <Suspense fallback={<DashboardSkeleton title="Admin Dashboard" />}>
               <AdminDashboard
                 institutionId={userProfile.institutionId}
                 institutionName={userProfile.institutionName!}
@@ -1155,14 +1186,7 @@ function App() {
 
         <main>
           <div className="container mx-auto p-4 sm:p-6">
-            <Suspense fallback={
-              <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
-                  <p className="text-slate-600 text-lg">Loading Dashboard...</p>
-                </div>
-              </div>
-            }>
+            <Suspense fallback={<DashboardSkeleton title="Dashboard" />}>
               <Dashboard
                 userRole={UserRole.DistrictAdmin} // Treat as read-only or restricted view if needed
                 institutionId={districtAdminViewingInstitution.institutionId}
@@ -1329,28 +1353,38 @@ function App() {
           onSave={async (patientData: Patient) => {
             try {
               console.log('💾 Saving patient from Add Patient page...');
+              const now = new Date().toISOString();
+              const fromObservationId = (patientData as any)._fromObservationId;
 
-              // Clean the data: remove undefined values and ensure progress notes is always an array
-              const cleanedData = {
-                ...patientData,
-                progressNotes: patientData.progressNotes || [],
-              };
+              // If from observation OR no patientToEdit, it's a NEW patient
+              // patientToEdit with _fromObservationId means we're creating from observation (not updating)
+              const isNewPatient = !patientToEdit || fromObservationId;
 
-              // Remove undefined fields to prevent Firestore errors
-              const sanitizedData = JSON.parse(JSON.stringify(cleanedData, (key, value) => {
-                return value === undefined ? null : value;
-              }));
-
-              if (patientToEdit) {
-                // Update existing patient
-                const patientRef = doc(db, 'patients', patientToEdit.id);
-                await updateDoc(patientRef, sanitizedData);
-                console.log('✅ Patient updated successfully:', patientData.id);
-              } else {
+              if (isNewPatient) {
                 // Add new patient
-                const patientsRef = collection(db, 'patients');
-                const docRef = await addDoc(patientsRef, sanitizedData);
-                console.log('✅ Patient added successfully:', docRef.id);
+                const patientRef = doc(db, 'patients', patientData.id);
+                await setDoc(patientRef, patientData as any);
+                console.log('✅ Patient added successfully with ID:', patientData.id);
+
+                // If converted from observation, update the observation patient
+                if (fromObservationId) {
+                  try {
+                    const observationRef = doc(db, 'observationPatients', fromObservationId);
+                    await updateDoc(observationRef, {
+                      outcome: ObservationOutcome.ConvertedToAdmission,
+                      convertedToPatientId: patientData.id,
+                      updatedAt: now
+                    });
+                    console.log('✅ Observation patient updated to ConvertedToAdmission:', fromObservationId);
+                  } catch (obsError) {
+                    console.error('⚠️ Failed to update observation patient:', obsError);
+                  }
+                }
+              } else {
+                // Update existing patient
+                const patientRef = doc(db, 'patients', patientData.id);
+                await updateDoc(patientRef, patientData as any);
+                console.log('✅ Patient updated successfully:', patientData.id);
               }
 
               // Check if there are more siblings to add (for twins/triplets)
@@ -1415,14 +1449,7 @@ function App() {
 
                 <main>
                   <div className="container mx-auto p-4 sm:p-6">
-                    <Suspense fallback={
-                      <div className="flex items-center justify-center min-h-[400px]">
-                        <div className="text-center">
-                          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-teal mx-auto mb-4"></div>
-                          <p className="text-slate-600 text-lg">Loading Dashboard...</p>
-                        </div>
-                      </div>
-                    }>
+                    <Suspense fallback={<DashboardSkeleton title="Dashboard" />}>
                       <Dashboard
                         userRole={userProfile.role}
                         institutionId={userProfile.institutionId}

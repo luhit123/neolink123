@@ -16,6 +16,7 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
+import { calculatePercentage, getPatientDeathDate, parseAnalyticsDate } from '../utils/analytics';
 
 interface MortalityChartsPanelProps {
   patients: Patient[];
@@ -57,7 +58,8 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
     const monthsMap = new Map<string, number>();
 
     patients.forEach(p => {
-      const deathDate = p.dateOfDeath ? new Date(p.dateOfDeath) : new Date(p.releaseDate || p.admissionDate);
+      const deathDate = getPatientDeathDate(p) || parseAnalyticsDate(p.admissionDate);
+      if (!deathDate) return;
       const monthKey = `${deathDate.getFullYear()}-${String(deathDate.getMonth() + 1).padStart(2, '0')}`;
       monthsMap.set(monthKey, (monthsMap.get(monthKey) || 0) + 1);
     });
@@ -231,7 +233,7 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
           <div className="text-lg sm:text-2xl font-bold text-red-900">
             {patients.filter(p => p.gender === 'Male').length}
             <span className="text-[10px] sm:text-sm text-red-600 ml-0.5 sm:ml-1">
-              ({patients.length > 0 ? ((patients.filter(p => p.gender === 'Male').length / patients.length) * 100).toFixed(0) : 0}%)
+              ({calculatePercentage(patients.filter(p => p.gender === 'Male').length, patients.length, 0).toFixed(0)}%)
             </span>
           </div>
         </div>
@@ -241,7 +243,7 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
           <div className="text-lg sm:text-2xl font-bold text-purple-900">
             {patients.filter(p => p.gender === 'Female').length}
             <span className="text-[10px] sm:text-sm text-purple-600 ml-0.5 sm:ml-1">
-              ({patients.length > 0 ? ((patients.filter(p => p.gender === 'Female').length / patients.length) * 100).toFixed(0) : 0}%)
+              ({calculatePercentage(patients.filter(p => p.gender === 'Female').length, patients.length, 0).toFixed(0)}%)
             </span>
           </div>
         </div>
@@ -251,7 +253,7 @@ const MortalityChartsPanel: React.FC<MortalityChartsPanelProps> = ({ patients })
           <div className="text-lg sm:text-2xl font-bold text-emerald-900">
             {patients.filter(p => p.aiInterpretedDeathDiagnosis).length}
             <span className="text-[10px] sm:text-sm text-emerald-600 ml-0.5 sm:ml-1">
-              ({patients.length > 0 ? ((patients.filter(p => p.aiInterpretedDeathDiagnosis).length / patients.length) * 100).toFixed(0) : 0}%)
+              ({calculatePercentage(patients.filter(p => p.aiInterpretedDeathDiagnosis).length, patients.length, 0).toFixed(0)}%)
             </span>
           </div>
         </div>

@@ -7,6 +7,7 @@ import IndividualMortalityViewer from './IndividualMortalityViewer';
 import AdvancedMortalityCharts from './analytics/cards/AdvancedMortalityCharts';
 import RiskFactorAnalysis from './analytics/cards/RiskFactorAnalysis';
 import KeyMetricsDashboard from './analytics/cards/KeyMetricsDashboard';
+import { calculatePercentage, getCanonicalOutcome, toAnalyticsPatients } from '../utils/analytics';
 
 interface DeathDiagnosisAnalyticsProps {
   patients: Patient[];
@@ -45,6 +46,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
   const [showFullAnalysis, setShowFullAnalysis] = useState(false);
   const [causeStats, setCauseStats] = useState<CauseOfDeath[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const analyticsPatients = useMemo(() => toAnalyticsPatients(patients), [patients]);
 
   // Helper function to extract primary cause from death certificate or patient data
   const extractPrimaryCause = (patient: Patient): string => {
@@ -69,7 +71,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
   };
 
   useEffect(() => {
-    const deceased = patients.filter(p => p.outcome === 'Deceased');
+    const deceased = analyticsPatients.filter(p => getCanonicalOutcome(p) === 'Deceased');
     setDeceasedPatients(deceased);
 
     // Extract and categorize causes
@@ -107,13 +109,13 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
     const causesArray = Array.from(causesMap.values())
       .map(cause => ({
         ...cause,
-        percentage: total > 0 ? (cause.count / total) * 100 : 0
+        percentage: calculatePercentage(cause.count, total, 1)
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10); // Top 10 causes
 
     setCauseStats(causesArray);
-  }, [patients]);
+  }, [analyticsPatients]);
 
   const handleGenerateAnalysis = async () => {
     if (deceasedPatients.length === 0) {
@@ -222,8 +224,8 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
       withICD10,
       withNHMCategory,
       completionRate: deceasedPatients.length > 0
-        ? ((withCertificate / deceasedPatients.length) * 100).toFixed(1)
-        : '0'
+        ? calculatePercentage(withCertificate, deceasedPatients.length, 1).toFixed(1)
+        : '0.0'
     };
   }, [deceasedPatients]);
 
@@ -475,7 +477,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             </h4>
             <div className="space-y-2">
               {nhmCategoryDistribution.map((item, idx) => {
-                const percentage = ((item.count / deceasedPatients.length) * 100).toFixed(1);
+                const percentage = calculatePercentage(item.count, deceasedPatients.length, 1);
                 const colors = [
                   'from-purple-500 to-purple-600',
                   'from-pink-500 to-pink-600',
@@ -577,7 +579,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
               {Object.entries(birthWeightDistribution)
                 .sort((a, b) => b[1] - a[1])
                 .map(([category, count]) => {
-                  const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
+                  const percentage = calculatePercentage(count, deceasedPatients.length, 1);
                   // Shorten category names for mobile
                   const shortCategory = category.replace('Extremely Low', 'Ext. Low').replace('Moderately Low', 'Mod. Low').replace('Very Low', 'V. Low');
                   return (
@@ -620,7 +622,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
                   return order.indexOf(a[0]) - order.indexOf(b[0]);
                 })
                 .map(([category, count]) => {
-                  const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
+                  const percentage = calculatePercentage(count, deceasedPatients.length, 1);
                   const shortCategory = category.replace(' hours', 'h').replace(' days', 'd').replace(' weeks', 'w').replace(' month', 'mo');
                   return (
                     <div key={category} className="space-y-0.5 sm:space-y-1">
@@ -662,7 +664,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
                   return order.indexOf(a[0]) - order.indexOf(b[0]);
                 })
                 .map(([category, count]) => {
-                  const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
+                  const percentage = calculatePercentage(count, deceasedPatients.length, 1);
                   const shortCat = category.replace(' hours', 'h').replace(' days', 'd').replace(' (Inborn)', '');
                   return (
                     <div key={category} className="space-y-0.5 sm:space-y-1">
@@ -702,7 +704,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
               {Object.entries(referralSourceDistribution)
                 .sort((a, b) => b[1] - a[1])
                 .map(([source, count]) => {
-                  const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
+                  const percentage = calculatePercentage(count, deceasedPatients.length, 1);
                   return (
                     <div key={source} className="space-y-0.5 sm:space-y-1">
                       <div className="flex justify-between items-center">
@@ -738,7 +740,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
             </div>
             <div className="space-y-1.5 sm:space-y-2">
               {causeStats.slice(0, 5).map((stat, index) => {
-                const percentage = ((stat.count / deceasedPatients.length) * 100).toFixed(1);
+                const percentage = calculatePercentage(stat.count, deceasedPatients.length, 1);
                 return (
                   <div key={index} className="space-y-0.5 sm:space-y-1">
                     <div className="flex justify-between items-center">
@@ -779,7 +781,7 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
               }, {} as { [key: string]: number }))
                 .sort((a, b) => b[1] - a[1])
                 .map(([gender, count]) => {
-                  const percentage = ((count / deceasedPatients.length) * 100).toFixed(1);
+                  const percentage = calculatePercentage(count, deceasedPatients.length, 1);
                   return (
                     <div key={gender} className="space-y-0.5 sm:space-y-1">
                       <div className="flex justify-between items-center">

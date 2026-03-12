@@ -324,6 +324,33 @@ const PatientForm: React.FC<PatientFormProps> = ({
         } else {
           updated.name = '';
         }
+
+        // Sync guardianName if relation is Mother
+        if (updated.parentalConsent?.guardianRelation === 'Mother') {
+          updated.parentalConsent = {
+            ...updated.parentalConsent,
+            guardianName: processedValue
+          };
+        }
+      }
+
+      // Sync guardianName if name is fatherName and relation is Father
+      if (name === 'fatherName' && typeof processedValue === 'string') {
+        if (updated.parentalConsent?.guardianRelation === 'Father' || !updated.parentalConsent?.guardianRelation) {
+          updated.parentalConsent = {
+            ...(updated.parentalConsent || {
+              guardianRelation: 'Father',
+              physicalFormSigned: false,
+              aiConsentGiven: false,
+              verifiedByStaff: userEmail,
+              verifiedByStaffName: userName || userEmail,
+              consentTimestamp: new Date().toISOString(),
+              consentVersion: '1.0.0',
+              verificationMethod: 'Physical Form + Staff Attestation'
+            }),
+            guardianName: processedValue
+          };
+        }
       }
 
       // Also sync: If baby's name is edited manually with "Baby of ...", extract mother's name
@@ -416,13 +443,16 @@ const PatientForm: React.FC<PatientFormProps> = ({
       }
 
       // Auto-calculate age on admission
-      if (fieldName === 'admissionDateTime' && prev.dateOfBirth) {
-        const ageAtAdmission = calculateAgeAtDate(prev.dateOfBirth, isoString, forceUnit);
-        updated.ageOnAdmission = ageAtAdmission.age;
-        updated.ageOnAdmissionUnit = ageAtAdmission.ageUnit;
-
-        // Sync backward compatibility
+      if (fieldName === 'admissionDateTime') {
+        // Always sync admissionDate with admissionDateTime for backward compatibility
         updated.admissionDate = isoString;
+
+        // Calculate age at admission if dateOfBirth is available
+        if (prev.dateOfBirth) {
+          const ageAtAdmission = calculateAgeAtDate(prev.dateOfBirth, isoString, forceUnit);
+          updated.ageOnAdmission = ageAtAdmission.age;
+          updated.ageOnAdmissionUnit = ageAtAdmission.ageUnit;
+        }
       }
 
       // Auto-calculate age on discharge
@@ -591,7 +621,18 @@ const PatientForm: React.FC<PatientFormProps> = ({
     // Give user visual feedback
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    const newPatientId = patient.id || Date.now().toString();
+    // Generate descriptive ID: Name-NTID (Slugified)
+    const generateDescriptiveId = (name: string, ntid: string) => {
+      const slug = name
+        .toUpperCase()
+        .replace(/[^A-Z0-9 ]/g, '') // Keep only caps and digits and spaces
+        .trim()
+        .replace(/\s+/g, '_'); // Spaces to underscores
+      return `${slug}-${ntid}`;
+    };
+
+    const currentNtid = patient.ntid || generateNTID(institutionName);
+    const newPatientId = patient.id || generateDescriptiveId(patient.name || 'UNNAMED', currentNtid);
 
     // Get proper baby name for twins/triplets
     const getBirthLabel = () => {
@@ -614,8 +655,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
       ...patient,
       id: newPatientId,
       name: formattedName || patient.name,
-      // Generate NTID for new patients only
-      ntid: patient.ntid || generateNTID(institutionName),
+      // Use the ntid generated for the ID
+      ntid: currentNtid,
       isDraft: saveAsDraft,
       lastUpdatedBy: userRole,
       lastUpdatedByEmail: userEmail,
@@ -1108,8 +1149,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
                               }}
                               disabled={currentBabyNumber > 1}
                               className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${multipleBirthType === type
-                                  ? 'bg-pink-600 text-white shadow-lg scale-105'
-                                  : 'bg-white text-pink-700 border-2 border-pink-300 hover:border-pink-500'
+                                ? 'bg-pink-600 text-white shadow-lg scale-105'
+                                : 'bg-white text-pink-700 border-2 border-pink-300 hover:border-pink-500'
                                 } ${currentBabyNumber > 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
                               {type === MultipleBirthType.Single ? '👶 Single' :
@@ -1133,8 +1174,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
                                   type="button"
                                   onClick={() => setCurrentBabyNumber(num)}
                                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${currentBabyNumber === num
-                                      ? 'bg-blue-600 text-white shadow-lg'
-                                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    ? 'bg-blue-600 text-white shadow-lg'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                                     }`}
                                 >
                                   {getBabyLabel(num, multipleBirthType)}
@@ -1161,8 +1202,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
                                   type="button"
                                   onClick={() => setBabiesToAdmit(num)}
                                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${babiesToAdmit === num
-                                      ? 'bg-pink-600 text-white shadow-lg'
-                                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    ? 'bg-pink-600 text-white shadow-lg'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                                     }`}
                                 >
                                   {num} {num === 1 ? 'baby' : 'babies'}
@@ -1213,8 +1254,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
                                   return updated;
                                 })}
                                 className={`px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${patient.admissionType === at
-                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
-                                    : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
+                                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
+                                  : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
                                   }`}
                               >
                                 {at === AdmissionType.Inborn ? '🏥 Inborn' :
@@ -1263,13 +1304,12 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         </div>
                       )}
                       <div>
-                        <label htmlFor="age" className="block text-sm font-medium text-slate-700 mb-1">Current Age <span className="text-red-400">*</span></label>
+                        <label htmlFor="age" className="block text-sm font-medium text-slate-700 mb-1">Current Age (Days) <span className="text-red-400">*</span></label>
                         <div className="flex gap-2">
-                          <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" step="0.01" className="w-2/3 px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                          <select name="ageUnit" id="ageUnit" value={patient.ageUnit} onChange={handleChange} required className="w-1/3 px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
-                            {Object.values(AgeUnit).map(u => <option key={u} value={u}>{u}</option>)}
-                          </select>
+                          <input type="number" name="age" id="age" value={patient.age} onChange={handleChange} required min="0" step="1" className="w-2/3 px-3 py-2 bg-white border-2 border-blue-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" readOnly={!!patient.dateOfBirth} />
+                          <span className="w-1/3 px-3 py-2 bg-slate-100 border-2 border-slate-300 rounded-lg text-slate-600 text-sm flex items-center justify-center font-medium">Days</span>
                         </div>
+                        {patient.dateOfBirth && <p className="text-xs text-slate-500 mt-1">Auto-calculated from Date of Birth</p>}
                       </div>
                     </div>
 
@@ -1387,132 +1427,6 @@ const PatientForm: React.FC<PatientFormProps> = ({
 
                 {expandedSections.demographics && (
                   <div className="p-2 sm:p-4 space-y-3 sm:space-y-4">
-                    {/* DPDP Act Section 9: Parental Consent for Minors (CRITICAL) */}
-                    <div className="bg-gradient-to-br from-yellow-50 to-orange-50 border-4 border-yellow-400 rounded-xl p-4 shadow-lg">
-                      <div className="flex items-start gap-3 mb-4">
-                        <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                        <div className="flex-1">
-                          <h4 className="text-lg font-bold text-yellow-900 mb-1">⚖️ Parental Consent Required (DPDP Act 2023)</h4>
-                          <p className="text-sm text-yellow-800">
-                            Physical consent form must be signed by parent/guardian. Staff verifies and records below.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="bg-white rounded-lg p-4 space-y-4 border-2 border-yellow-300">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-bold text-slate-900 mb-1">
-                              Guardian Name <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={patient.parentalConsent?.guardianName || ''}
-                              onChange={(e) => setPatient(prev => ({
-                                ...prev,
-                                parentalConsent: {
-                                  guardianName: e.target.value,
-                                  guardianRelation: prev.parentalConsent?.guardianRelation || 'Mother',
-                                  physicalFormSigned: prev.parentalConsent?.physicalFormSigned || false,
-                                  aiConsentGiven: prev.parentalConsent?.aiConsentGiven || false,
-                                  verifiedByStaff: userEmail,
-                                  verifiedByStaffName: userName || userEmail,
-                                  consentTimestamp: new Date().toISOString(),
-                                  consentVersion: '1.0.0',
-                                  verificationMethod: 'Physical Form + Staff Attestation'
-                                }
-                              }))}
-                              required
-                              className="w-full px-3 py-2 bg-white border-2 border-yellow-500 rounded-lg text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-yellow-600"
-                              placeholder="Enter parent/guardian name"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-bold text-slate-900 mb-1">
-                              Relation to Patient <span className="text-red-500">*</span>
-                            </label>
-                            <select
-                              value={patient.parentalConsent?.guardianRelation || 'Mother'}
-                              onChange={(e) => setPatient(prev => ({
-                                ...prev,
-                                parentalConsent: {
-                                  ...prev.parentalConsent!,
-                                  guardianRelation: e.target.value as 'Mother' | 'Father' | 'Legal Guardian'
-                                }
-                              }))}
-                              required
-                              className="w-full px-3 py-2 bg-white border-2 border-yellow-500 rounded-lg text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-yellow-600"
-                            >
-                              <option value="Mother">Mother</option>
-                              <option value="Father">Father</option>
-                              <option value="Legal Guardian">Legal Guardian</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* Staff Attestation Checkboxes */}
-                        <div className="space-y-3 bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
-                          <p className="text-sm font-bold text-blue-900 mb-2">Staff Verification (Check all that apply):</p>
-
-                          <label className="flex items-start gap-3 cursor-pointer group">
-                            <input
-                              type="checkbox"
-                              checked={patient.parentalConsent?.physicalFormSigned || false}
-                              onChange={(e) => setPatient(prev => ({
-                                ...prev,
-                                parentalConsent: {
-                                  ...prev.parentalConsent!,
-                                  physicalFormSigned: e.target.checked
-                                }
-                              }))}
-                              required
-                              className="mt-1 w-5 h-5 text-blue-600 border-blue-300 rounded focus:ring-2 focus:ring-blue-500"
-                            />
-                            <div className="flex-1">
-                              <span className="text-sm font-semibold text-blue-900">
-                                ✅ Physical consent form signed by parent/guardian and verified
-                              </span>
-                              <p className="text-xs text-blue-700 mt-1">
-                                I confirm that the parent/guardian has signed the physical DPDP consent form in my presence.
-                              </p>
-                            </div>
-                          </label>
-
-                          <label className="flex items-start gap-3 cursor-pointer group">
-                            <input
-                              type="checkbox"
-                              checked={patient.parentalConsent?.aiConsentGiven || false}
-                              onChange={(e) => setPatient(prev => ({
-                                ...prev,
-                                parentalConsent: {
-                                  ...prev.parentalConsent!,
-                                  aiConsentGiven: e.target.checked
-                                }
-                              }))}
-                              className="mt-1 w-5 h-5 text-purple-600 border-purple-300 rounded focus:ring-2 focus:ring-purple-500"
-                            />
-                            <div className="flex-1">
-                              <span className="text-sm font-semibold text-purple-900">
-                                🤖 (Optional) Parent consented to AI-powered clinical features
-                              </span>
-                              <p className="text-xs text-purple-700 mt-1">
-                                De-identified data may be sent to OpenAI/Gemini for clinical decision support.
-                              </p>
-                            </div>
-                          </label>
-                        </div>
-
-                        <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3">
-                          <p className="text-xs text-green-800">
-                            <strong>Verified by:</strong> {userName || userEmail} ({userEmail}) at {new Date().toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label htmlFor="sncuRegNo" className="block text-sm font-medium text-slate-700 mb-1">SNCU Reg. No.</label>
@@ -1663,8 +1577,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
                                 return updated;
                               })}
                               className={`px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${patient.admissionType === at
-                                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
-                                  : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
+                                : 'bg-white border-2 border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
                                 }`}
                             >
                               {at === AdmissionType.Inborn ? '🏥 Inborn' :
@@ -2215,8 +2129,8 @@ const PatientForm: React.FC<PatientFormProps> = ({
                           <label
                             key={factor}
                             className={`flex items-center gap-2 p-2 rounded-lg border-2 cursor-pointer transition-all ${patient.maternalHistory?.riskFactors?.includes(factor)
-                                ? 'bg-pink-100 border-pink-500 text-pink-800'
-                                : 'bg-white border-gray-200 hover:border-pink-300 text-gray-700'
+                              ? 'bg-pink-100 border-pink-500 text-pink-800'
+                              : 'bg-white border-gray-200 hover:border-pink-300 text-gray-700'
                               }`}
                           >
                             <input
@@ -2504,6 +2418,138 @@ const PatientForm: React.FC<PatientFormProps> = ({
                         </div>
                       </div>
                     )}
+                    {/* DPDP Act Section 9: Parental Consent for Minors (CRITICAL) */}
+                    <div className="bg-gradient-to-br from-yellow-50 to-orange-50 border-4 border-yellow-400 rounded-xl p-4 shadow-lg mb-4">
+                      <div className="flex items-start gap-3 mb-4">
+                        <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div className="flex-1">
+                          <h4 className="text-lg font-bold text-yellow-900 mb-1">⚖️ Parental Consent Required (DPDP Act 2023)</h4>
+                          <p className="text-sm text-yellow-800">
+                            Physical consent form must be signed by parent/guardian. Staff verifies and records below.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-lg p-4 space-y-4 border-2 border-yellow-300">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-bold text-slate-900 mb-1">
+                              Guardian Name <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={patient.parentalConsent?.guardianName || (patient.parentalConsent?.guardianRelation === 'Father' ? patient.fatherName : '') || ''}
+                              onChange={(e) => setPatient(prev => ({
+                                ...prev,
+                                parentalConsent: {
+                                  guardianName: e.target.value,
+                                  guardianRelation: prev.parentalConsent?.guardianRelation || 'Father',
+                                  physicalFormSigned: prev.parentalConsent?.physicalFormSigned || false,
+                                  aiConsentGiven: prev.parentalConsent?.aiConsentGiven || false,
+                                  verifiedByStaff: userEmail,
+                                  verifiedByStaffName: userName || userEmail,
+                                  consentTimestamp: new Date().toISOString(),
+                                  consentVersion: '1.0.0',
+                                  verificationMethod: 'Physical Form + Staff Attestation'
+                                }
+                              }))}
+                              required
+                              className="w-full px-3 py-2 bg-white border-2 border-yellow-500 rounded-lg text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-yellow-600"
+                              placeholder="Enter parent/guardian name"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-slate-900 mb-1">
+                              Relation to Patient <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                              value={patient.parentalConsent?.guardianRelation || 'Father'}
+                              onChange={(e) => {
+                                const newRelation = e.target.value as 'Mother' | 'Father' | 'Legal Guardian';
+                                setPatient(prev => ({
+                                  ...prev,
+                                  parentalConsent: {
+                                    ...prev.parentalConsent!,
+                                    guardianRelation: newRelation,
+                                    // Auto-fill if changed to Mother/Father and names are available
+                                    guardianName: newRelation === 'Father' ? (prev.fatherName || prev.parentalConsent?.guardianName || '') :
+                                      newRelation === 'Mother' ? (prev.motherName || prev.parentalConsent?.guardianName || '') :
+                                        prev.parentalConsent?.guardianName || ''
+                                  }
+                                }));
+                              }}
+                              required
+                              className="w-full px-3 py-2 bg-white border-2 border-yellow-500 rounded-lg text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-yellow-600"
+                            >
+                              <option value="Father">Father</option>
+                              <option value="Mother">Mother</option>
+                              <option value="Legal Guardian">Legal Guardian</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Staff Attestation Checkboxes */}
+                        <div className="space-y-3 bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+                          <p className="text-sm font-bold text-blue-900 mb-2">Staff Verification (Check all that apply):</p>
+
+                          <label className="flex items-start gap-3 cursor-pointer group">
+                            <input
+                              type="checkbox"
+                              checked={patient.parentalConsent?.physicalFormSigned || false}
+                              onChange={(e) => setPatient(prev => ({
+                                ...prev,
+                                parentalConsent: {
+                                  ...prev.parentalConsent!,
+                                  physicalFormSigned: e.target.checked
+                                }
+                              }))}
+                              required
+                              className="mt-1 w-5 h-5 text-blue-600 border-2 border-blue-400 rounded focus:ring-2 focus:ring-blue-500 appearance-none checked:bg-blue-600 checked:border-blue-600 relative after:content-['✓'] after:absolute after:text-white after:font-bold after:flex after:items-center after:justify-center after:inset-0 after:text-sm"
+                            />
+                            <div className="flex-1">
+                              <span className="text-sm font-semibold text-blue-900">
+                                ✅ Physical consent form signed by parent/guardian and verified
+                              </span>
+                              <p className="text-xs text-blue-700 mt-1">
+                                I confirm that the parent/guardian has signed the physical DPDP consent form in my presence.
+                              </p>
+                            </div>
+                          </label>
+
+                          <label className="flex items-start gap-3 cursor-pointer group">
+                            <input
+                              type="checkbox"
+                              checked={patient.parentalConsent?.aiConsentGiven || false}
+                              onChange={(e) => setPatient(prev => ({
+                                ...prev,
+                                parentalConsent: {
+                                  ...prev.parentalConsent!,
+                                  aiConsentGiven: e.target.checked
+                                }
+                              }))}
+                              className="mt-1 w-5 h-5 text-purple-600 border-2 border-purple-400 rounded focus:ring-2 focus:ring-purple-500 appearance-none checked:bg-purple-600 checked:border-purple-600 relative after:content-['✓'] after:absolute after:text-white after:font-bold after:flex after:items-center after:justify-center after:inset-0 after:text-sm"
+                            />
+                            <div className="flex-1">
+                              <span className="text-sm font-semibold text-purple-900">
+                                🤖 (Optional) Parent consented to AI-powered clinical features
+                              </span>
+                              <p className="text-xs text-purple-700 mt-1">
+                                De-identified data may be sent to OpenAI/Gemini for clinical decision support.
+                              </p>
+                            </div>
+                          </label>
+                        </div>
+
+                        <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3">
+                          <p className="text-xs text-green-800">
+                            <strong>Verified by:</strong> {userName || userEmail} ({userEmail}) at {new Date().toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
 
                     {/* Edit History */}
                     {patientToEdit && (patient.editHistory || []).length > 0 && (
@@ -2592,6 +2638,7 @@ const PatientForm: React.FC<PatientFormProps> = ({
                     )}
                   </div>
                 )}
+
               </>
             )}
 
@@ -2695,10 +2742,10 @@ const PatientForm: React.FC<PatientFormProps> = ({
                       className={`flex flex-col items-center`}
                     >
                       <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold mb-1 ${idx < savedSiblingIds.length
-                          ? 'bg-green-500 text-white'
-                          : idx === savedSiblingIds.length
-                            ? 'bg-pink-500 text-white ring-4 ring-pink-200 animate-pulse'
-                            : 'bg-slate-200 text-slate-400'
+                        ? 'bg-green-500 text-white'
+                        : idx === savedSiblingIds.length
+                          ? 'bg-pink-500 text-white ring-4 ring-pink-200 animate-pulse'
+                          : 'bg-slate-200 text-slate-400'
                         }`}>
                         {idx < savedSiblingIds.length ? '✓' : idx + 1}
                       </div>

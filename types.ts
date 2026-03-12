@@ -370,6 +370,7 @@ export interface Patient {
   stepDownLocation?: string; // Where the patient was stepped down to (e.g., Mother Side, Ward)
   isStepDown?: boolean; // Currently in step down status
   readmissionFromStepDown?: boolean; // Was readmitted from step down
+  readmissionDate?: string; // ISO string when readmitted from step down
   finalDischargeDate?: string; // For step down patients who are finally discharged
   // Referral information
   referralReason?: string; // Reason for referring patient to another facility
@@ -493,6 +494,9 @@ export interface Institution {
 
   // Discharge Settings
   dischargeLanguage?: string; // Regional language for discharge advice (default: 'english')
+
+  // Shift Settings
+  shiftStartTime?: string; // Standard shift start time for relative periods (HH:mm format)
 }
 
 // Password Reset Request

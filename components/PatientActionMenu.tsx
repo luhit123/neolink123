@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Patient, PatientOutcome } from '../types';
+import { getCanonicalOutcome } from '../utils/analytics';
 import { MoreVertical, Mic, FileText, ArrowDownCircle, AlertTriangle, UserX, Send, CheckCircle, Activity, X, Eye, Download } from 'lucide-react';
 
 interface PatientActionMenuProps {
@@ -31,6 +32,7 @@ const PatientActionMenu: React.FC<PatientActionMenuProps> = ({
   onRefer,
   onViewDetails
 }) => {
+  const canonicalOutcome = getCanonicalOutcome(patient);
   const [isOpen, setIsOpen] = useState(false);
   const [showStatusSubmenu, setShowStatusSubmenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, showAbove: false });
@@ -106,9 +108,9 @@ const PatientActionMenu: React.FC<PatientActionMenuProps> = ({
     setShowStatusSubmenu(false);
   };
 
-  const isActive = patient.outcome === 'In Progress';
-  const isDeceased = patient.outcome === 'Deceased';
-  const isDischarged = patient.outcome === 'Discharged';
+  const isActive = canonicalOutcome === 'In Progress';
+  const isDeceased = canonicalOutcome === 'Deceased';
+  const isDischarged = canonicalOutcome === 'Discharged';
 
   const statusOptions: { value: PatientOutcome; label: string; icon: React.ReactNode; color: string; bgColor: string }[] = [
     { value: 'In Progress', label: 'In Progress', icon: <Activity className="w-4 h-4" />, color: 'text-blue-600', bgColor: 'hover:bg-blue-50' },
@@ -177,15 +179,15 @@ const PatientActionMenu: React.FC<PatientActionMenuProps> = ({
                         <button
                           key={status.value}
                           onClick={(e) => handleAction(e, () => onUpdateStatus(patient, status.value))}
-                          disabled={patient.outcome === status.value}
+                          disabled={canonicalOutcome === status.value}
                           className={`w-full px-4 py-2 text-left flex items-center gap-2 ${status.bgColor} transition-colors ${
-                            patient.outcome === status.value ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''
+                            canonicalOutcome === status.value ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''
                           }`}
                         >
                           <span className={status.color}>{status.icon}</span>
                           <span className={`text-xs font-medium ${status.color}`}>
                             {status.label}
-                            {patient.outcome === status.value && ' (Current)'}
+                            {canonicalOutcome === status.value && ' (Current)'}
                           </span>
                         </button>
                       ))}

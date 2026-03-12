@@ -35,6 +35,11 @@ const Header: React.FC<HeaderProps> = ({ userRole, onLogout, collegeName, onShow
     <header className="bg-white backdrop-blur-sm p-2 sticky top-0 z-40 border-b border-medical-teal/20 shadow-md">
       <div className="container mx-auto flex justify-between items-center">
         <div className="flex items-center gap-3">
+          <img
+            src="/neolink-logo.png"
+            alt="NeoLink"
+            className="w-10 h-10 rounded-xl object-cover shadow-sm"
+          />
           <div className="flex flex-col">
             <div className="text-xl sm:text-2xl font-bold text-slate-900">
               <span className="text-medical-teal">Neo</span>Link

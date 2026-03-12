@@ -26,6 +26,8 @@ const ReferralInbox: React.FC<ReferralInboxProps> = ({
   const [activeTab, setActiveTab] = useState<'incoming' | 'outgoing'>('incoming');
   const [selectedReferral, setSelectedReferral] = useState<Referral | null>(null);
   const [showStatusUpdate, setShowStatusUpdate] = useState(false);
+  const [editedReferralDate, setEditedReferralDate] = useState('');
+  const [updatingReferralDate, setUpdatingReferralDate] = useState(false);
 
   // Load referrals
   useEffect(() => {
@@ -190,6 +192,87 @@ const ReferralInbox: React.FC<ReferralInboxProps> = ({
         return 'bg-purple-100 text-purple-700';
       default:
         return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const toDateTimeLocalValue = (isoDate: string) => {
+    const parsedDate = new Date(isoDate);
+    if (Number.isNaN(parsedDate.getTime())) return '';
+    const localDate = new Date(parsedDate.getTime() - (parsedDate.getTimezoneOffset() * 60000));
+    return localDate.toISOString().slice(0, 16);
+  };
+
+  useEffect(() => {
+    if (!selectedReferral) {
+      setEditedReferralDate('');
+      return;
+    }
+    setEditedReferralDate(toDateTimeLocalValue(selectedReferral.referralDate));
+  }, [selectedReferral]);
+
+  const handleUpdateReferralDate = async () => {
+    if (!selectedReferral || !editedReferralDate) return;
+
+    if (selectedReferral.fromInstitutionId !== institutionId) {
+      alert('Only the referring institution can update the referral date.');
+      return;
+    }
+
+    const parsedDate = new Date(editedReferralDate);
+    if (Number.isNaN(parsedDate.getTime())) {
+      alert('Please enter a valid referral date and time.');
+      return;
+    }
+
+    const newReferralDate = parsedDate.toISOString();
+    const now = new Date().toISOString();
+    const previousReferralDate = selectedReferral.referralDate;
+    const dateUpdateStatus = {
+      timestamp: now,
+      updatedBy: userName,
+      updatedByEmail: userEmail,
+      updatedByRole: userRole,
+      status: 'Referral Date Updated',
+      notes: `Referral date changed from ${new Date(previousReferralDate).toLocaleString()} to ${new Date(newReferralDate).toLocaleString()}`
+    };
+
+    setUpdatingReferralDate(true);
+    try {
+      await updateDoc(doc(db, 'referrals', selectedReferral.id), {
+        referralDate: newReferralDate,
+        lastUpdatedAt: now,
+        statusUpdates: [...(selectedReferral.statusUpdates || []), dateUpdateStatus]
+      });
+
+      try {
+        await updateDoc(doc(db, 'patients', selectedReferral.patientId), {
+          releaseDate: newReferralDate,
+          lastEditedAt: now,
+          lastUpdatedBy: userRole,
+          lastUpdatedByEmail: userEmail,
+          'metadata.lastUpdatedBy': userEmail || userRole || 'unknown',
+          'metadata.lastUpdatedAt': now
+        });
+      } catch (patientSyncError) {
+        console.warn('Unable to sync patient release date after referral date update:', patientSyncError);
+      }
+
+      setSelectedReferral((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          referralDate: newReferralDate,
+          lastUpdatedAt: now,
+          statusUpdates: [...(prev.statusUpdates || []), dateUpdateStatus]
+        };
+      });
+
+      alert('Referral date updated successfully.');
+    } catch (error) {
+      console.error('Error updating referral date:', error);
+      alert('Failed to update referral date.');
+    } finally {
+      setUpdatingReferralDate(false);
     }
   };
 
@@ -462,6 +545,28 @@ const ReferralInbox: React.FC<ReferralInboxProps> = ({
                     Update Patient Status
                   </button>
                 )}
+
+              {selectedReferral.fromInstitutionId === institutionId && (
+                <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
+                  <p className="text-xs text-blue-700 uppercase tracking-wider font-semibold mb-2">Referral Date</p>
+                  <input
+                    type="datetime-local"
+                    value={editedReferralDate}
+                    onChange={(e) => setEditedReferralDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                  <button
+                    onClick={handleUpdateReferralDate}
+                    disabled={updatingReferralDate || !editedReferralDate}
+                    className="w-full mt-3 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg font-semibold transition-all"
+                  >
+                    {updatingReferralDate ? 'Updating Date...' : 'Save Referral Date'}
+                  </button>
+                  <p className="text-xs text-blue-700/80 mt-2">
+                    Use this if the referral was entered late and needs the correct date/time.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

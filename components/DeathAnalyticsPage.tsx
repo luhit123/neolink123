@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Calendar, Filter, BarChart3, TrendingDown, FileText, Download, PieChart, Activity, ArrowUpRight, Settings2 } from 'lucide-react';
 import DeathDiagnosisAnalytics from './DeathDiagnosisAnalytics';
 import MortalityReportsSection from './MortalityReportsSection';
+import { calculatePercentage, getCanonicalAdmissionType, getCanonicalOutcome, getPatientDeathDate, toAnalyticsPatients } from '../utils/analytics';
 
 interface DeathAnalyticsPageProps {
   patients: Patient[];
@@ -36,9 +37,10 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
   const [selectedYear, setSelectedYear] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [activeTab, setActiveTab] = useState<ViewTab>('analytics');
+  const analyticsPatients = useMemo(() => toAnalyticsPatients(patients), [patients]);
 
   useEffect(() => {
-    let filtered = patients.filter(p => p.outcome === 'Deceased');
+    let filtered = analyticsPatients.filter(p => getCanonicalOutcome(p) === 'Deceased');
 
     // Filter by unit
     if (selectedUnitFilter !== 'all') {
@@ -48,26 +50,9 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
     // Filter by birth type (NICU only)
     if (birthTypeFilter !== 'all') {
       if (birthTypeFilter === 'inborn') {
-        filtered = filtered.filter(p => {
-          const birthType = (p as any).birthType?.toLowerCase();
-          const admissionType = p.admissionType?.toLowerCase();
-          return (
-            p.unit === Unit.NICU &&
-            (birthType === 'inborn' || admissionType === 'inborn' || admissionType?.includes('inborn'))
-          );
-        });
+        filtered = filtered.filter(p => p.unit === Unit.NICU && getCanonicalAdmissionType(p) === 'Inborn');
       } else if (birthTypeFilter === 'outborn') {
-        filtered = filtered.filter(p => {
-          const birthType = (p as any).birthType?.toLowerCase();
-          const admissionType = p.admissionType?.toLowerCase();
-          return (
-            p.unit === Unit.NICU &&
-            (birthType === 'outborn' ||
-             admissionType?.includes('outborn') ||
-             admissionType === 'outborn (health facility referred)' ||
-             admissionType === 'outborn (community referred)')
-          );
-        });
+        filtered = filtered.filter(p => p.unit === Unit.NICU && getCanonicalAdmissionType(p) === 'Outborn');
       }
     }
 
@@ -75,13 +60,15 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
     if (selectedTimeRange === 'month' && selectedMonth) {
       const [year, month] = selectedMonth.split('-');
       filtered = filtered.filter(p => {
-        const deathDate = p.dateOfDeath ? new Date(p.dateOfDeath) : new Date(p.releaseDate || p.admissionDate);
+        const deathDate = getPatientDeathDate(p);
+        if (!deathDate) return false;
         return deathDate.getFullYear() === parseInt(year) &&
                deathDate.getMonth() === parseInt(month) - 1;
       });
     } else if (selectedTimeRange === 'year' && selectedYear) {
       filtered = filtered.filter(p => {
-        const deathDate = p.dateOfDeath ? new Date(p.dateOfDeath) : new Date(p.releaseDate || p.admissionDate);
+        const deathDate = getPatientDeathDate(p);
+        if (!deathDate) return false;
         return deathDate.getFullYear() === parseInt(selectedYear);
       });
     } else if (selectedTimeRange === 'custom' && customStartDate && customEndDate) {
@@ -89,17 +76,14 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
       const end = new Date(customEndDate);
       end.setHours(23, 59, 59, 999);
       filtered = filtered.filter(p => {
-        const deathDate = p.dateOfDeath ? new Date(p.dateOfDeath) : new Date(p.releaseDate || p.admissionDate);
+        const deathDate = getPatientDeathDate(p);
+        if (!deathDate) return false;
         return deathDate >= start && deathDate <= end;
       });
     }
 
     setDeceasedPatients(filtered);
-  }, [patients, selectedTimeRange, selectedUnitFilter, birthTypeFilter, customStartDate, customEndDate, selectedMonth, selectedYear]);
-
-  const mortalityRate = patients.length > 0
-    ? ((deceasedPatients.length / patients.length) * 100).toFixed(1)
-    : '0.0';
+  }, [analyticsPatients, selectedTimeRange, selectedUnitFilter, birthTypeFilter, customStartDate, customEndDate, selectedMonth, selectedYear]);
 
   const getTimeRangeLabel = () => {
     if (selectedTimeRange === 'month' && selectedMonth) {
@@ -122,7 +106,7 @@ const DeathAnalyticsPage: React.FC<DeathAnalyticsPageProps> = ({
   // Calculate quick stats for compact display
   const totalAdmissions = patients.length;
   const totalDeaths = deceasedPatients.length;
-  const calculatedMortalityRate = totalAdmissions > 0 ? ((totalDeaths / totalAdmissions) * 100).toFixed(1) : '0.0';
+  const calculatedMortalityRate = calculatePercentage(totalDeaths, totalAdmissions, 1).toFixed(1);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-50">

@@ -18,7 +18,9 @@ import {
   limit,
   startAfter,
   getDocs,
+  getDocsFromServer,
   getDoc,
+  getDocFromServer,
   doc,
   onSnapshot,
   QueryDocumentSnapshot,
@@ -31,8 +33,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 
 // Constants
 const PATIENTS_PER_PAGE = 20;
-const STALE_TIME = 5 * 60 * 1000; // 5 minutes
-const CACHE_TIME = 30 * 60 * 1000; // 30 minutes
+const STALE_TIME = 30 * 1000; // 30 seconds - reduced for fresher data
+const CACHE_TIME = 10 * 60 * 1000; // 10 minutes
 
 // Types
 interface PatientsQueryParams {
@@ -116,7 +118,8 @@ async function fetchPaginatedPatients(
   }
 
   const q = query(patientsRef, ...constraints);
-  const snapshot = await getDocs(q);
+  // Use getDocsFromServer to bypass Firestore local cache and get fresh data
+  const snapshot = await getDocsFromServer(q);
 
   let patients = snapshot.docs.map(docToPatient);
 
@@ -207,16 +210,17 @@ export function usePatientDetails(patientId: string | null) {
       if (!patientId) return null;
 
       const docRef = doc(db, 'patients', patientId);
-      const docSnap = await getDoc(docRef);
+      // Use getDocFromServer to bypass Firestore local cache
+      const docSnap = await getDocFromServer(docRef);
 
       if (!docSnap.exists()) return null;
 
       const patient = docToPatient(docSnap as any);
 
-      // Load progress notes separately
+      // Load progress notes separately - also from server for fresh data
       const notesRef = collection(db, 'patients', patientId, 'progressNotes');
       const notesQuery = query(notesRef, orderBy('date', 'desc'), limit(50));
-      const notesSnap = await getDocs(notesQuery);
+      const notesSnap = await getDocsFromServer(notesQuery);
 
       patient.progressNotes = notesSnap.docs.map(d => ({
         id: d.id,
@@ -437,11 +441,12 @@ export function usePrefetchPatient() {
       queryKey: ['patient', patientId],
       queryFn: async () => {
         const docRef = doc(db, 'patients', patientId);
-        const docSnap = await getDoc(docRef);
+        // Use getDocFromServer to bypass Firestore local cache
+        const docSnap = await getDocFromServer(docRef);
         if (!docSnap.exists()) return null;
         return docToPatient(docSnap as any);
       },
-      staleTime: 2 * 60 * 1000,
+      staleTime: STALE_TIME,
     });
   }, [queryClient]);
 }

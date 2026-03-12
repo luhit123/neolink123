@@ -58,9 +58,10 @@ export const VirtualizedPatientList: React.FC<VirtualizedPatientListProps> = mem
     return (
       <Virtuoso
         className="h-full w-full"
+        style={{ WebkitOverflowScrolling: 'touch' }}
         data={patients}
-        overscan={5}
-        increaseViewportBy={{ top: 200, bottom: 200 }}
+        overscan={10}
+        increaseViewportBy={{ top: 300, bottom: 300 }}
         itemContent={(index, patient) => (
           <SimplePatientRow
             key={patient.id}

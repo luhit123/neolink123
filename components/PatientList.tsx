@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Patient, Unit, UserRole, AdmissionType } from '../types';
 import { EditIcon, TrashIcon, EyeIcon, ArrowUpOnSquareIcon, ArrowUpIcon } from './common/Icons';
 import { getFormattedAge } from '../utils/ageCalculator';
+import { getCanonicalOutcome } from '../utils/analytics';
 
 interface PatientListProps {
   patients: Patient[];
@@ -136,11 +137,11 @@ const PatientList: React.FC<PatientListProps> = ({ patients, userRole, onEdit, o
               key={patient.id}
               onClick={() => onViewDetails(patient)}
               className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                patient.outcome === 'In Progress'
+                getCanonicalOutcome(patient) === 'In Progress'
                   ? 'bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200'
-                  : patient.outcome === 'Discharged'
+                  : getCanonicalOutcome(patient) === 'Discharged'
                   ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200'
-                  : patient.outcome === 'Deceased'
+                  : getCanonicalOutcome(patient) === 'Deceased'
                   ? 'bg-red-100 text-red-800 border border-red-300 hover:bg-red-200'
                   : 'bg-gray-100 text-gray-800 border border-gray-300 hover:bg-gray-200'
               }`}
@@ -172,7 +173,9 @@ const PatientList: React.FC<PatientListProps> = ({ patients, userRole, onEdit, o
             </tr>
           </thead>
           <tbody>
-            {filteredPatients.map((patient, index) => (
+            {filteredPatients.map((patient, index) => {
+              const canonicalOutcome = getCanonicalOutcome(patient);
+              return (
               <tr
                 key={patient.id}
                 className={`border-b border-gray-200 hover:bg-blue-50 transition-colors cursor-pointer ${
@@ -209,16 +212,34 @@ const PatientList: React.FC<PatientListProps> = ({ patients, userRole, onEdit, o
                   </span>
                 </td>
                 <td className="px-3 sm:px-4 py-3">
-                  <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                    patient.outcome === 'Discharged' ? 'bg-green-100 text-green-800' :
-                    patient.outcome === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                    patient.outcome === 'Step Down' ? 'bg-cyan-100 text-cyan-800' :
-                    patient.outcome === 'Referred' ? 'bg-yellow-100 text-yellow-800' :
-                    patient.outcome === 'Deceased' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {patient.outcome}
-                  </span>
+                  <div className="flex flex-col gap-1">
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold inline-block w-fit ${
+                      canonicalOutcome === 'Discharged' ? 'bg-green-100 text-green-800' :
+                      canonicalOutcome === 'In Progress' ? 'bg-blue-100 text-blue-800' :
+                      canonicalOutcome === 'Step Down' ? 'bg-amber-100 text-amber-800' :
+                      canonicalOutcome === 'Referred' ? 'bg-yellow-100 text-yellow-800' :
+                      canonicalOutcome === 'Deceased' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {canonicalOutcome}
+                    </span>
+                    {/* Show step down details */}
+                    {canonicalOutcome === 'Step Down' && patient.stepDownDate && (
+                      <div className="text-[10px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                        <div className="font-semibold">
+                          {new Date(patient.stepDownDate).toLocaleDateString()} {new Date(patient.stepDownDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        {patient.stepDownLocation && (
+                          <div className="text-amber-600">To: {patient.stepDownLocation}</div>
+                        )}
+                        {((patient as any).stepDownBy || patient.metadata?.lastUpdatedBy || patient.lastUpdatedByEmail) && (
+                          <div className="text-amber-600 truncate max-w-[120px]" title={(patient as any).stepDownBy || patient.metadata?.lastUpdatedBy || patient.lastUpdatedByEmail}>
+                            By: {(patient as any).stepDownBy || patient.metadata?.lastUpdatedBy || patient.lastUpdatedByEmail}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td className="px-3 sm:px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end space-x-1">
@@ -256,7 +277,8 @@ const PatientList: React.FC<PatientListProps> = ({ patients, userRole, onEdit, o
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         {filteredPatients.length === 0 && (

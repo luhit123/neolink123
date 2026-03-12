@@ -4,7 +4,7 @@
  * Provides smart data fetching, caching, and state management.
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Create a client with optimized settings
@@ -14,11 +14,15 @@ const queryClient = new QueryClient({
       // Don't refetch on window focus (can be annoying in medical apps)
       refetchOnWindowFocus: false,
 
-      // Data is considered fresh for 5 minutes
-      staleTime: 5 * 60 * 1000,
+      // IMPORTANT: Always refetch when component mounts to get fresh data
+      refetchOnMount: 'always',
 
-      // Keep data in cache for 30 minutes
-      gcTime: 30 * 60 * 1000,
+      // Data is considered fresh for 30 seconds (reduced from 5 minutes)
+      // This ensures users see recent changes after short delays
+      staleTime: 30 * 1000,
+
+      // Keep data in cache for 10 minutes
+      gcTime: 10 * 60 * 1000,
 
       // Retry failed requests 2 times
       retry: 2,
@@ -42,6 +46,13 @@ export { queryClient };
 
 // Provider component
 export const QueryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Clear all cached queries on page load/refresh to ensure fresh data
+  useEffect(() => {
+    // Invalidate all queries to force refetch with fresh server data
+    queryClient.invalidateQueries();
+    console.log('🔄 Query cache invalidated on page load');
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       {children}

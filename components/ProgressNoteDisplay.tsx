@@ -10,9 +10,12 @@ interface ProgressNoteDisplayProps {
 interface ExtendedProgressNoteDisplayProps extends ProgressNoteDisplayProps {
     noteIndex?: number;
     totalNotes?: number;
+    isAdmin?: boolean;
+    onEditNote?: (note: ProgressNote, index: number) => void;
+    onDeleteNote?: (note: ProgressNote, index: number) => void;
 }
 
-const ProgressNoteDisplay: React.FC<ExtendedProgressNoteDisplayProps> = ({ note, patient, noteIndex, totalNotes }) => {
+const ProgressNoteDisplay: React.FC<ExtendedProgressNoteDisplayProps> = ({ note, patient, noteIndex, totalNotes, isAdmin, onEditNote, onDeleteNote }) => {
     const hasVitals = note.vitals && Object.values(note.vitals).some(v => v);
     const hasMedications = note.medications && note.medications.length > 0;
 
@@ -579,16 +582,47 @@ const ProgressNoteDisplay: React.FC<ExtendedProgressNoteDisplayProps> = ({ note,
                                 </svg>
                                 Clinical Progress Note
                             </h4>
-                            <button
-                                onClick={handleDownload}
-                                className="no-print flex items-center gap-1.5 px-2 md:px-3 py-1 md:py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-xs font-semibold backdrop-blur-sm active:scale-95"
-                                title="Download/Print Note"
-                            >
-                                <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                                <span className="hidden sm:inline">Download</span>
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {/* Admin Edit/Delete Buttons */}
+                                {isAdmin && noteIndex !== undefined && (
+                                    <>
+                                        {onEditNote && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onEditNote(note, noteIndex); }}
+                                                className="no-print flex items-center gap-1.5 px-2 md:px-3 py-1 md:py-1.5 bg-amber-500/80 hover:bg-amber-500 text-white rounded-lg transition-all duration-200 text-xs font-semibold backdrop-blur-sm active:scale-95"
+                                                title="Edit Note (Admin)"
+                                            >
+                                                <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                </svg>
+                                                <span className="hidden sm:inline">Edit</span>
+                                            </button>
+                                        )}
+                                        {onDeleteNote && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onDeleteNote(note, noteIndex); }}
+                                                className="no-print flex items-center gap-1.5 px-2 md:px-3 py-1 md:py-1.5 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-all duration-200 text-xs font-semibold backdrop-blur-sm active:scale-95"
+                                                title="Delete Note (Admin)"
+                                            >
+                                                <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                                <span className="hidden sm:inline">Delete</span>
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+                                <button
+                                    onClick={handleDownload}
+                                    className="no-print flex items-center gap-1.5 px-2 md:px-3 py-1 md:py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-xs font-semibold backdrop-blur-sm active:scale-95"
+                                    title="Download/Print Note"
+                                >
+                                    <svg className="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    <span className="hidden sm:inline">Download</span>
+                                </button>
+                            </div>
                         </div>
 
                         {/* Single Continuous Note Content */}

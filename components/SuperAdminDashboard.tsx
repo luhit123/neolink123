@@ -70,6 +70,9 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
   // Dashboard access control
   const [selectedDashboards, setSelectedDashboards] = useState<Unit[]>([Unit.NICU, Unit.PICU]);
 
+  // Role editing state
+  const [editingRole, setEditingRole] = useState<{ userId: string; role: UserRole } | null>(null);
+
   // Credentials modal state
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [createdUserCredentials, setCreatedUserCredentials] = useState({
@@ -640,8 +643,37 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
     setManualUserPassword('');
     setSelectedDashboards([Unit.NICU, Unit.PICU]);
     setShowManualUserPassword(false);
+    setEditingRole(null);
     setSuccess('');
     setError('');
+  };
+
+  // Update user role
+  const handleUpdateUserRole = async (userId: string, newRole: UserRole) => {
+    try {
+      await updateDoc(doc(db, 'approved_users', userId), {
+        role: newRole,
+        updatedAt: new Date().toISOString(),
+        updatedBy: userEmail
+      });
+
+      // Also update users collection if UID exists
+      const userToUpdate = institutionUsers.find(u => u.id === userId);
+      if (userToUpdate?.uid) {
+        await updateDoc(doc(db, 'users', userToUpdate.uid), {
+          role: newRole,
+          updatedAt: new Date().toISOString()
+        }).catch(err => console.log('User doc update warn:', err));
+      }
+
+      setSuccess(`Role updated to ${newRole} successfully!`);
+      setEditingRole(null);
+      if (managingUsersFor) fetchInstitutionUsers(managingUsersFor.id);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (e: any) {
+      console.error('Error updating role:', e);
+      setError('Failed to update role: ' + e.message);
+    }
   };
 
 
@@ -1900,8 +1932,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                           .filter(r => r.status !== 'pending')
                           .map(request => (
                             <div key={request.id} className={`border-2 rounded-xl p-4 ${request.status === 'approved'
-                                ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
-                                : 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+                              ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                              : 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
                               }`}>
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex-1">
@@ -2125,8 +2157,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                       <label
                         key={unit}
                         className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${selectedDashboards.includes(unit)
-                            ? 'bg-medical-teal text-white shadow-md'
-                            : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600'
+                          ? 'bg-medical-teal text-white shadow-md'
+                          : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600'
                           }`}
                       >
                         <input
@@ -2195,9 +2227,49 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                           <div className="flex-1">
                             <p className="font-semibold text-slate-900 dark:text-white">{user.email}</p>
                             <div className="flex items-center gap-2 mt-1">
-                              <span className="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-500">
-                                {user.role}
-                              </span>
+                              {editingRole?.userId === user.id ? (
+                                <>
+                                  <select
+                                    value={editingRole.role}
+                                    onChange={(e) => setEditingRole({ userId: user.id, role: e.target.value as UserRole })}
+                                    className="text-xs px-2 py-1 rounded border border-sky-400 bg-white dark:bg-slate-600 text-slate-700 dark:text-white focus:ring-2 focus:ring-sky-500"
+                                  >
+                                    <option value={UserRole.Admin}>Admin</option>
+                                    <option value={UserRole.Doctor}>Doctor</option>
+                                    <option value={UserRole.Nurse}>Nurse</option>
+                                  </select>
+                                  <button
+                                    onClick={() => handleUpdateUserRole(user.id, editingRole.role)}
+                                    className="px-2 py-1 bg-green-500 hover:bg-green-600 text-white rounded text-xs font-medium"
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingRole(null)}
+                                    className="px-2 py-1 bg-slate-400 hover:bg-slate-500 text-white rounded text-xs font-medium"
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className={`text-xs px-2 py-0.5 rounded border ${user.role === UserRole.Admin
+                                      ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700'
+                                      : user.role === UserRole.Doctor
+                                        ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-700'
+                                        : 'bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-500'
+                                    }`}>
+                                    {user.role}
+                                  </span>
+                                  <button
+                                    onClick={() => setEditingRole({ userId: user.id, role: user.role })}
+                                    className="text-xs text-sky-600 dark:text-sky-400 hover:underline"
+                                    title="Change role"
+                                  >
+                                    Change
+                                  </button>
+                                </>
+                              )}
                               {user.displayName && <span className="text-xs text-slate-500">({user.displayName})</span>}
                             </div>
                             {user.userID && user.password && (

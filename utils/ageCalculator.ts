@@ -1,72 +1,31 @@
 import { AgeUnit, Unit } from '../types';
 
 /**
- * Calculate age from birth date and return the appropriate age and unit
- * Automatically selects the most appropriate unit based on the duration
- * @param dateOfBirth - ISO string of birth date
- * @param forceUnit - If specified, always return age in this unit (used for NICU/SNCU which need days)
+ * Calculate age from birth date and time - ALWAYS returns age in DAYS
+ * @param dateOfBirth - ISO string of birth date and time
+ * @param forceUnit - Ignored, always returns days
  */
 export function calculateAgeFromBirthDate(dateOfBirth: string, forceUnit?: AgeUnit): {
   age: number;
   ageUnit: AgeUnit;
 } {
   if (!dateOfBirth) {
-    return { age: 0, ageUnit: forceUnit || AgeUnit.Days };
+    return { age: 0, ageUnit: AgeUnit.Days };
   }
 
   const birthDate = new Date(dateOfBirth);
   const now = new Date();
 
-  // Calculate difference in milliseconds
+  // Calculate difference in milliseconds (includes time component)
   const diffMs = now.getTime() - birthDate.getTime();
+
+  // Calculate days - floor to get completed days
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  // If force unit is specified (for NICU/SNCU), always return days
-  if (forceUnit === AgeUnit.Days) {
-    return {
-      age: diffDays,
-      ageUnit: AgeUnit.Days
-    };
-  }
-
-  // Less than 7 days old -> use Days
-  if (diffDays < 7) {
-    return {
-      age: diffDays,
-      ageUnit: AgeUnit.Days
-    };
-  }
-
-  // Less than 4 weeks old -> use Weeks
-  if (diffDays < 28) {
-    const weeks = Math.floor(diffDays / 7);
-    return {
-      age: weeks,
-      ageUnit: AgeUnit.Weeks
-    };
-  }
-
-  // Less than 24 months old -> use Months
-  const diffMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + (now.getMonth() - birthDate.getMonth());
-  if (diffMonths < 24) {
-    return {
-      age: diffMonths,
-      ageUnit: AgeUnit.Months
-    };
-  }
-
-  // 24 months or older -> use Years
-  let years = now.getFullYear() - birthDate.getFullYear();
-  const monthDiff = now.getMonth() - birthDate.getMonth();
-
-  // Adjust if birthday hasn't occurred yet this year
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) {
-    years--;
-  }
-
+  // Always return age in days
   return {
-    age: years,
-    ageUnit: AgeUnit.Years
+    age: Math.max(0, diffDays), // Ensure non-negative
+    ageUnit: AgeUnit.Days
   };
 }
 
@@ -90,89 +49,58 @@ export function shouldUseAgeInDays(unit: Unit): boolean {
 }
 
 /**
- * Calculate age at a specific date from birth date
- * @param dateOfBirth - ISO string of birth date
- * @param targetDate - ISO string of target date
- * @param forceUnit - If specified, always return age in this unit (used for NICU/SNCU which need days)
+ * Calculate age at a specific date from birth date - ALWAYS returns age in DAYS
+ * @param dateOfBirth - ISO string of birth date and time
+ * @param targetDate - ISO string of target date and time
+ * @param forceUnit - Ignored, always returns days
  */
 export function calculateAgeAtDate(dateOfBirth: string, targetDate: string, forceUnit?: AgeUnit): {
   age: number;
   ageUnit: AgeUnit;
 } {
   if (!dateOfBirth || !targetDate) {
-    return { age: 0, ageUnit: forceUnit || AgeUnit.Days };
+    return { age: 0, ageUnit: AgeUnit.Days };
   }
 
   const birthDate = new Date(dateOfBirth);
   const target = new Date(targetDate);
 
-  // Calculate difference in milliseconds
+  // Calculate difference in milliseconds (includes time component)
   const diffMs = target.getTime() - birthDate.getTime();
+
+  // Calculate days - floor to get completed days
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  // If force unit is specified (for NICU/SNCU), always return days
-  if (forceUnit === AgeUnit.Days) {
-    return {
-      age: diffDays,
-      ageUnit: AgeUnit.Days
-    };
-  }
-
-  // Less than 7 days old -> use Days
-  if (diffDays < 7) {
-    return {
-      age: diffDays,
-      ageUnit: AgeUnit.Days
-    };
-  }
-
-  // Less than 4 weeks old -> use Weeks
-  if (diffDays < 28) {
-    const weeks = Math.floor(diffDays / 7);
-    return {
-      age: weeks,
-      ageUnit: AgeUnit.Weeks
-    };
-  }
-
-  // Less than 24 months old -> use Months
-  const diffMonths = (target.getFullYear() - birthDate.getFullYear()) * 12 + (target.getMonth() - birthDate.getMonth());
-  if (diffMonths < 24) {
-    return {
-      age: diffMonths,
-      ageUnit: AgeUnit.Months
-    };
-  }
-
-  // 24 months or older -> use Years
-  let years = target.getFullYear() - birthDate.getFullYear();
-  const monthDiff = target.getMonth() - birthDate.getMonth();
-
-  // Adjust if birthday hasn't occurred yet this year
-  if (monthDiff < 0 || (monthDiff === 0 && target.getDate() < birthDate.getDate())) {
-    years--;
-  }
-
+  // Always return age in days
   return {
-    age: years,
-    ageUnit: AgeUnit.Years
+    age: Math.max(0, diffDays), // Ensure non-negative
+    ageUnit: AgeUnit.Days
   };
 }
 
 /**
  * Get formatted age display string from date of birth
- * Calculates current age dynamically
+ * Calculates current age dynamically - ALWAYS in DAYS
  */
 export function getFormattedAge(dateOfBirth: string | undefined, fallbackAge?: number, fallbackUnit?: AgeUnit): string {
-  // If we have date of birth, calculate current age dynamically
+  // If we have date of birth, calculate current age dynamically in days
   if (dateOfBirth) {
-    const { age, ageUnit } = calculateAgeFromBirthDate(dateOfBirth);
-    return `${age} ${ageUnit}`;
+    const { age } = calculateAgeFromBirthDate(dateOfBirth);
+    return `${age} Days`;
   }
 
-  // Fall back to stored age if no DOB
+  // Fall back to stored age if no DOB - convert to days if possible
   if (fallbackAge !== undefined && fallbackUnit) {
-    return `${fallbackAge} ${fallbackUnit}`;
+    // Convert to days for consistency
+    let ageInDays = fallbackAge;
+    if (fallbackUnit === AgeUnit.Weeks) {
+      ageInDays = fallbackAge * 7;
+    } else if (fallbackUnit === AgeUnit.Months) {
+      ageInDays = fallbackAge * 30; // Approximate
+    } else if (fallbackUnit === AgeUnit.Years) {
+      ageInDays = fallbackAge * 365; // Approximate
+    }
+    return `${ageInDays} Days`;
   }
 
   return 'Unknown';
@@ -180,16 +108,26 @@ export function getFormattedAge(dateOfBirth: string | undefined, fallbackAge?: n
 
 /**
  * Get age value and unit from date of birth or fallback
- * Returns current calculated age if DOB available
+ * Returns current calculated age - ALWAYS in DAYS
  */
 export function getCurrentAge(dateOfBirth: string | undefined, fallbackAge?: number, fallbackUnit?: AgeUnit): { age: number; ageUnit: AgeUnit } {
   if (dateOfBirth) {
     return calculateAgeFromBirthDate(dateOfBirth);
   }
 
+  // Convert fallback to days for consistency
+  let ageInDays = fallbackAge || 0;
+  if (fallbackUnit === AgeUnit.Weeks) {
+    ageInDays = (fallbackAge || 0) * 7;
+  } else if (fallbackUnit === AgeUnit.Months) {
+    ageInDays = (fallbackAge || 0) * 30; // Approximate
+  } else if (fallbackUnit === AgeUnit.Years) {
+    ageInDays = (fallbackAge || 0) * 365; // Approximate
+  }
+
   return {
-    age: fallbackAge || 0,
-    ageUnit: fallbackUnit || AgeUnit.Days
+    age: ageInDays,
+    ageUnit: AgeUnit.Days
   };
 }
 

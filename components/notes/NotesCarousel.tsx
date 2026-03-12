@@ -9,6 +9,9 @@ interface NotesCarouselProps {
   patient?: Patient;
   currentIndex: number;
   onIndexChange: (index: number) => void;
+  isAdmin?: boolean;
+  onEditNote?: (note: ProgressNote, index: number) => void;
+  onDeleteNote?: (note: ProgressNote, index: number) => void;
   className?: string;
 }
 
@@ -17,6 +20,9 @@ const NotesCarousel: React.FC<NotesCarouselProps> = ({
   patient,
   currentIndex,
   onIndexChange,
+  isAdmin,
+  onEditNote,
+  onDeleteNote,
   className = '',
 }) => {
   const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
@@ -116,6 +122,9 @@ const NotesCarousel: React.FC<NotesCarouselProps> = ({
               patient={patient}
               noteIndex={currentIndex}
               totalNotes={notes.length}
+              isAdmin={isAdmin}
+              onEditNote={onEditNote}
+              onDeleteNote={onDeleteNote}
             />
           </motion.div>
         </AnimatePresence>

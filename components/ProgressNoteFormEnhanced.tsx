@@ -19,6 +19,7 @@ interface ProgressNoteFormProps {
     patientAge?: number;
     patientUnit?: string;
     patient?: Patient;
+    isEditing?: boolean; // Flag to indicate editing mode (Admin only)
 }
 
 /**

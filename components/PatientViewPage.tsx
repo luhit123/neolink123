@@ -7,6 +7,7 @@ import MedicationManagement from './MedicationManagement';
 import DischargeSummaryModal from './DischargeSummaryModal';
 import { getFormattedAge } from '../utils/ageCalculator';
 import { useBackgroundSave } from '../contexts/BackgroundSaveContext';
+import { getCanonicalOutcome } from '../utils/analytics';
 
 interface PatientViewPageProps {
   patient: Patient;
@@ -31,11 +32,20 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'meds' | 'ai'>('overview');
   const [localPatient, setLocalPatient] = useState(patient);
+  const canonicalOutcome = getCanonicalOutcome(localPatient);
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [showDischargeSummary, setShowDischargeSummary] = useState(false);
   const [summary, setSummary] = useState('');
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
+  const [editingNote, setEditingNote] = useState<ProgressNote | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteNoteIndex, setDeleteNoteIndex] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Check if user is admin or superadmin
+  const isAdmin = userRole?.toLowerCase() === 'admin' || userRole?.toLowerCase() === 'superadmin';
 
   // Ref to track latest patient state (avoids race conditions)
   const latestPatientRef = useRef(localPatient);
@@ -101,6 +111,64 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
     updatePatientState(updatedPatient);
     onPatientUpdate?.(updatedPatient);
   };
+
+  // Handle edit note (Admin only)
+  const handleEditNote = useCallback((note: ProgressNote, index: number) => {
+    if (!isAdmin) return;
+    // Get the actual index in the original array (notes are sorted descending in the navigator)
+    const sortedNotes = [...(localPatient.progressNotes || [])].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const originalIndex = localPatient.progressNotes?.findIndex(n => n.date === sortedNotes[index].date && n.note === sortedNotes[index].note);
+    setEditingNoteIndex(originalIndex ?? null);
+    setEditingNote(sortedNotes[index]);
+    setShowNoteForm(true);
+  }, [isAdmin, localPatient.progressNotes]);
+
+  // Handle delete note confirmation (Admin only)
+  const handleDeleteNoteConfirm = useCallback((note: ProgressNote, index: number) => {
+    if (!isAdmin) return;
+    // Get the actual index in the original array
+    const sortedNotes = [...(localPatient.progressNotes || [])].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const originalIndex = localPatient.progressNotes?.findIndex(n => n.date === sortedNotes[index].date && n.note === sortedNotes[index].note);
+    setDeleteNoteIndex(originalIndex ?? null);
+    setShowDeleteConfirm(true);
+  }, [isAdmin, localPatient.progressNotes]);
+
+  // Handle actual delete
+  const handleDeleteNote = useCallback(async () => {
+    if (!isAdmin || deleteNoteIndex === null) return;
+    setIsDeleting(true);
+    try {
+      const updatedNotes = [...(localPatient.progressNotes || [])];
+      updatedNotes.splice(deleteNoteIndex, 1);
+      const updatedPatient = { ...localPatient, progressNotes: updatedNotes };
+      updatePatientState(updatedPatient);
+      await onPatientUpdate?.(updatedPatient);
+      setShowDeleteConfirm(false);
+      setDeleteNoteIndex(null);
+    } catch (err) {
+      console.error('Delete note failed:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [isAdmin, deleteNoteIndex, localPatient, onPatientUpdate]);
+
+  // Handle update existing note
+  const handleUpdateNote = useCallback((updatedNote: ProgressNote) => {
+    if (editingNoteIndex === null) {
+      // Adding new note
+      handleSaveNote(updatedNote);
+    } else {
+      // Editing existing note
+      const updatedNotes = [...(localPatient.progressNotes || [])];
+      updatedNotes[editingNoteIndex] = updatedNote;
+      const updatedPatient = { ...localPatient, progressNotes: updatedNotes };
+      updatePatientState(updatedPatient);
+      onPatientUpdate?.(updatedPatient);
+    }
+    setShowNoteForm(false);
+    setEditingNote(null);
+    setEditingNoteIndex(null);
+  }, [editingNoteIndex, localPatient, onPatientUpdate]);
 
   const getOutcomeBadge = (outcome: string) => {
     const styles: Record<string, string> = {
@@ -495,7 +563,7 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2 mt-2">
                   <DataItem label="Step Down Date" value={formatDateTime(localPatient.stepDownDate)} />
                   <DataItem label="From Unit" value={localPatient.stepDownFrom ? getUnitShort(localPatient.stepDownFrom) : null} />
-                  {localPatient.isStepDown && (
+                  {localPatient.isStepDown && canonicalOutcome === 'Step Down' && (
                     <div className="col-span-2 sm:col-span-1">
                       <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-600 text-white text-xs font-medium rounded-full">
                         <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
@@ -573,7 +641,10 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
             notes={localPatient.progressNotes || []}
             patient={localPatient}
             canEdit={canEdit}
-            onAddNote={() => setShowNoteForm(true)}
+            isAdmin={isAdmin}
+            onAddNote={() => { setEditingNote(null); setEditingNoteIndex(null); setShowNoteForm(true); }}
+            onEditNote={handleEditNote}
+            onDeleteNote={handleDeleteNoteConfirm}
           />
         )}
 
@@ -663,13 +734,13 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 overflow-y-auto">
           <div className="min-h-full flex items-start sm:items-center justify-center p-4">
             <div className="bg-white w-full sm:max-w-2xl rounded-2xl shadow-2xl flex flex-col my-4">
-              <div className="px-4 py-3 bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white flex items-center justify-between flex-shrink-0 rounded-t-2xl">
+              <div className={`px-4 py-3 ${editingNote ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600'} text-white flex items-center justify-between flex-shrink-0 rounded-t-2xl`}>
                 <h3 className="font-bold flex items-center gap-2">
-                  <span className="text-xl">🎙️</span>
-                  <span>Add Note</span>
+                  <span className="text-xl">{editingNote ? '✏️' : '🎙️'}</span>
+                  <span>{editingNote ? 'Edit Note' : 'Add Note'}</span>
                   <span className="text-lg">✨</span>
                 </h3>
-                <button onClick={() => setShowNoteForm(false)} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors">
+                <button onClick={() => { setShowNoteForm(false); setEditingNote(null); setEditingNoteIndex(null); }} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -677,9 +748,9 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
               </div>
               <div className="p-4 pb-6">
                 <ProgressNoteForm
-                  onSave={handleSaveNote}
-                  onCancel={() => setShowNoteForm(false)}
-                  onBackgroundSave={handleBackgroundSave}
+                  onSave={editingNote ? handleUpdateNote : handleSaveNote}
+                  onCancel={() => { setShowNoteForm(false); setEditingNote(null); setEditingNoteIndex(null); }}
+                  onBackgroundSave={editingNote ? undefined : handleBackgroundSave}
                   onUpdatePatient={(updatedPatient) => {
                     // Use updatePatientState to sync ref immediately (prevents race condition)
                     updatePatientState(updatedPatient);
@@ -687,10 +758,11 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
                       onPatientUpdate(updatedPatient);
                     }
                   }}
-                  lastNote={localPatient.progressNotes?.length > 0 ? localPatient.progressNotes[localPatient.progressNotes.length - 1] : undefined}
+                  lastNote={editingNote || (localPatient.progressNotes?.length > 0 ? localPatient.progressNotes[localPatient.progressNotes.length - 1] : undefined)}
                   userEmail={userEmail}
                   userName={userName || userEmail}
                   patient={localPatient}
+                  isEditing={!!editingNote}
                 />
               </div>
             </div>
@@ -707,6 +779,66 @@ const PatientViewPage: React.FC<PatientViewPageProps> = ({
           userRole={userRole || 'Doctor'}
           onPatientUpdate={onPatientUpdate}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[70] p-4"
+          onClick={() => { setShowDeleteConfirm(false); setDeleteNoteIndex(null); }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border-2 border-red-300 max-w-md w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-xl">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-white">Delete Clinical Note</h3>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-slate-700 mb-6">
+                Are you sure you want to delete this clinical note? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowDeleteConfirm(false); setDeleteNoteIndex(null); }}
+                  className="flex-1 px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-semibold transition-all"
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteNote}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete Note
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

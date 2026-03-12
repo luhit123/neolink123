@@ -11,7 +11,10 @@ interface ClinicalNotesNavigatorProps {
   notes: ProgressNote[];
   patient?: Patient;
   canEdit?: boolean;
+  isAdmin?: boolean;
   onAddNote?: () => void;
+  onEditNote?: (note: ProgressNote, index: number) => void;
+  onDeleteNote?: (note: ProgressNote, index: number) => void;
   className?: string;
 }
 
@@ -23,7 +26,10 @@ const ClinicalNotesNavigator: React.FC<ClinicalNotesNavigatorProps> = ({
   notes,
   patient,
   canEdit,
+  isAdmin,
   onAddNote,
+  onEditNote,
+  onDeleteNote,
   className = '',
 }) => {
   // Sort notes by date descending (newest first)
@@ -200,9 +206,18 @@ const ClinicalNotesNavigator: React.FC<ClinicalNotesNavigatorProps> = ({
           patient={patient}
           currentIndex={currentIndex}
           onIndexChange={setCurrentIndex}
+          isAdmin={isAdmin}
+          onEditNote={onEditNote}
+          onDeleteNote={onDeleteNote}
         />
       ) : (
-        <NotesScrollView notes={filteredNotes} patient={patient} />
+        <NotesScrollView
+          notes={filteredNotes}
+          patient={patient}
+          isAdmin={isAdmin}
+          onEditNote={onEditNote}
+          onDeleteNote={onDeleteNote}
+        />
       )}
     </div>
   );

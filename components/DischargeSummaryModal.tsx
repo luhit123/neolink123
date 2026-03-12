@@ -78,6 +78,25 @@ const DischargeSummaryModal: React.FC<DischargeSummaryModalProps> = ({
   const [damaWitnessName, setDamaWitnessName] = useState('');
   const [damaAcknowledgement, setDamaAcknowledgement] = useState(false);
 
+  // Discharge Date & Time (defaults to current browser time)
+  const getDefaultDateTime = () => {
+    const now = new Date();
+    const date = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const time = now.toTimeString().slice(0, 5); // HH:MM
+    return { date, time };
+  };
+  const defaultDateTime = getDefaultDateTime();
+  const [dischargeDate, setDischargeDate] = useState(
+    patient.finalDischargeDate
+      ? new Date(patient.finalDischargeDate).toISOString().split('T')[0]
+      : defaultDateTime.date
+  );
+  const [dischargeTime, setDischargeTime] = useState(
+    patient.finalDischargeDate
+      ? new Date(patient.finalDischargeDate).toTimeString().slice(0, 5)
+      : defaultDateTime.time
+  );
+
   // Clinical Summary
   const [clinicalSummary, setClinicalSummary] = useState('');
   const [finalDiagnosis, setFinalDiagnosis] = useState('');
@@ -332,18 +351,39 @@ const DischargeSummaryModal: React.FC<DischargeSummaryModalProps> = ({
     try {
       const summary = buildDischargeSummary();
       const now = new Date().toISOString();
+      // Combine selected discharge date and time into ISO string
+      const selectedDischargeDateTime = new Date(`${dischargeDate}T${dischargeTime}:00`).toISOString();
       const patientRef = doc(db, 'patients', patient.id);
       await updateDoc(patientRef, {
+        outcome: 'Discharged',
+        isStepDown: false,
         savedDischargeSummary: summary,
         dischargeSavedAt: now,
-        dischargeSavedBy: userName
+        dischargeSavedBy: userName,
+        // Update discharge dates with user-selected date/time
+        finalDischargeDate: selectedDischargeDateTime,
+        releaseDate: selectedDischargeDateTime,
+        metadata: {
+          ...patient.metadata,
+          lastUpdatedBy: userName || 'unknown',
+          lastUpdatedAt: now
+        }
       });
       if (onPatientUpdate) {
         onPatientUpdate({
           ...patient,
+          outcome: 'Discharged',
+          isStepDown: false,
           savedDischargeSummary: summary,
           dischargeSavedAt: now,
-          dischargeSavedBy: userName
+          dischargeSavedBy: userName,
+          finalDischargeDate: selectedDischargeDateTime,
+          releaseDate: selectedDischargeDateTime,
+          metadata: {
+            ...patient.metadata,
+            lastUpdatedBy: userName || 'unknown',
+            lastUpdatedAt: now
+          }
         });
       }
       setIsSaved(true);
@@ -423,6 +463,9 @@ const DischargeSummaryModal: React.FC<DischargeSummaryModalProps> = ({
       ];
     }
 
+    // Create discharge date/time from user selection
+    const selectedDischargeDateTime = new Date(`${dischargeDate}T${dischargeTime}:00`).toISOString();
+
     return createDischargeSummaryFromPatient(patient, {
       hospitalAddress: institutionAddress,
       dischargeType,
@@ -451,7 +494,10 @@ const DischargeSummaryModal: React.FC<DischargeSummaryModalProps> = ({
       warningSignsToWatch: finalWarnings,
       hospitalHelpline,
       preparedBy: userName,
-      preparedByRole: userRole
+      preparedByRole: userRole,
+      // Override discharge date/time with user-selected values
+      dischargeDate: selectedDischargeDateTime,
+      dischargeTime: dischargeTime
     });
   };
 
@@ -641,43 +687,72 @@ const DischargeSummaryModal: React.FC<DischargeSummaryModalProps> = ({
             </div>
           </div>
 
-          {/* Discharge Type - Always visible, compact */}
-          <div className={`flex-shrink-0 px-3 py-2 border-b flex flex-wrap items-center gap-2 ${
+          {/* Discharge Type & Date/Time - Always visible, compact */}
+          <div className={`flex-shrink-0 px-3 py-2 border-b ${
             dischargeType === DischargeType.Normal ? 'bg-emerald-50 border-emerald-200' :
             dischargeType === DischargeType.DOR ? 'bg-amber-50 border-amber-200' :
             'bg-red-50 border-red-200'
           }`}>
-            <span className="text-xs font-semibold text-slate-600">Type:</span>
-            <div className="flex gap-1">
-              {[
-                { type: DischargeType.Normal, label: 'Normal', color: 'emerald' },
-                { type: DischargeType.DOR, label: 'DOR', color: 'amber' },
-                { type: DischargeType.DAMA, label: 'DAMA', color: 'red' },
-                { type: DischargeType.LAMA, label: 'LAMA', color: 'red' }
-              ].map(({ type, label, color }) => (
-                <button
-                  key={type}
-                  onClick={() => setDischargeType(type)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                    dischargeType === type
-                      ? color === 'emerald' ? 'bg-emerald-500 text-white' :
-                        color === 'amber' ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
-                      : 'bg-white text-slate-600 border border-slate-200'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-xs font-semibold text-slate-600">Type:</span>
+              <div className="flex gap-1">
+                {[
+                  { type: DischargeType.Normal, label: 'Normal', color: 'emerald' },
+                  { type: DischargeType.DOR, label: 'DOR', color: 'amber' },
+                  { type: DischargeType.DAMA, label: 'DAMA', color: 'red' },
+                  { type: DischargeType.LAMA, label: 'LAMA', color: 'red' }
+                ].map(({ type, label, color }) => (
+                  <button
+                    key={type}
+                    onClick={() => setDischargeType(type)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      dischargeType === type
+                        ? color === 'emerald' ? 'bg-emerald-500 text-white' :
+                          color === 'amber' ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
+                        : 'bg-white text-slate-600 border border-slate-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {(dischargeType !== DischargeType.Normal) && (
+                <input
+                  type="text"
+                  value={damaReason}
+                  onChange={(e) => setDamaReason(e.target.value)}
+                  placeholder="Reason..."
+                  className="flex-1 min-w-[100px] px-2 py-1 text-xs border border-slate-200 rounded-lg"
+                />
+              )}
             </div>
-            {(dischargeType !== DischargeType.Normal) && (
+            {/* Discharge Date & Time */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-slate-600">📅 Date & Time:</span>
               <input
-                type="text"
-                value={damaReason}
-                onChange={(e) => setDamaReason(e.target.value)}
-                placeholder="Reason..."
-                className="flex-1 min-w-[100px] px-2 py-1 text-xs border border-slate-200 rounded-lg"
+                type="date"
+                value={dischargeDate}
+                onChange={(e) => setDischargeDate(e.target.value)}
+                className="px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sky-400"
               />
-            )}
+              <input
+                type="time"
+                value={dischargeTime}
+                onChange={(e) => setDischargeTime(e.target.value)}
+                className="px-2 py-1 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sky-400"
+              />
+              <button
+                onClick={() => {
+                  const { date, time } = getDefaultDateTime();
+                  setDischargeDate(date);
+                  setDischargeTime(time);
+                }}
+                className="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
+                title="Reset to current time"
+              >
+                Now
+              </button>
+            </div>
           </div>
 
           {/* Content */}

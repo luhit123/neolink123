@@ -1,7 +1,16 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Patient, Unit } from '../types';
+import { Patient, Unit, ObservationPatient, ObservationOutcome } from '../types';
+import {
+  getCanonicalAdmissionType,
+  getCanonicalOutcome,
+  getPatientAdmissionDate,
+  isPatientAdmittedWithinRange,
+  matchesAdmissionTypeFilter,
+  parseAnalyticsDate,
+  toAnalyticsPatients,
+} from '../utils/analytics';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import {
@@ -30,7 +39,10 @@ import {
   IconBed,
   IconTrendingUp,
   IconAlertTriangle,
-  IconCheck
+  IconCheck,
+  IconCopy,
+  IconClipboard,
+  IconSun
 } from '@tabler/icons-react';
 
 interface AIReportsPageProps {
@@ -46,6 +58,7 @@ type ReportPeriod = 'monthly' | 'quarterly' | 'yearly' | 'custom';
 
 type ReportCategory =
   | 'comprehensive'
+  | 'dailyUpdate'
   | 'admissions'
   | 'deaths'
   | 'referred'
@@ -66,6 +79,15 @@ interface ReportTypeInfo {
 
 // Report type definitions
 const REPORT_TYPES: ReportTypeInfo[] = [
+  {
+    id: 'dailyUpdate',
+    title: 'Daily Update',
+    subtitle: 'Quick copyable summary for WhatsApp/SMS',
+    icon: <IconSun size={28} />,
+    color: 'text-amber-400',
+    bgColor: 'bg-gradient-to-br from-amber-500/20 to-orange-500/20',
+    borderColor: 'border-amber-500/50'
+  },
   {
     id: 'comprehensive',
     title: 'Comprehensive Report',
@@ -140,6 +162,9 @@ const REPORT_TYPES: ReportTypeInfo[] = [
   }
 ];
 
+const PDF_UNIT_LABEL = 'Neonatal Intensive Care Unit';
+const PDF_INSTITUTION_LABEL = 'Nalbari Medical College and Hospital';
+
 // Helper functions
 const getGestationalAgeCategory = (ga: number | undefined): string => {
   if (!ga) return 'Unknown';
@@ -162,6 +187,11 @@ const getDaysBetween = (start: string, end: string): number => {
   const startDate = new Date(start);
   const endDate = new Date(end);
   return Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+// Comprehensive helper for parsing dates safely from various formats
+const parseSafeDate = (dateStr: any): Date | null => {
+  return parseAnalyticsDate(dateStr);
 };
 
 const getHoursBetween = (start: string, end: string): number => {
@@ -203,8 +233,50 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
   const [selectedUnits, setSelectedUnits] = useState<Unit[]>([selectedUnit]);
   const [nicuFilter, setNicuFilter] = useState<'all' | 'inborn' | 'outborn'>('all');
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [observationPatients, setObservationPatients] = useState<ObservationPatient[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [shiftStartTime, setShiftStartTime] = useState<string | null>(null); // Start as null to detect loading
+  const [showCopyModal, setShowCopyModal] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // Daily Update Multi-Step Flow
+  const [dailyUpdateStep, setDailyUpdateStep] = useState<'type' | 'shift' | 'report'>('type');
+  const [dailyUpdateType, setDailyUpdateType] = useState<'inborn' | 'outborn' | 'all'>('all');
+  const [dailyUpdateShift, setDailyUpdateShift] = useState<'morning' | 'afternoon' | 'night' | 'current' | 'full24'>('current');
+  const [showPatientDetails, setShowPatientDetails] = useState<boolean>(false); // Toggle for patient-level details in reports - default OFF
+
+  // Shift time configurations (can be customized by admin in future)
+  const SHIFT_OPTIONS = [
+    { id: 'morning', label: 'Morning Shift', time: '8:00 AM - 2:00 PM', icon: '🌅', startHour: 8, endHour: 14, color: 'from-amber-400 to-orange-500' },
+    { id: 'afternoon', label: 'Afternoon Shift', time: '2:00 PM - 8:00 PM', icon: '☀️', startHour: 14, endHour: 20, color: 'from-blue-400 to-cyan-500' },
+    { id: 'night', label: 'Night Shift', time: '8:00 PM - 8:00 AM', icon: '🌙', startHour: 20, endHour: 8, color: 'from-indigo-500 to-purple-600' },
+    { id: 'current', label: 'Current Shift', time: 'Based on current time', icon: '⏰', startHour: -1, endHour: -1, color: 'from-emerald-400 to-teal-500' },
+    { id: 'full24', label: 'Full 24 Hours', time: 'Last 24 hours', icon: '📅', startHour: -2, endHour: -2, color: 'from-slate-500 to-slate-700' },
+  ] as const;
+
+  // Load institution shift start time
+  useEffect(() => {
+    const loadShiftTime = async () => {
+      if (!institutionId) return;
+      try {
+        const institutionDoc = await getDoc(doc(db, 'institutions', institutionId));
+        if (institutionDoc.exists()) {
+          const data = institutionDoc.data();
+          if (data.shiftStartTime) {
+            setShiftStartTime(data.shiftStartTime);
+          } else {
+            setShiftStartTime('08:00'); // Fallback
+          }
+        } else {
+          setShiftStartTime('08:00'); // Fallback
+        }
+      } catch (err) {
+        console.error('Error loading shift time:', err);
+      }
+    };
+    loadShiftTime();
+  }, [institutionId]);
 
   // Load patients from Firestore
   const loadPatients = async () => {
@@ -215,6 +287,15 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Patient));
   };
 
+  // Load observation patients from Firestore
+  const loadObservationPatients = async () => {
+    if (!institutionId) return [];
+    const obsRef = collection(db, 'observationPatients');
+    const q = query(obsRef, where('institutionId', '==', institutionId));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ObservationPatient));
+  };
+
   // Get date range based on report period
   const getDateRange = () => {
     const now = new Date();
@@ -222,49 +303,70 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
 
     if (reportPeriod === 'monthly') {
       const [year, month] = selectedMonth.split('-').map(Number);
-      startDate = new Date(year, month - 1, 1);
-      endDate = new Date(year, month, 0);
+      startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+      endDate = new Date(year, month, 0, 23, 59, 59, 999);
     } else if (reportPeriod === 'quarterly') {
       const [year, q] = selectedQuarter.split('-Q');
       const quarter = parseInt(q);
-      startDate = new Date(parseInt(year), (quarter - 1) * 3, 1);
-      endDate = new Date(parseInt(year), quarter * 3, 0);
+      startDate = new Date(parseInt(year), (quarter - 1) * 3, 1, 0, 0, 0, 0);
+      endDate = new Date(parseInt(year), quarter * 3, 0, 23, 59, 59, 999);
     } else if (reportPeriod === 'yearly') {
-      startDate = new Date(selectedYear, 0, 1);
-      endDate = new Date(selectedYear, 11, 31);
+      startDate = new Date(selectedYear, 0, 1, 0, 0, 0, 0);
+      endDate = new Date(selectedYear, 11, 31, 23, 59, 59, 999);
     } else {
-      startDate = customStartDate ? new Date(customStartDate) : new Date(now.getFullYear(), 0, 1);
-      endDate = customEndDate ? new Date(customEndDate) : now;
+      startDate = customStartDate
+        ? new Date(new Date(customStartDate).setHours(0, 0, 0, 0))
+        : new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+      endDate = customEndDate
+        ? new Date(new Date(customEndDate).setHours(23, 59, 59, 999))
+        : now;
     }
     return { startDate, endDate };
+  };
+
+  const normalizedPatients = useMemo(() => toAnalyticsPatients(patients), [patients]);
+
+  const isKnownNicuAdmissionRecord = (record: { unit?: Unit; admissionType?: any; nicuAdmissionType?: any }) => {
+    if (record.unit !== Unit.NICU && record.unit !== Unit.SNCU) return true;
+    return getCanonicalAdmissionType(record as any) !== 'Unknown';
   };
 
   // Filter patients
   const filteredPatients = useMemo(() => {
     const { startDate, endDate } = getDateRange();
-    return patients.filter(p => {
-      const admissionDate = new Date(p.admissionDate);
-      const inDateRange = admissionDate >= startDate && admissionDate <= endDate;
+    const dateRange = { startDate, endDate };
+
+    return normalizedPatients.filter(p => {
+      const inDateRange = isPatientAdmittedWithinRange(p, dateRange);
       const inSelectedUnits = selectedUnits.length === 0 || selectedUnits.includes(p.unit);
 
       let passesNicuFilter = true;
-      if (nicuFilter !== 'all' && (selectedUnits.includes(Unit.NICU) || selectedUnits.includes(Unit.SNCU))) {
-        const isInborn = p.admissionType === 'Inborn';
-        passesNicuFilter = nicuFilter === 'inborn' ? isInborn : !isInborn;
+      if (p.unit === Unit.NICU || p.unit === Unit.SNCU) {
+        if (nicuFilter === 'all') {
+          // Keep AI report totals consistent with dashboard/registry:
+          // NICU/SNCU "All" includes only known Inborn/Outborn records.
+          passesNicuFilter = isKnownNicuAdmissionRecord(p);
+        } else {
+          passesNicuFilter = matchesAdmissionTypeFilter(p, nicuFilter);
+        }
       }
 
       return inDateRange && inSelectedUnits && passesNicuFilter;
     });
-  }, [patients, reportPeriod, selectedMonth, selectedQuarter, selectedYear, customStartDate, customEndDate, selectedUnits, nicuFilter]);
+  }, [normalizedPatients, reportPeriod, selectedMonth, selectedQuarter, selectedYear, customStartDate, customEndDate, selectedUnits, nicuFilter]);
 
   // Comprehensive statistics
   const stats = useMemo(() => {
+    const outcomeOf = (patient: Patient) => getCanonicalOutcome(patient);
+    const admissionTypeOf = (patient: Patient) => getCanonicalAdmissionType(patient);
+
     const total = filteredPatients.length;
-    const discharged = filteredPatients.filter(p => p.outcome === 'Discharged').length;
-    const deceased = filteredPatients.filter(p => p.outcome === 'Deceased').length;
-    const referred = filteredPatients.filter(p => p.outcome === 'Referred').length;
-    const active = filteredPatients.filter(p => !p.outcome || p.outcome === 'In Progress').length;
-    const stepDown = filteredPatients.filter(p => p.outcome === 'Step Down' || p.isStepDown).length;
+    const discharged = filteredPatients.filter(p => outcomeOf(p) === 'Discharged').length;
+    const deceased = filteredPatients.filter(p => outcomeOf(p) === 'Deceased').length;
+    const referred = filteredPatients.filter(p => outcomeOf(p) === 'Referred').length;
+    const active = filteredPatients.filter(p => outcomeOf(p) === 'In Progress').length;
+    // Count ALL patients who were ever stepped down (including those now discharged/other outcome)
+    const stepDown = filteredPatients.filter(p => p.stepDownDate || outcomeOf(p) === 'Step Down' || p.isStepDown).length;
     const lama = filteredPatients.filter(p => (p.outcome as string) === 'LAMA').length;
 
     // Gender statistics
@@ -273,8 +375,8 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     const ambiguous = filteredPatients.filter(p => p.gender === 'Ambiguous' || p.gender === 'Other').length;
 
     // Inborn/Outborn
-    const inborn = filteredPatients.filter(p => p.admissionType === 'Inborn').length;
-    const outborn = filteredPatients.filter(p => p.admissionType && p.admissionType !== 'Inborn').length;
+    const inborn = filteredPatients.filter(p => admissionTypeOf(p) === 'Inborn').length;
+    const outborn = filteredPatients.filter(p => admissionTypeOf(p) === 'Outborn').length;
 
     // Gestational age distribution
     const gaDistribution: Record<string, number> = {};
@@ -317,16 +419,16 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       prematurity: filteredPatients.filter(p => p.diagnosis?.toLowerCase().includes('preterm') || p.diagnosis?.toLowerCase().includes('prematurity') || p.diagnosis?.toLowerCase().includes('lbw')).length,
     };
 
-    // Length of Stay
+    // Length of Stay - check both dischargeDateTime and releaseDate for compatibility
     const losData = filteredPatients
-      .filter(p => p.dischargeDateTime && p.admissionDate)
-      .map(p => getDaysBetween(p.admissionDate, p.dischargeDateTime!));
+      .filter(p => (p.dischargeDateTime || p.releaseDate) && p.admissionDate)
+      .map(p => getDaysBetween(p.admissionDate, (p.dischargeDateTime || p.releaseDate)!));
     const avgLOS = losData.length > 0 ? (losData.reduce((a, b) => a + b, 0) / losData.length).toFixed(1) : '0';
     const maxLOS = losData.length > 0 ? Math.max(...losData) : 0;
     const minLOS = losData.length > 0 ? Math.min(...losData) : 0;
 
     // Mortality by categories
-    const deceasedPatients = filteredPatients.filter(p => p.outcome === 'Deceased');
+    const deceasedPatients = filteredPatients.filter(p => outcomeOf(p) === 'Deceased');
     const mortalityByGA: Record<string, { total: number; deceased: number }> = {};
     const mortalityByBW: Record<string, { total: number; deceased: number }> = {};
 
@@ -340,7 +442,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       mortalityByGA[gaCategory].total++;
       mortalityByBW[bwCategory].total++;
 
-      if (p.outcome === 'Deceased') {
+      if (outcomeOf(p) === 'Deceased') {
         mortalityByGA[gaCategory].deceased++;
         mortalityByBW[bwCategory].deceased++;
       }
@@ -361,16 +463,57 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     const stepDownRate = total > 0 ? ((stepDown / total) * 100).toFixed(2) : '0';
 
     // Gender-wise outcomes
-    const maleDeceased = filteredPatients.filter(p => p.gender === 'Male' && p.outcome === 'Deceased').length;
-    const femaleDeceased = filteredPatients.filter(p => p.gender === 'Female' && p.outcome === 'Deceased').length;
-    const maleDischarged = filteredPatients.filter(p => p.gender === 'Male' && p.outcome === 'Discharged').length;
-    const femaleDischarged = filteredPatients.filter(p => p.gender === 'Female' && p.outcome === 'Discharged').length;
+    const maleDeceased = filteredPatients.filter(p => p.gender === 'Male' && outcomeOf(p) === 'Deceased').length;
+    const femaleDeceased = filteredPatients.filter(p => p.gender === 'Female' && outcomeOf(p) === 'Deceased').length;
+    const maleDischarged = filteredPatients.filter(p => p.gender === 'Male' && outcomeOf(p) === 'Discharged').length;
+    const femaleDischarged = filteredPatients.filter(p => p.gender === 'Female' && outcomeOf(p) === 'Discharged').length;
 
     // Inborn/Outborn mortality
-    const inbornDeceased = deceasedPatients.filter(p => p.admissionType === 'Inborn').length;
-    const outbornDeceased = deceasedPatients.filter(p => p.admissionType && p.admissionType !== 'Inborn').length;
+    const inbornDeceased = deceasedPatients.filter(p => admissionTypeOf(p) === 'Inborn').length;
+    const outbornDeceased = deceasedPatients.filter(p => admissionTypeOf(p) === 'Outborn').length;
     const inbornMortality = inborn > 0 ? ((inbornDeceased / inborn) * 100).toFixed(2) : '0';
     const outbornMortality = outborn > 0 ? ((outbornDeceased / outborn) * 100).toFixed(2) : '0';
+
+    // Inborn/Outborn discharge statistics
+    const inbornPatients = filteredPatients.filter(p => admissionTypeOf(p) === 'Inborn');
+    const outbornPatients = filteredPatients.filter(p => admissionTypeOf(p) === 'Outborn');
+    const inbornDischarged = inbornPatients.filter(p => outcomeOf(p) === 'Discharged').length;
+    const outbornDischarged = outbornPatients.filter(p => outcomeOf(p) === 'Discharged').length;
+    const inbornDischargeRate = inborn > 0 ? ((inbornDischarged / inborn) * 100).toFixed(2) : '0';
+    const outbornDischargeRate = outborn > 0 ? ((outbornDischarged / outborn) * 100).toFixed(2) : '0';
+
+    // Inborn/Outborn referred
+    const inbornReferred = inbornPatients.filter(p => outcomeOf(p) === 'Referred').length;
+    const outbornReferred = outbornPatients.filter(p => outcomeOf(p) === 'Referred').length;
+    const inbornReferralRate = inborn > 0 ? ((inbornReferred / inborn) * 100).toFixed(2) : '0';
+    const outbornReferralRate = outborn > 0 ? ((outbornReferred / outborn) * 100).toFixed(2) : '0';
+
+    // Inborn/Outborn step down
+    const inbornStepDown = inbornPatients.filter(p => p.stepDownDate || outcomeOf(p) === 'Step Down' || p.isStepDown).length;
+    const outbornStepDown = outbornPatients.filter(p => p.stepDownDate || outcomeOf(p) === 'Step Down' || p.isStepDown).length;
+
+    // Inborn/Outborn active
+    const inbornActive = inbornPatients.filter(p => outcomeOf(p) === 'In Progress').length;
+    const outbornActive = outbornPatients.filter(p => outcomeOf(p) === 'In Progress').length;
+
+    // LOS by Inborn/Outborn - check both dischargeDateTime and releaseDate
+    const inbornLosData = inbornPatients
+      .filter(p => (p.dischargeDateTime || p.releaseDate) && p.admissionDate)
+      .map(p => getDaysBetween(p.admissionDate, (p.dischargeDateTime || p.releaseDate)!));
+    const outbornLosData = outbornPatients
+      .filter(p => (p.dischargeDateTime || p.releaseDate) && p.admissionDate)
+      .map(p => getDaysBetween(p.admissionDate, (p.dischargeDateTime || p.releaseDate)!));
+    const avgLosInborn = inbornLosData.length > 0 ? (inbornLosData.reduce((a, b) => a + b, 0) / inbornLosData.length).toFixed(1) : '0';
+    const avgLosOutborn = outbornLosData.length > 0 ? (outbornLosData.reduce((a, b) => a + b, 0) / outbornLosData.length).toFixed(1) : '0';
+
+    // LOS Distribution buckets
+    const losDistribution = {
+      lessThan24hrs: losData.filter(d => d < 1).length,
+      oneToThreeDays: losData.filter(d => d >= 1 && d <= 3).length,
+      threeToSevenDays: losData.filter(d => d > 3 && d <= 7).length,
+      oneToTwoWeeks: losData.filter(d => d > 7 && d <= 14).length,
+      moreThanTwoWeeks: losData.filter(d => d > 14).length,
+    };
 
     // Age at death distribution
     const ageAtDeathDist: Record<string, number> = {
@@ -395,8 +538,16 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       ? Math.round(timeToDeathData.reduce((a, b) => a + b, 0) / timeToDeathData.length)
       : 0;
 
-    // Step down statistics
-    const stepDownPatients = filteredPatients.filter(p => p.isStepDown || p.outcome === 'Step Down');
+    // Early vs Late Mortality (time from admission to death)
+    const earlyMortality = {
+      within6Hours: timeToDeathData.filter(h => h <= 6).length,
+      sixTo24Hours: timeToDeathData.filter(h => h > 6 && h <= 24).length,
+      oneToSevenDays: timeToDeathData.filter(h => h > 24 && h <= 168).length,
+      afterSevenDays: timeToDeathData.filter(h => h > 168).length,
+    };
+
+    // Step down statistics - include ALL patients who were ever stepped down (historical + current)
+    const stepDownPatients = filteredPatients.filter(p => p.stepDownDate || p.isStepDown || outcomeOf(p) === 'Step Down');
     const stepDownLocations: Record<string, number> = {};
     stepDownPatients.forEach(p => {
       const location = p.stepDownLocation || 'Not Specified';
@@ -404,7 +555,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     });
 
     // Referred patients analysis
-    const referredPatients = filteredPatients.filter(p => p.outcome === 'Referred');
+    const referredPatients = filteredPatients.filter(p => outcomeOf(p) === 'Referred');
     const referralDestinations: Record<string, number> = {};
     referredPatients.forEach(p => {
       const dest = p.referredTo || 'Not Specified';
@@ -414,7 +565,9 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     // Daily admission trend (for the period)
     const dailyAdmissions: Record<string, number> = {};
     filteredPatients.forEach(p => {
-      const date = p.admissionDate.split('T')[0];
+      const admissionDate = getPatientAdmissionDate(p);
+      if (!admissionDate) return;
+      const date = admissionDate.toISOString().split('T')[0];
       dailyAdmissions[date] = (dailyAdmissions[date] || 0) + 1;
     });
 
@@ -430,7 +583,17 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       ageAtDeathDist, avgTimeToDeathHours, timeToDeathData,
       stepDownPatients, stepDownLocations,
       referredPatients, referralDestinations,
-      dailyAdmissions, deceasedPatients
+      dailyAdmissions, deceasedPatients,
+      // New: Inborn/Outborn specific statistics
+      inbornPatients, outbornPatients,
+      inbornDischarged, outbornDischarged,
+      inbornDischargeRate, outbornDischargeRate,
+      inbornReferred, outbornReferred,
+      inbornReferralRate, outbornReferralRate,
+      inbornStepDown, outbornStepDown,
+      inbornActive, outbornActive,
+      avgLosInborn, avgLosOutborn,
+      losDistribution, earlyMortality
     };
   }, [filteredPatients]);
 
@@ -438,8 +601,12 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
   const generateReport = async () => {
     setGenerating(true);
     try {
-      const loadedPatients = await loadPatients();
+      const [loadedPatients, loadedObsPatients] = await Promise.all([
+        loadPatients(),
+        loadObservationPatients()
+      ]);
       setPatients(loadedPatients);
+      setObservationPatients(loadedObsPatients);
       setStep('preview');
     } finally {
       setGenerating(false);
@@ -450,37 +617,691 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
   const downloadPDF = async () => {
     if (!reportRef.current) return;
     setGenerating(true);
-    try {
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false
-      });
-
-      const imgData = canvas.toDataURL('image/png');
+    const saveStructuredFallbackPdf = () => {
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      let heightLeft = pdfHeight;
-      let position = 0;
+      const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 12;
+      const headerBand = 14;
+      const footerBand = 10;
+      const contentTop = margin + headerBand;
+      const contentBottom = pageHeight - margin - footerBand;
+      const contentWidth = pageWidth - margin * 2;
+      const reportTitle = REPORT_TYPES.find(r => r.id === selectedReportType)?.title || 'Clinical Report';
+      const { startDate, endDate } = getDateRange();
+      const generatedAt = new Date();
+      const s: any = stats;
+      let y = contentTop + 2;
 
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - pdfHeight;
+      const ensureSpace = (requiredHeight: number) => {
+        if (y + requiredHeight <= contentBottom) return;
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
+        y = contentTop + 2;
+      };
+
+      const addSectionTitle = (title: string) => {
+        ensureSpace(10);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.setTextColor(30, 64, 175);
+        pdf.text(title, margin, y);
+        y += 2;
+        pdf.setDrawColor(191, 219, 254);
+        pdf.setLineWidth(0.3);
+        pdf.line(margin, y, pageWidth - margin, y);
+        y += 5;
+      };
+
+      const addParagraph = (text: string, fontSize = 9) => {
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(fontSize);
+        pdf.setTextColor(51, 65, 85);
+        const lines = pdf.splitTextToSize(text, contentWidth);
+        lines.forEach((line: string) => {
+          ensureSpace(4.4);
+          pdf.text(line, margin, y);
+          y += 4.4;
+        });
+      };
+
+      const addKeyValue = (label: string, value: string | number) => {
+        ensureSpace(4.8);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(`${label}:`, margin, y);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(String(value), margin + 42, y);
+        y += 4.8;
+      };
+
+      const addMetricCards = (items: Array<{ label: string; value: string | number }>) => {
+        const cardGap = 4;
+        const cardHeight = 16;
+        const cardWidth = (contentWidth - cardGap) / 2;
+
+        for (let i = 0; i < items.length; i += 2) {
+          ensureSpace(cardHeight + 2);
+          const rowItems = items.slice(i, i + 2);
+          rowItems.forEach((item, colIndex) => {
+            const x = margin + colIndex * (cardWidth + cardGap);
+            pdf.setFillColor(248, 250, 252);
+            pdf.setDrawColor(203, 213, 225);
+            pdf.roundedRect(x, y, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(12);
+            pdf.setTextColor(15, 23, 42);
+            pdf.text(String(item.value), x + 3, y + 7);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(8);
+            pdf.setTextColor(100, 116, 139);
+            const labelLines = pdf.splitTextToSize(item.label, cardWidth - 6);
+            const label = Array.isArray(labelLines) ? labelLines[0] : String(labelLines);
+            pdf.text(label, x + 3, y + 12.5);
+          });
+          y += cardHeight + 2;
+        }
+      };
+
+      const addTable = (
+        title: string,
+        headers: string[],
+        rows: Array<Array<string | number>>,
+        colRatios: number[],
+        maxCellLines = 4
+      ) => {
+        if (rows.length === 0) return;
+        addSectionTitle(title);
+
+        const ratioSum = colRatios.reduce((sum, value) => sum + value, 0);
+        const colWidths = colRatios.map(r => (contentWidth * r) / ratioSum);
+
+        const drawRow = (cells: Array<string | number>, isHeader: boolean) => {
+          const linesPerCell = cells.map((cell, index) => {
+            const raw = String(cell ?? '');
+            const width = Math.max(12, colWidths[index] - 2);
+            const lines = pdf.splitTextToSize(raw, width) as string[];
+            if (lines.length > maxCellLines) {
+              const clipped = lines.slice(0, maxCellLines);
+              const tail = clipped[maxCellLines - 1];
+              clipped[maxCellLines - 1] = `${tail.slice(0, Math.max(0, tail.length - 1))}…`;
+              return clipped;
+            }
+            return lines;
+          });
+
+          const maxLines = Math.max(...linesPerCell.map(lines => lines.length), 1);
+          const rowHeight = Math.max(6, maxLines * 3.6 + 1.5);
+          ensureSpace(rowHeight);
+
+          let x = margin;
+          cells.forEach((_, index) => {
+            const width = colWidths[index];
+            pdf.setDrawColor(203, 213, 225);
+            if (isHeader) {
+              pdf.setFillColor(241, 245, 249);
+              pdf.rect(x, y, width, rowHeight, 'FD');
+            } else {
+              pdf.rect(x, y, width, rowHeight);
+            }
+
+            const lines = linesPerCell[index];
+            pdf.setFont('helvetica', isHeader ? 'bold' : 'normal');
+            pdf.setFontSize(isHeader ? 8.5 : 8);
+            pdf.setTextColor(isHeader ? 15 : 51, isHeader ? 23 : 65, isHeader ? 42 : 85);
+
+            lines.forEach((line, lineIndex) => {
+              const textY = y + 3.8 + lineIndex * 3.6;
+              if (textY <= y + rowHeight - 1) {
+                pdf.text(line, x + 1, textY);
+              }
+            });
+
+            x += width;
+          });
+
+          y += rowHeight;
+        };
+
+        drawRow(headers, true);
+        rows.forEach((row) => drawRow(row, false));
+        y += 3;
+      };
+
+      const formatDate = (value: any): string => {
+        const parsed = parseSafeDate(value);
+        if (!parsed) return '-';
+        return parsed.toLocaleDateString('en-IN');
+      };
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(18);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(reportTitle, margin, y);
+      y += 7;
+
+      addParagraph(`${PDF_UNIT_LABEL}, ${PDF_INSTITUTION_LABEL}`);
+      addParagraph(`Admission Type Scope: ${admissionTypeScopeLabel}`);
+      addParagraph(`${startDate.toLocaleDateString('en-IN')} - ${endDate.toLocaleDateString('en-IN')}`);
+      addParagraph(`Generated on ${generatedAt.toLocaleDateString('en-IN')} at ${generatedAt.toLocaleTimeString('en-IN')}`);
+      y += 2;
+
+      addSectionTitle('Executive Summary');
+      addMetricCards([
+        { label: 'Total Admissions', value: Number(s.total ?? filteredPatients.length) },
+        { label: 'Active Patients', value: Number(s.active ?? 0) },
+        { label: 'Discharged', value: Number(s.discharged ?? 0) },
+        { label: 'Referred', value: Number(s.referred ?? 0) },
+        { label: 'Deceased', value: Number(s.deceased ?? 0) },
+        { label: 'Step Down', value: Number(s.stepDown ?? 0) },
+      ]);
+
+      addKeyValue('Mortality Rate', `${Number(s.mortalityRate ?? 0).toFixed(1)}%`);
+      addKeyValue('Discharge Rate', `${Number(s.dischargeRate ?? 0).toFixed(1)}%`);
+      addKeyValue('Survival Rate', `${Number(s.survivalRate ?? 0).toFixed(1)}%`);
+      y += 2;
+
+      addTable(
+        'Outcome Breakdown',
+        ['Outcome', 'Count', 'Rate'],
+        [
+          ['Active (In Progress)', Number(s.active ?? 0), `${Number(s.total ?? 0) > 0 ? ((Number(s.active ?? 0) / Number(s.total ?? 1)) * 100).toFixed(1) : '0.0'}%`],
+          ['Discharged', Number(s.discharged ?? 0), `${Number(s.dischargeRate ?? 0).toFixed(1)}%`],
+          ['Referred', Number(s.referred ?? 0), `${Number(s.referralRate ?? 0).toFixed(1)}%`],
+          ['Step Down', Number(s.stepDown ?? 0), `${Number(s.stepDownRate ?? 0).toFixed(1)}%`],
+          ['Deceased', Number(s.deceased ?? 0), `${Number(s.mortalityRate ?? 0).toFixed(1)}%`],
+        ],
+        [2.5, 1, 1]
+      );
+
+      addTable(
+        'Gender Distribution',
+        ['Gender', 'Count'],
+        [
+          ['Male', Number(s.males ?? 0)],
+          ['Female', Number(s.females ?? 0)],
+          ['Ambiguous/Other', Number(s.ambiguous ?? 0)],
+        ],
+        [2.5, 1]
+      );
+
+      const diagnosisRows = Object.entries((s.diagnosisDistribution || {}) as Record<string, number>)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 10)
+        .map(([diagnosis, count]) => [diagnosis || 'Unspecified', count]);
+
+      if (diagnosisRows.length > 0) {
+        addTable('Top Diagnoses', ['Diagnosis', 'Count'], diagnosisRows, [4, 1]);
       }
 
-      const { startDate, endDate } = getDateRange();
+      const patientRows = [...filteredPatients]
+        .sort((a, b) => {
+          const aTime = parseSafeDate(a.admissionDateTime || a.admissionDate)?.getTime() || 0;
+          const bTime = parseSafeDate(b.admissionDateTime || b.admissionDate)?.getTime() || 0;
+          return bTime - aTime;
+        })
+        .slice(0, 120)
+        .map((patient) => [
+          patient.ntid || '-',
+          patient.name || '-',
+          patient.unit || '-',
+          getCanonicalAdmissionType(patient),
+          formatDate(patient.admissionDateTime || patient.admissionDate),
+          getCanonicalOutcome(patient),
+          patient.gender || '-'
+        ]);
+
+      if (patientRows.length > 0) {
+        addTable(
+          'Patient Line List (Latest 120)',
+          ['NTID', 'Name', 'Unit', 'Admission Type', 'Admission Date', 'Outcome', 'Gender'],
+          patientRows,
+          [1.1, 2.3, 0.9, 1.2, 1.2, 1.3, 0.8]
+        );
+      }
+
+      const totalPages = pdf.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.setLineWidth(0.2);
+        pdf.line(margin, margin + 7, pageWidth - margin, margin + 7);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(30, 41, 59);
+        pdf.text(reportTitle, margin, margin + 4.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(`${PDF_UNIT_LABEL} | ${PDF_INSTITUTION_LABEL}`, pageWidth - margin, margin + 4.5, { align: 'right' });
+
+        pdf.setDrawColor(226, 232, 240);
+        pdf.line(margin, pageHeight - margin - 5, pageWidth - margin, pageHeight - margin - 5);
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text(`Generated ${generatedAt.toLocaleDateString('en-IN')} ${generatedAt.toLocaleTimeString('en-IN')}`, margin, pageHeight - margin - 1.8);
+        pdf.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - margin - 1.8, { align: 'right' });
+      }
+
       const reportTypeName = REPORT_TYPES.find(r => r.id === selectedReportType)?.title || 'Report';
-      const fileName = `${reportTypeName.replace(/\s+/g, '_')}_${institutionName?.replace(/\s+/g, '_') || 'Hospital'}_${startDate.toLocaleDateString().replace(/\//g, '-')}.pdf`;
+      const fileName = `${reportTypeName.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}_${PDF_INSTITUTION_LABEL.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}_${startDate.toISOString().split('T')[0]}.pdf`;
       pdf.save(fileName);
+    };
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      // Professional page layout
+      const marginLeft = 10;
+      const marginRight = 10;
+      const marginTop = 10;
+      const marginBottom = 10;
+      const headerBand = 8;
+      const footerBand = 8;
+      const contentGap = 3;
+      const contentWidth = pageWidth - marginLeft - marginRight;
+      const contentTop = marginTop + headerBand;
+      const contentBottom = pageHeight - marginBottom - footerBand;
+      const maxPageContentHeight = contentBottom - contentTop;
+
+      const reportTitle = REPORT_TYPES.find(r => r.id === selectedReportType)?.title || 'Clinical Report';
+      const { startDate, endDate } = getDateRange();
+      const generatedAt = new Date();
+
+      pdf.setProperties({
+        title: `${reportTitle} - ${PDF_UNIT_LABEL}`,
+        subject: `${startDate.toLocaleDateString('en-IN')} - ${endDate.toLocaleDateString('en-IN')}`,
+        author: PDF_INSTITUTION_LABEL,
+        creator: 'NeoLink AI Reports'
+      });
+
+      // html2canvas does not support modern color functions like oklch().
+      // Convert problematic values to rgba() in the cloned DOM before render.
+      const COLOR_FUNCTION_PATTERN = /(oklch|oklab|color-mix|color)\(/i;
+
+      const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+      const parseAngle = (raw: string): number => {
+        const value = raw.trim().toLowerCase();
+        if (value.endsWith('deg')) return parseFloat(value);
+        if (value.endsWith('turn')) return parseFloat(value) * 360;
+        if (value.endsWith('rad')) return parseFloat(value) * (180 / Math.PI);
+        if (value.endsWith('grad')) return parseFloat(value) * 0.9;
+        return parseFloat(value);
+      };
+
+      const parseAlpha = (raw: string | undefined): number => {
+        if (!raw) return 1;
+        const value = raw.trim();
+        if (value.endsWith('%')) return clamp01(parseFloat(value) / 100);
+        return clamp01(parseFloat(value));
+      };
+
+      const parseLightness = (raw: string): number => {
+        const value = raw.trim();
+        if (value.endsWith('%')) return clamp01(parseFloat(value) / 100);
+        return clamp01(parseFloat(value));
+      };
+
+      const linearToSrgb = (x: number): number => {
+        const clamped = clamp01(x);
+        if (clamped <= 0.0031308) return 12.92 * clamped;
+        return 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+      };
+
+      const oklabToRgba = (l: number, a: number, b: number, alpha = 1): string => {
+        const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+        const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+        const s_ = l - 0.0894841775 * a - 1.291485548 * b;
+
+        const l3 = l_ * l_ * l_;
+        const m3 = m_ * m_ * m_;
+        const s3 = s_ * s_ * s_;
+
+        const rLin = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+        const gLin = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+        const bLin = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
+
+        const r = Math.round(clamp01(linearToSrgb(rLin)) * 255);
+        const g = Math.round(clamp01(linearToSrgb(gLin)) * 255);
+        const bl = Math.round(clamp01(linearToSrgb(bLin)) * 255);
+        const aOut = clamp01(alpha);
+
+        return `rgba(${r}, ${g}, ${bl}, ${aOut.toFixed(3)})`;
+      };
+
+      const convertOklchFunction = (source: string): string | null => {
+        const match = source.match(/oklch\(([^)]+)\)/i);
+        if (!match) return null;
+
+        const raw = match[1].trim();
+        const [channelsRaw, alphaRaw] = raw.split('/').map(part => part.trim());
+        const channels = channelsRaw.split(/\s+/).filter(Boolean);
+        if (channels.length < 3) return null;
+
+        const l = parseLightness(channels[0]);
+        const c = parseFloat(channels[1]);
+        const h = parseAngle(channels[2]);
+        const alpha = parseAlpha(alphaRaw);
+
+        if (!Number.isFinite(l) || !Number.isFinite(c) || !Number.isFinite(h) || !Number.isFinite(alpha)) {
+          return null;
+        }
+
+        const hRad = (h * Math.PI) / 180;
+        const a = c * Math.cos(hRad);
+        const b = c * Math.sin(hRad);
+        return oklabToRgba(l, a, b, alpha);
+      };
+
+      const convertOklabFunction = (source: string): string | null => {
+        const match = source.match(/oklab\(([^)]+)\)/i);
+        if (!match) return null;
+
+        const raw = match[1].trim();
+        const [channelsRaw, alphaRaw] = raw.split('/').map(part => part.trim());
+        const channels = channelsRaw.split(/\s+/).filter(Boolean);
+        if (channels.length < 3) return null;
+
+        const l = parseLightness(channels[0]);
+        const a = parseFloat(channels[1]);
+        const b = parseFloat(channels[2]);
+        const alpha = parseAlpha(alphaRaw);
+
+        if (!Number.isFinite(l) || !Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(alpha)) {
+          return null;
+        }
+
+        return oklabToRgba(l, a, b, alpha);
+      };
+
+      const toSafeColor = (value: string, property: string): string => {
+        const trimmed = String(value || '').trim();
+        if (!trimmed) return trimmed;
+
+        if (/oklch\(/i.test(trimmed)) {
+          const converted = convertOklchFunction(trimmed);
+          if (converted) return converted;
+        }
+        if (/oklab\(/i.test(trimmed)) {
+          const converted = convertOklabFunction(trimmed);
+          if (converted) return converted;
+        }
+
+        // Fall back for other unsupported color functions.
+        if (/background|border|outline/i.test(property)) return 'rgba(255, 255, 255, 1)';
+        return 'rgba(15, 23, 42, 1)';
+      };
+
+      const sanitizeColorValue = (
+        rawValue: string,
+        property: string,
+        clonedDoc: Document,
+        cache: Map<string, string>
+      ): string => {
+        const value = String(rawValue || '').trim();
+        if (!value) return value;
+        if (!COLOR_FUNCTION_PATTERN.test(value)) return value;
+
+        const cacheKey = `${property}::${value}`;
+        const cached = cache.get(cacheKey);
+        if (cached) return cached;
+
+        // Explicit conversion first (reliable for html2canvas).
+        const converted = toSafeColor(value, property);
+        if (converted && !COLOR_FUNCTION_PATTERN.test(converted)) {
+          cache.set(cacheKey, converted);
+          return converted;
+        }
+
+        // Last fallback: browser-resolved computed value from probe element.
+        const probe = clonedDoc.createElement('span');
+        probe.style.position = 'fixed';
+        probe.style.left = '-9999px';
+        probe.style.top = '-9999px';
+        if (/background/i.test(property)) {
+          probe.style.backgroundColor = value;
+        } else if (/border|outline/i.test(property)) {
+          probe.style.borderTopColor = value;
+        } else {
+          probe.style.color = value;
+        }
+        clonedDoc.body.appendChild(probe);
+
+        const computed = clonedDoc.defaultView?.getComputedStyle(probe);
+        const resolved = (() => {
+          if (!computed) return '';
+          if (/background/i.test(property)) return computed.backgroundColor?.trim();
+          if (/border|outline/i.test(property)) return computed.borderTopColor?.trim();
+          return computed.color?.trim();
+        })();
+        probe.remove();
+
+        const safe = resolved && resolved !== '' && !COLOR_FUNCTION_PATTERN.test(resolved)
+          ? resolved
+          : toSafeColor(value, property);
+        cache.set(cacheKey, safe);
+        return safe;
+      };
+
+      const sanitizeClonedDocumentForPdf = (clonedDoc: Document) => {
+        const view = clonedDoc.defaultView;
+        if (!view) return;
+
+        const colorCache = new Map<string, string>();
+        const colorProperties = [
+          'color',
+          'background-color',
+          'caret-color',
+          'border-top-color',
+          'border-right-color',
+          'border-bottom-color',
+          'border-left-color',
+          'outline-color',
+          'text-decoration-color'
+        ];
+
+        const allElements = clonedDoc.querySelectorAll<HTMLElement>('*');
+        allElements.forEach((element) => {
+          const computed = view.getComputedStyle(element);
+
+          colorProperties.forEach((property) => {
+            const computedValue = computed.getPropertyValue(property);
+            if (!computedValue || !COLOR_FUNCTION_PATTERN.test(computedValue)) return;
+            const safeColor = sanitizeColorValue(computedValue, property, clonedDoc, colorCache);
+            element.style.setProperty(property, safeColor, 'important');
+          });
+
+          const backgroundImage = computed.backgroundImage;
+          if (backgroundImage && COLOR_FUNCTION_PATTERN.test(backgroundImage)) {
+            element.style.setProperty('background-image', 'none', 'important');
+          }
+
+          const boxShadow = computed.boxShadow;
+          if (boxShadow && COLOR_FUNCTION_PATTERN.test(boxShadow)) {
+            element.style.setProperty('box-shadow', 'none', 'important');
+          }
+
+          const textShadow = computed.textShadow;
+          if (textShadow && COLOR_FUNCTION_PATTERN.test(textShadow)) {
+            element.style.setProperty('text-shadow', 'none', 'important');
+          }
+        });
+
+        // Remove inborn-vs-outborn comparison sections from exported PDFs.
+        const comparisonPattern = /inborn\s*vs\s*outborn/i;
+        const sectionNodes = Array.from(clonedDoc.querySelectorAll('section'));
+        sectionNodes.forEach((section) => {
+          const heading = section.querySelector('h1,h2,h3,h4,h5,h6');
+          const titleText = (heading?.textContent || section.textContent || '').trim();
+          if (comparisonPattern.test(titleText)) {
+            section.remove();
+          }
+        });
+      };
+
+      const renderCanvas = async (element: HTMLElement): Promise<HTMLCanvasElement> => {
+        return html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          imageTimeout: 20000,
+          windowWidth: Math.max(element.scrollWidth, element.clientWidth),
+          windowHeight: Math.max(element.scrollHeight, element.clientHeight),
+          scrollX: 0,
+          scrollY: -window.scrollY,
+          onclone: (clonedDoc) => {
+            sanitizeClonedDocumentForPdf(clonedDoc);
+          }
+        });
+      };
+
+      let cursorY = contentTop;
+
+      const addNewPage = () => {
+        pdf.addPage();
+        cursorY = contentTop;
+      };
+
+      const addCanvasSlice = (sliceCanvas: HTMLCanvasElement, targetY: number) => {
+        const sliceHeightMm = (sliceCanvas.height * contentWidth) / sliceCanvas.width;
+        const imgData = sliceCanvas.toDataURL('image/jpeg', 0.95);
+        pdf.addImage(imgData, 'JPEG', marginLeft, targetY, contentWidth, sliceHeightMm, undefined, 'FAST');
+        return sliceHeightMm;
+      };
+
+      const addCanvasBlock = (blockCanvas: HTMLCanvasElement) => {
+        const blockHeightMm = (blockCanvas.height * contentWidth) / blockCanvas.width;
+
+        // If this block fits in one page but not current remaining space, start a new page.
+        if (blockHeightMm <= maxPageContentHeight && cursorY + blockHeightMm > contentBottom) {
+          addNewPage();
+        }
+
+        // Normal case: place whole block.
+        if (blockHeightMm <= maxPageContentHeight) {
+          const placedHeight = addCanvasSlice(blockCanvas, cursorY);
+          cursorY += placedHeight + contentGap;
+          return;
+        }
+
+        // Tall block (for long tables): slice across pages safely.
+        const pxPerMm = blockCanvas.width / contentWidth;
+        let yOffsetPx = 0;
+
+        while (yOffsetPx < blockCanvas.height) {
+          const remainingMmOnPage = contentBottom - cursorY;
+          if (remainingMmOnPage <= 5) {
+            addNewPage();
+            continue;
+          }
+
+          const maxSlicePx = Math.max(1, Math.floor(remainingMmOnPage * pxPerMm));
+          const sliceHeightPx = Math.min(maxSlicePx, blockCanvas.height - yOffsetPx);
+
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = blockCanvas.width;
+          sliceCanvas.height = sliceHeightPx;
+          const sliceCtx = sliceCanvas.getContext('2d');
+          if (!sliceCtx) {
+            throw new Error('Failed to initialize PDF slice canvas');
+          }
+          sliceCtx.drawImage(
+            blockCanvas,
+            0, yOffsetPx, blockCanvas.width, sliceHeightPx,
+            0, 0, blockCanvas.width, sliceHeightPx
+          );
+
+          const placedHeight = addCanvasSlice(sliceCanvas, cursorY);
+          yOffsetPx += sliceHeightPx;
+          cursorY += placedHeight;
+
+          if (yOffsetPx < blockCanvas.height) {
+            addNewPage();
+          } else {
+            cursorY += contentGap;
+          }
+        }
+      };
+
+      // Build render blocks: header + each body child section for cleaner page breaks.
+      const root = reportRef.current;
+      const topHeader = root.firstElementChild as HTMLElement | null;
+      const bodyWrapper = root.lastElementChild as HTMLElement | null;
+
+      const exportBlocks: HTMLElement[] = [];
+      if (topHeader) exportBlocks.push(topHeader);
+      if (bodyWrapper) {
+        const sectionBlocks = Array.from(bodyWrapper.children).filter(Boolean) as HTMLElement[];
+        if (sectionBlocks.length > 0) {
+          exportBlocks.push(...sectionBlocks);
+        } else {
+          exportBlocks.push(bodyWrapper);
+        }
+      } else {
+        exportBlocks.push(root);
+      }
+
+      for (const block of exportBlocks) {
+        const blockCanvas = await renderCanvas(block);
+        addCanvasBlock(blockCanvas);
+      }
+
+      // Add consistent professional page chrome at the end (known total page count).
+      const totalPages = pdf.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i);
+
+        // Header line + title
+        pdf.setDrawColor(203, 213, 225); // slate-300
+        pdf.setLineWidth(0.2);
+        pdf.line(marginLeft, marginTop + headerBand, pageWidth - marginRight, marginTop + headerBand);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(30, 41, 59); // slate-800
+        pdf.text(reportTitle, marginLeft, marginTop + 5.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(71, 85, 105); // slate-600
+        pdf.text(
+          `${PDF_UNIT_LABEL} | ${PDF_INSTITUTION_LABEL} | ${admissionTypeScopeLabel}`,
+          pageWidth - marginRight,
+          marginTop + 5.5,
+          { align: 'right' }
+        );
+
+        // Footer line + page numbers
+        pdf.setDrawColor(226, 232, 240); // slate-200
+        pdf.line(marginLeft, pageHeight - marginBottom - footerBand, pageWidth - marginRight, pageHeight - marginBottom - footerBand);
+        pdf.setFontSize(8);
+        pdf.setTextColor(100, 116, 139); // slate-500
+        pdf.text(
+          `Generated ${generatedAt.toLocaleDateString('en-IN')} ${generatedAt.toLocaleTimeString('en-IN')}`,
+          marginLeft,
+          pageHeight - marginBottom - 2.5
+        );
+        pdf.text(
+          `Page ${i} of ${totalPages}`,
+          pageWidth - marginRight,
+          pageHeight - marginBottom - 2.5,
+          { align: 'right' }
+        );
+      }
+
+      const reportTypeName = REPORT_TYPES.find(r => r.id === selectedReportType)?.title || 'Report';
+      const fileName = `${reportTypeName.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}_${PDF_INSTITUTION_LABEL.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}_${startDate.toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+    } catch (error) {
+      console.warn('Primary PDF renderer failed, using structured fallback PDF:', error);
+      try {
+        saveStructuredFallbackPdf();
+      } catch (fallbackError) {
+        console.error('Structured fallback PDF generation failed:', fallbackError);
+        alert('PDF generation failed. Please try again.');
+      }
     } finally {
       setGenerating(false);
     }
@@ -488,25 +1309,62 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
 
   // Export to CSV
   const exportToCSV = () => {
+    const escapeCSV = (value: unknown) => {
+      const stringValue = value === null || value === undefined ? '' : String(value);
+      if (/[",\n]/.test(stringValue)) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
     let csvContent = '';
     const { startDate, endDate } = getDateRange();
 
     // Header
-    csvContent += `Report Type,${REPORT_TYPES.find(r => r.id === selectedReportType)?.title}\n`;
-    csvContent += `Institution,${institutionName}\n`;
-    csvContent += `Period,${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}\n`;
-    csvContent += `Generated,${new Date().toLocaleString()}\n\n`;
+    csvContent += `Report Type,${escapeCSV(REPORT_TYPES.find(r => r.id === selectedReportType)?.title || '')}\n`;
+    csvContent += `Institution,${escapeCSV(institutionName || '')}\n`;
+    csvContent += `Period,${escapeCSV(`${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`)}\n`;
+    csvContent += `Generated,${escapeCSV(new Date().toLocaleString())}\n\n`;
 
-    // Patient data
-    csvContent += 'NTID,Name,Gender,DOB,Admission Date,Unit,Diagnosis,Outcome,GA Weeks,Birth Weight\n';
-    filteredPatients.forEach(p => {
-      csvContent += `${p.ntid || ''},${p.name},${p.gender},${p.dateOfBirth || ''},${p.admissionDate},${p.unit},${p.diagnosis?.replace(/,/g, ';') || ''},${p.outcome || 'Active'},${p.gestationalAgeWeeks || ''},${p.birthWeight || ''}\n`;
-    });
+    // Patient-level data should only be exported when explicitly enabled
+    if (showPatientDetails) {
+      csvContent += 'NTID,Name,Gender,DOB,Admission Date,Unit,Diagnosis,Outcome,GA Weeks,Birth Weight\n';
+      filteredPatients.forEach(p => {
+        csvContent += [
+          p.ntid || '',
+          p.name || '',
+          p.gender || '',
+          p.dateOfBirth || '',
+          p.admissionDate || '',
+          p.unit || '',
+          p.diagnosis || '',
+          p.outcome || 'Active',
+          p.gestationalAgeWeeks || '',
+          p.birthWeight || '',
+        ].map(escapeCSV).join(',') + '\n';
+      });
+    } else {
+      csvContent += 'Metric,Value\n';
+      const summaryRows: Array<[string, string | number]> = [
+        ['Total Admissions', stats.total],
+        ['Currently Active', stats.active],
+        ['Discharged', stats.discharged],
+        ['Deceased', stats.deceased],
+        ['Referred', stats.referred],
+        ['Step Down', stats.stepDown],
+        ['Mortality Rate (%)', stats.mortalityRate],
+        ['Survival Rate (%)', stats.survivalRate],
+        ['Referral Rate (%)', stats.referralRate],
+      ];
+      summaryRows.forEach(([label, value]) => {
+        csvContent += `${escapeCSV(label)},${escapeCSV(value)}\n`;
+      });
+    }
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `Patient_Data_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `${showPatientDetails ? 'Patient_Details' : 'Report_Summary'}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   };
 
@@ -549,6 +1407,11 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
   const dateRangeLabel = `${startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} - ${endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`;
   const showNicuFilter = selectedUnits.includes(Unit.NICU) || selectedUnits.includes(Unit.SNCU);
   const currentReportInfo = REPORT_TYPES.find(r => r.id === selectedReportType)!;
+  const admissionTypeScopeLabel = nicuFilter === 'inborn'
+    ? 'Inborn'
+    : nicuFilter === 'outborn'
+      ? 'Outborn'
+      : 'Inborn + Outborn';
 
   // Render report type selector
   const renderReportTypeSelector = () => (
@@ -562,7 +1425,19 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
         {REPORT_TYPES.map(report => (
           <button
             key={report.id}
-            onClick={() => { setSelectedReportType(report.id); setStep('configure'); }}
+            onClick={async () => {
+              setSelectedReportType(report.id);
+              if (report.id === 'dailyUpdate') {
+                // For daily update, show the multi-step selection flow
+                setDailyUpdateStep('type');
+                setDailyUpdateType('all');
+                setDailyUpdateShift('current');
+                setSelectedUnits(enabledFacilities);
+                setStep('preview'); // Go to preview which will show the multi-step UI
+              } else {
+                setStep('configure');
+              }
+            }}
             className={`p-5 rounded-2xl border-2 transition-all duration-300 hover:scale-[1.02] text-left group ${report.bgColor} ${report.borderColor} hover:border-opacity-60`}
           >
             <div className={`${report.color} mb-3`}>{report.icon}</div>
@@ -605,9 +1480,8 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
             <button
               key={type}
               onClick={() => setReportPeriod(type)}
-              className={`px-5 py-3 rounded-xl text-sm font-semibold transition-all ${
-                reportPeriod === type ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
+              className={`px-5 py-3 rounded-xl text-sm font-semibold transition-all ${reportPeriod === type ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                }`}
             >
               {type.charAt(0).toUpperCase() + type.slice(1)}
             </button>
@@ -660,9 +1534,8 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
         <div className="flex flex-wrap gap-3">
           {enabledFacilities.map(unit => (
             <button key={unit} onClick={() => toggleUnit(unit)}
-              className={`px-5 py-3 rounded-xl text-sm font-semibold transition-all ${
-                selectedUnits.includes(unit) ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}>
+              className={`px-5 py-3 rounded-xl text-sm font-semibold transition-all ${selectedUnits.includes(unit) ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                }`}>
               {unit}
             </button>
           ))}
@@ -681,15 +1554,46 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
             <div className="flex flex-wrap gap-2">
               {(['all', 'inborn', 'outborn'] as const).map(value => (
                 <button key={value} onClick={() => setNicuFilter(value)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    nicuFilter === value ? 'bg-pink-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                  }`}>
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${nicuFilter === value ? 'bg-pink-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}>
                   {value === 'all' ? 'All Patients' : value === 'inborn' ? 'Inborn Only' : 'Outborn Only'}
                 </button>
               ))}
             </div>
           </div>
         )}
+      </div>
+
+      {/* Report Options */}
+      <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white">
+          <IconClipboardList size={20} className="text-cyan-400" />
+          Report Options
+        </h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <IconUsers size={18} className="text-slate-400" />
+            <div>
+              <p className="text-white font-medium">Show Patient Details</p>
+              <p className="text-slate-400 text-sm">Enable patient-level tables and detailed CSV export</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPatientDetails(prev => !prev)}
+            className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              showPatientDetails ? 'bg-green-500' : 'bg-slate-600'
+            }`}
+            aria-pressed={showPatientDetails}
+            role="switch"
+          >
+            <span
+              className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                showPatientDetails ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Generate Button */}
@@ -707,6 +1611,8 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
   // Render specific report content based on type
   const renderReportContent = () => {
     switch (selectedReportType) {
+      case 'dailyUpdate':
+        return renderDailyUpdateReport();
       case 'admissions':
         return renderAdmissionsReport();
       case 'deaths':
@@ -724,6 +1630,445 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       default:
         return renderComprehensiveReport();
     }
+  };
+
+  // Daily Update Report - State-of-the-art Mobile-First UI
+  const renderDailyUpdateReport = () => {
+    const now = new Date();
+    const formattedDateTime = now.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    // Calculate shift range based on selection
+    const getShiftRange = () => {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const selectedShiftOption = SHIFT_OPTIONS.find(s => s.id === dailyUpdateShift);
+
+      if (dailyUpdateShift === 'current') {
+        // Determine current shift based on time - create fresh date objects
+        if (currentHour >= 8 && currentHour < 14) {
+          // Morning Shift: 8 AM - 2 PM today
+          const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0, 0);
+          const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0, 0, 0);
+          return { start, end, label: 'Morning Shift (8 AM - 2 PM)' };
+        } else if (currentHour >= 14 && currentHour < 20) {
+          // Afternoon Shift: 2 PM - 8 PM today
+          const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0, 0, 0);
+          const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0, 0);
+          return { start, end, label: 'Afternoon Shift (2 PM - 8 PM)' };
+        } else {
+          // Night Shift: 8 PM - 8 AM (spans two days)
+          let start: Date, end: Date;
+          if (currentHour >= 20) {
+            // After 8 PM today - shift started today at 8 PM, ends tomorrow 8 AM
+            start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0, 0);
+            end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 0, 0, 0);
+          } else {
+            // Before 8 AM today - shift started yesterday at 8 PM, ends today 8 AM
+            start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 20, 0, 0, 0);
+            end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0, 0);
+          }
+          return { start, end, label: 'Night Shift (8 PM - 8 AM)' };
+        }
+      } else if (dailyUpdateShift === 'full24') {
+        const end = new Date();
+        const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+        return { start, end, label: 'Last 24 Hours' };
+      } else if (selectedShiftOption) {
+        // Specific shift selection - use today's date with shift hours
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), selectedShiftOption.startHour, 0, 0, 0);
+        let end: Date;
+        if (selectedShiftOption.endHour < selectedShiftOption.startHour) {
+          // Night shift spans to next day
+          end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, selectedShiftOption.endHour, 0, 0, 0);
+        } else {
+          end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), selectedShiftOption.endHour, 0, 0, 0);
+        }
+        return { start, end, label: selectedShiftOption.label };
+      }
+      return { start: new Date(), end: new Date(), label: 'Current' };
+    };
+
+    const { start: shiftStart, end: shiftEnd, label: shiftLabel } = getShiftRange();
+
+    // Helper to check if datetime is within shift range (for fields with time)
+    const isWithinShift = (dateStr: string | undefined) => {
+      if (!dateStr) return false;
+      const date = parseSafeDate(dateStr);
+      if (!date) return false;
+      return date >= shiftStart && date <= shiftEnd;
+    };
+
+    // Helper to check if a datestring has time component (contains 'T' in ISO format)
+    const hasTimeComponent = (dateStr: string | undefined) => {
+      if (!dateStr) return false;
+      return dateStr.includes('T');
+    };
+
+    // Smart check: uses precise time if available, otherwise falls back to day check
+    // This handles both datetime fields (with time) and date-only fields
+    const isEventInShift = (dateStr: string | undefined) => {
+      if (!dateStr) return false;
+      const date = parseSafeDate(dateStr);
+      if (!date) return false;
+
+      if (hasTimeComponent(dateStr)) {
+        // Has time - do precise check
+        return date >= shiftStart && date <= shiftEnd;
+      } else {
+        // Date only - check if on same calendar day as shift
+        const shiftStartDay = new Date(shiftStart.getFullYear(), shiftStart.getMonth(), shiftStart.getDate());
+        const shiftEndDay = new Date(shiftEnd.getFullYear(), shiftEnd.getMonth(), shiftEnd.getDate());
+        const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        return dateDay >= shiftStartDay && dateDay <= shiftEndDay;
+      }
+    };
+
+    // Filter patients by type selection
+    const getFilteredPatients = () => {
+      const allPatients = toAnalyticsPatients(patients)
+        .filter(p => selectedUnits.includes(p.unit))
+        .filter(p => isKnownNicuAdmissionRecord(p));
+
+      if (dailyUpdateType === 'inborn') {
+        return allPatients.filter(p => {
+          if (p.unit !== Unit.NICU && p.unit !== Unit.SNCU) return true;
+          return matchesAdmissionTypeFilter(p, 'inborn');
+        });
+      }
+
+      if (dailyUpdateType === 'outborn') {
+        return allPatients.filter(p => {
+          if (p.unit !== Unit.NICU && p.unit !== Unit.SNCU) return true;
+          return matchesAdmissionTypeFilter(p, 'outborn');
+        });
+      }
+
+      return allPatients;
+    };
+
+    const getFilteredObsPatients = () => {
+      const allObs = observationPatients
+        .filter(p => selectedUnits.includes(p.unit))
+        .filter(p => isKnownNicuAdmissionRecord(p as any));
+
+      if (dailyUpdateType === 'inborn') {
+        return allObs.filter(p => {
+          if (p.unit !== Unit.NICU && p.unit !== Unit.SNCU) return true;
+          return matchesAdmissionTypeFilter(p as any, 'inborn');
+        });
+      }
+
+      if (dailyUpdateType === 'outborn') {
+        return allObs.filter(p => {
+          if (p.unit !== Unit.NICU && p.unit !== Unit.SNCU) return true;
+          return matchesAdmissionTypeFilter(p as any, 'outborn');
+        });
+      }
+
+      return allObs;
+    };
+
+    // Filter observation patients by selected units
+    const filteredObsPatients = getFilteredObsPatients();
+    const allFilteredPatients = getFilteredPatients();
+    const outcomeOf = (patient: Patient) => getCanonicalOutcome(patient);
+
+    // Calculate comprehensive stats
+    // Admitted patients (In Progress) - NOT including step down
+    const admittedPatients = allFilteredPatients.filter(p => outcomeOf(p) === 'In Progress').length;
+    // Observation patients (active)
+    const observationPatients_count = filteredObsPatients.filter(p => p.outcome === ObservationOutcome.InObservation).length;
+    // Currently in Step Down (with mother)
+    const currentlyInStepDown = allFilteredPatients.filter(p => outcomeOf(p) === 'Step Down').length;
+
+    const stats = {
+      admitted: admittedPatients,
+      inObservation: observationPatients_count,
+      currentlyInStepDown: currentlyInStepDown,
+
+      // Period activity
+      steppedDownThisShift: allFilteredPatients.filter(p => {
+        if (outcomeOf(p) !== 'Step Down') return false;
+        return isEventInShift(p.stepDownDate);
+      }).length,
+
+      newAdmissions: allFilteredPatients.filter(p => {
+        if (p.readmissionFromStepDown) return false;
+        return isEventInShift(p.admissionDateTime) || isEventInShift(p.admissionDate);
+      }).length,
+
+      discharged: allFilteredPatients.filter(p => {
+        if (outcomeOf(p) !== 'Discharged') return false;
+        return isEventInShift(p.dischargeDateTime) ||
+               isEventInShift(p.finalDischargeDate) ||
+               isEventInShift(p.releaseDate);
+      }).length,
+
+      referred: allFilteredPatients.filter(p => {
+        if (outcomeOf(p) !== 'Referred') return false;
+        return isEventInShift(p.dischargeDateTime) || isEventInShift(p.releaseDate);
+      }).length,
+
+      deceased: allFilteredPatients.filter(p => {
+        if (outcomeOf(p) !== 'Deceased') return false;
+        return isEventInShift(p.dateOfDeath) || isEventInShift(p.releaseDate);
+      }).length,
+
+      readmitFromStepDown: allFilteredPatients.filter(p => {
+        if (!p.readmissionFromStepDown) return false;
+        if (p.readmissionDate) return isEventInShift(p.readmissionDate);
+        if (p.lastEditedAt) return isEventInShift(p.lastEditedAt);
+        return false;
+      }).length,
+    };
+
+    const typeLabel = dailyUpdateType === 'inborn' ? 'Inborn' : dailyUpdateType === 'outborn' ? 'Outborn' : 'All Patients';
+    const totalPatients = stats.admitted + stats.currentlyInStepDown + stats.inObservation;
+    const summaryRows = [
+      {
+        label: 'Total Patients',
+        value: totalPatients,
+        suffix: stats.inObservation > 0 ? ` (Observation: ${stats.inObservation})` : ''
+      },
+      { label: 'Total Admissions', value: stats.newAdmissions },
+      ...(stats.referred > 0 ? [{ label: 'Referred', value: stats.referred }] : []),
+      { label: 'Discharged', value: stats.discharged },
+      { label: 'Step Down', value: stats.steppedDownThisShift },
+      ...(stats.readmitFromStepDown > 0 ? [{ label: 'Readmit from Step Down', value: stats.readmitFromStepDown }] : []),
+      ...(stats.deceased > 0 ? [{ label: 'Deaths', value: stats.deceased }] : []),
+      { label: 'Patients in Observation', value: stats.inObservation },
+    ];
+
+    // Generate report text
+    const generateReportText = () => {
+      const unitName = selectedUnits.join('/');
+      return `${unitName} Daily Update
+Date: ${formattedDateTime}
+Period: ${shiftLabel}
+Institution: ${institutionName || 'Hospital'}
+Patient Type: ${typeLabel}
+
+Summary
+${summaryRows.map(row => `${row.label}: ${row.value}${row.suffix || ''}`).join('\n')}`;
+    };
+
+    const reportText = generateReportText();
+
+    const copyToClipboard = async () => {
+      try {
+        await navigator.clipboard.writeText(reportText);
+        setCopyFeedback('✅ Report copied!');
+        setTimeout(() => setCopyFeedback(null), 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+        const textArea = document.createElement('textarea');
+        textArea.value = reportText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setCopyFeedback('✅ Report copied!');
+        setTimeout(() => setCopyFeedback(null), 2000);
+      }
+    };
+
+    // Load data when reaching report step
+    const loadDataAndShowReport = async () => {
+      setGenerating(true);
+      try {
+        const [loadedPatients, loadedObsPatients] = await Promise.all([
+          loadPatients(),
+          loadObservationPatients()
+        ]);
+        setPatients(loadedPatients);
+        setObservationPatients(loadedObsPatients);
+        setDailyUpdateStep('report');
+      } finally {
+        setGenerating(false);
+      }
+    };
+
+    // STEP 1: Select Patient Type (Inborn/Outborn/All)
+    if (dailyUpdateStep === 'type') {
+      return (
+        <div className="min-h-[50vh] flex flex-col p-4">
+          <div className="w-full max-w-2xl mx-auto">
+            {/* Header */}
+            <div className="mb-6">
+              <h2 className="text-xl md:text-2xl font-bold text-white mb-1">Daily Update Report</h2>
+              <p className="text-slate-400 text-sm">Step 1 of 2 — Select patient category</p>
+            </div>
+
+            {/* Options */}
+            <div className="space-y-3">
+              {[
+                { id: 'inborn', label: 'Inborn', desc: 'Babies born in this hospital' },
+                { id: 'outborn', label: 'Outborn', desc: 'Babies referred from outside' },
+                { id: 'all', label: 'All Patients', desc: 'Combined report for all patients' },
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => {
+                    setDailyUpdateType(option.id as 'inborn' | 'outborn' | 'all');
+                    setDailyUpdateStep('shift');
+                  }}
+                  className="w-full flex items-center justify-between p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
+                >
+                  <div className="text-left">
+                    <div className="text-base font-semibold text-white">{option.label}</div>
+                    <div className="text-slate-400 text-sm">{option.desc}</div>
+                  </div>
+                  <IconChevronRight size={20} className="text-slate-500" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // STEP 2: Select Shift
+    if (dailyUpdateStep === 'shift') {
+      return (
+        <div className="min-h-[50vh] flex flex-col p-4">
+          <div className="w-full max-w-2xl mx-auto">
+            {/* Header */}
+            <div className="mb-6">
+              <button
+                onClick={() => setDailyUpdateStep('type')}
+                className="inline-flex items-center gap-1 text-slate-400 hover:text-white text-sm mb-3 transition-colors"
+              >
+                <IconArrowLeft size={16} />
+                <span>Back</span>
+              </button>
+              <h2 className="text-xl md:text-2xl font-bold text-white mb-1">Select Time Period</h2>
+              <p className="text-slate-400 text-sm">
+                Step 2 of 2 — {dailyUpdateType === 'inborn' ? 'Inborn' : dailyUpdateType === 'outborn' ? 'Outborn' : 'All Patients'}
+              </p>
+            </div>
+
+            {/* Shift Options */}
+            <div className="space-y-3">
+              {SHIFT_OPTIONS.map((shift) => (
+                <button
+                  key={shift.id}
+                  onClick={() => {
+                    setDailyUpdateShift(shift.id as any);
+                    loadDataAndShowReport();
+                  }}
+                  disabled={generating}
+                  className="w-full flex items-center justify-between p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <div className="text-left">
+                    <div className="text-base font-semibold text-white">{shift.label}</div>
+                    <div className="text-slate-400 text-sm">{shift.time}</div>
+                  </div>
+                  {generating && dailyUpdateShift === shift.id ? (
+                    <IconLoader2 size={20} className="text-slate-400 animate-spin" />
+                  ) : (
+                    <IconChevronRight size={20} className="text-slate-500" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // STEP 3: Show Report
+    return (
+      <div className="space-y-4 p-4 max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => setDailyUpdateStep('shift')}
+            className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
+          >
+            <IconArrowLeft size={20} className="text-slate-400" />
+          </button>
+          <div className="flex-1">
+            <h2 className="text-lg md:text-xl font-bold text-white">Daily Update Report</h2>
+            <p className="text-slate-400 text-sm">{typeLabel} • {shiftLabel}</p>
+          </div>
+        </div>
+
+        {/* Report Meta */}
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="text-slate-400">Institution</div>
+              <div className="font-medium text-white">{institutionName || 'Hospital'}</div>
+            </div>
+            <div>
+              <div className="text-slate-400">Units</div>
+              <div className="font-medium text-white">{selectedUnits.join('/')}</div>
+            </div>
+            <div>
+              <div className="text-slate-400">Patient Type</div>
+              <div className="font-medium text-white">{typeLabel}</div>
+            </div>
+            <div>
+              <div className="text-slate-400">Period</div>
+              <div className="font-medium text-white">{shiftLabel}</div>
+            </div>
+            <div>
+              <div className="text-slate-400">Generated</div>
+              <div className="font-medium text-white">{formattedDateTime}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary Section */}
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+          <h3 className="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wide">Summary</h3>
+          <div className="divide-y divide-slate-700 rounded-lg border border-slate-700 bg-slate-900">
+            {summaryRows.map((row) => (
+              <div key={row.label} className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-slate-300">{row.label}</span>
+                <span className="text-right text-lg font-semibold text-white">
+                  {row.value}
+                  {row.suffix ? <span className="text-sm font-medium text-slate-400">{row.suffix}</span> : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Copy Button */}
+        <button
+          onClick={copyToClipboard}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold text-white transition-colors"
+        >
+          <IconCopy size={20} />
+          <span>Copy Report for WhatsApp</span>
+        </button>
+        {copyFeedback && (
+          <div className="py-2 bg-green-600 rounded-lg text-center text-white text-sm font-medium">
+            {copyFeedback}
+          </div>
+        )}
+
+        {/* Preview */}
+        <details className="bg-slate-800 rounded-lg border border-slate-700">
+          <summary className="p-3 cursor-pointer text-slate-400 text-sm font-medium hover:text-white transition-colors">
+            View Report Preview
+          </summary>
+          <div className="px-3 pb-3">
+            <div className="bg-slate-900 rounded-lg p-3 text-slate-300 font-mono text-xs leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">
+              {reportText}
+            </div>
+          </div>
+        </details>
+      </div>
+    );
   };
 
   // Admissions Report
@@ -856,7 +2201,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       </section>
 
       {/* Patient List */}
-      {renderPatientRegistry('Admitted Patients', filteredPatients)}
+      {renderPatientRegistry('Admitted Patients', filteredPatients, showPatientDetails)}
     </div>
   );
 
@@ -969,7 +2314,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       </section>
 
       {/* Deceased Patient List */}
-      {renderPatientRegistry('Deceased Patients', stats.deceasedPatients)}
+      {renderPatientRegistry('Deceased Patients', stats.deceasedPatients, showPatientDetails)}
     </div>
   );
 
@@ -1024,57 +2369,151 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       </section>
 
       {/* Referred Patients List */}
-      {renderPatientRegistry('Referred Patients', stats.referredPatients)}
+      {renderPatientRegistry('Referred Patients', stats.referredPatients, showPatientDetails)}
     </div>
   );
 
   // Step Down Report
-  const renderStepDownReport = () => (
-    <div className="space-y-8">
-      {/* Step Down Summary */}
-      <section>
-        <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-teal-500 flex items-center gap-2">
-          <IconArrowDown size={22} className="text-teal-600" /> Step Down Summary
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <div className="bg-teal-50 rounded-xl p-4 text-center">
-            <div className="text-3xl font-bold text-teal-600">{stats.stepDown}</div>
-            <div className="text-xs text-slate-600 mt-1">Total Step Downs</div>
-          </div>
-          <div className="bg-cyan-50 rounded-xl p-4 text-center">
-            <div className="text-3xl font-bold text-cyan-600">{stats.stepDownRate}%</div>
-            <div className="text-xs text-slate-600 mt-1">Step Down Rate</div>
-          </div>
-          <div className="bg-blue-50 rounded-xl p-4 text-center">
-            <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
-            <div className="text-xs text-slate-600 mt-1">Total Admissions</div>
-          </div>
-        </div>
-      </section>
+  const renderStepDownReport = () => {
+    // Calculate step-down status breakdown
+    const currentlyInStepDown = stats.stepDownPatients.filter(p => getCanonicalOutcome(p) === 'Step Down').length;
+    const dischargedFromStepDown = stats.stepDownPatients.filter(p => p.stepDownDate && getCanonicalOutcome(p) === 'Discharged').length;
+    const readmittedFromStepDown = stats.stepDownPatients.filter(p => p.readmissionFromStepDown).length;
+    const deceasedAfterStepDown = stats.stepDownPatients.filter(p => p.stepDownDate && getCanonicalOutcome(p) === 'Deceased').length;
+    const otherOutcomeAfterStepDown = stats.stepDown - currentlyInStepDown - dischargedFromStepDown - deceasedAfterStepDown;
 
-      {/* Step Down Locations */}
-      <section>
-        <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-green-500 flex items-center gap-2">
-          <IconBed size={22} className="text-green-600" /> Step Down Locations
-        </h3>
-        {Object.keys(stats.stepDownLocations).length > 0 ? (
+    return (
+      <div className="space-y-8">
+        {/* Step Down Summary */}
+        <section>
+          <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-teal-500 flex items-center gap-2">
+            <IconArrowDown size={22} className="text-teal-600" /> Step Down Summary
+          </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {Object.entries(stats.stepDownLocations).map(([location, count]) => (
-              <div key={location} className="bg-slate-50 rounded-xl p-4">
-                <div className="text-2xl font-bold text-slate-700">{count}</div>
-                <div className="text-sm text-slate-600">{location}</div>
-              </div>
-            ))}
+            <div className="bg-teal-50 rounded-xl p-4 text-center">
+              <div className="text-3xl font-bold text-teal-600">{stats.stepDown}</div>
+              <div className="text-xs text-slate-600 mt-1">Total Step Downs (All Time)</div>
+            </div>
+            <div className="bg-cyan-50 rounded-xl p-4 text-center">
+              <div className="text-3xl font-bold text-cyan-600">{stats.stepDownRate}%</div>
+              <div className="text-xs text-slate-600 mt-1">Step Down Rate</div>
+            </div>
+            <div className="bg-blue-50 rounded-xl p-4 text-center">
+              <div className="text-3xl font-bold text-blue-600">{stats.total}</div>
+              <div className="text-xs text-slate-600 mt-1">Total Admissions</div>
+            </div>
           </div>
-        ) : (
-          <p className="text-slate-500 italic">No step down data available</p>
-        )}
-      </section>
+        </section>
 
-      {/* Step Down Patients List */}
-      {renderPatientRegistry('Step Down Patients', stats.stepDownPatients)}
-    </div>
-  );
+        {/* Step Down Status Breakdown */}
+        <section>
+          <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-purple-500 flex items-center gap-2">
+            <IconChartBar size={22} className="text-purple-600" /> Current Status of Step Down Patients
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="bg-teal-50 rounded-xl p-4 text-center">
+              <div className="text-2xl font-bold text-teal-600">{currentlyInStepDown}</div>
+              <div className="text-xs text-slate-600 mt-1">Currently in Step Down</div>
+            </div>
+            <div className="bg-green-50 rounded-xl p-4 text-center">
+              <div className="text-2xl font-bold text-green-600">{dischargedFromStepDown}</div>
+              <div className="text-xs text-slate-600 mt-1">Discharged</div>
+            </div>
+            <div className="bg-orange-50 rounded-xl p-4 text-center">
+              <div className="text-2xl font-bold text-orange-600">{readmittedFromStepDown}</div>
+              <div className="text-xs text-slate-600 mt-1">Readmitted to ICU</div>
+            </div>
+            <div className="bg-red-50 rounded-xl p-4 text-center">
+              <div className="text-2xl font-bold text-red-600">{deceasedAfterStepDown}</div>
+              <div className="text-xs text-slate-600 mt-1">Deceased</div>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-4 text-center">
+              <div className="text-2xl font-bold text-slate-600">{otherOutcomeAfterStepDown > 0 ? otherOutcomeAfterStepDown : 0}</div>
+              <div className="text-xs text-slate-600 mt-1">Other Outcome</div>
+            </div>
+          </div>
+        </section>
+
+        {/* Step Down Locations */}
+        <section>
+          <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-green-500 flex items-center gap-2">
+            <IconBed size={22} className="text-green-600" /> Step Down Locations
+          </h3>
+          {Object.keys(stats.stepDownLocations).length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {Object.entries(stats.stepDownLocations).map(([location, count]) => (
+                <div key={location} className="bg-slate-50 rounded-xl p-4">
+                  <div className="text-2xl font-bold text-slate-700">{count}</div>
+                  <div className="text-sm text-slate-600">{location}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-500 italic">No step down location data available</p>
+          )}
+        </section>
+
+        {/* Step Down Patients List - with enhanced info */}
+        {showPatientDetails && (
+          <section>
+            <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-indigo-500 flex items-center gap-2">
+              <IconClipboardList size={22} className="text-indigo-600" /> Step Down Patient Registry ({stats.stepDownPatients.length})
+            </h3>
+            <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="text-left p-3 font-semibold text-slate-700">Patient</th>
+                    <th className="text-left p-3 font-semibold text-slate-700">Diagnosis</th>
+                    <th className="text-left p-3 font-semibold text-slate-700">Step Down Date</th>
+                    <th className="text-left p-3 font-semibold text-slate-700">Location</th>
+                    <th className="text-left p-3 font-semibold text-slate-700">Current Status</th>
+                    <th className="text-left p-3 font-semibold text-slate-700">Final Discharge</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {stats.stepDownPatients.map((patient, idx) => {
+                    const canonicalOutcome = getCanonicalOutcome(patient);
+                    return (
+                    <tr key={idx} className="hover:bg-slate-50">
+                      <td className="p-3">
+                        <div className="font-medium text-slate-800">{patient.name}</div>
+                      </td>
+                      <td className="p-3 text-xs text-slate-600">
+                        {patient.diagnosis?.substring(0, 40)}{patient.diagnosis && patient.diagnosis.length > 40 ? '...' : '-'}
+                      </td>
+                      <td className="p-3 text-slate-600">
+                        {patient.stepDownDate ? new Date(patient.stepDownDate).toLocaleDateString() : '-'}
+                      </td>
+                      <td className="p-3 text-slate-600">
+                        {patient.stepDownLocation || 'Not Specified'}
+                      </td>
+                      <td className="p-3">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          canonicalOutcome === 'Step Down' ? 'bg-teal-100 text-teal-700' :
+                          canonicalOutcome === 'Discharged' ? 'bg-green-100 text-green-700' :
+                          canonicalOutcome === 'Deceased' ? 'bg-red-100 text-red-700' :
+                          patient.readmissionFromStepDown ? 'bg-orange-100 text-orange-700' :
+                          'bg-slate-100 text-slate-700'
+                        }`}>
+                          {patient.readmissionFromStepDown ? 'Readmitted' : canonicalOutcome}
+                        </span>
+                      </td>
+                      <td className="p-3 text-slate-600">
+                        {patient.finalDischargeDate ? new Date(patient.finalDischargeDate).toLocaleDateString() :
+                         patient.releaseDate && canonicalOutcome === 'Discharged' ? new Date(patient.releaseDate).toLocaleDateString() : '-'}
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+      </div>
+    );
+  };
 
   // Mortality Analysis Report
   const renderMortalityReport = () => (
@@ -1129,11 +2568,10 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
                     <td className="p-3 text-center">{data.total}</td>
                     <td className="p-3 text-center text-red-600">{data.deceased}</td>
                     <td className="p-3 text-center">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        parseFloat(mortRate) > 30 ? 'bg-red-100 text-red-700' :
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${parseFloat(mortRate) > 30 ? 'bg-red-100 text-red-700' :
                         parseFloat(mortRate) > 15 ? 'bg-amber-100 text-amber-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>{mortRate}%</span>
+                          'bg-green-100 text-green-700'
+                        }`}>{mortRate}%</span>
                     </td>
                   </tr>
                 );
@@ -1168,11 +2606,10 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
                     <td className="p-3 text-center">{data.total}</td>
                     <td className="p-3 text-center text-red-600">{data.deceased}</td>
                     <td className="p-3 text-center">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        parseFloat(mortRate) > 40 ? 'bg-red-100 text-red-700' :
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${parseFloat(mortRate) > 40 ? 'bg-red-100 text-red-700' :
                         parseFloat(mortRate) > 20 ? 'bg-amber-100 text-amber-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>{mortRate}%</span>
+                          'bg-green-100 text-green-700'
+                        }`}>{mortRate}%</span>
                     </td>
                   </tr>
                 );
@@ -1207,6 +2644,108 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
                 Mortality: {stats.females > 0 ? ((stats.femaleDeceased / stats.females) * 100).toFixed(1) : 0}%
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Early vs Late Mortality (Time from Admission to Death) */}
+      <section>
+        <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-orange-500 flex items-center gap-2">
+          <IconClock size={22} className="text-orange-600" /> Mortality Timing Analysis
+        </h3>
+        <p className="text-sm text-slate-600 mb-4">Analysis of time from admission to death - helps identify early preventable deaths</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-red-50 rounded-xl p-4 text-center border-2 border-red-200">
+            <div className="text-3xl font-bold text-red-600">{stats.earlyMortality.within6Hours}</div>
+            <div className="text-xs text-slate-600 mt-1 font-medium">Within 6 Hours</div>
+            <div className="text-xs text-red-500 mt-1">Critical Period</div>
+          </div>
+          <div className="bg-orange-50 rounded-xl p-4 text-center border-2 border-orange-200">
+            <div className="text-3xl font-bold text-orange-600">{stats.earlyMortality.sixTo24Hours}</div>
+            <div className="text-xs text-slate-600 mt-1 font-medium">6-24 Hours</div>
+            <div className="text-xs text-orange-500 mt-1">Stabilization Period</div>
+          </div>
+          <div className="bg-amber-50 rounded-xl p-4 text-center border-2 border-amber-200">
+            <div className="text-3xl font-bold text-amber-600">{stats.earlyMortality.oneToSevenDays}</div>
+            <div className="text-xs text-slate-600 mt-1 font-medium">1-7 Days</div>
+            <div className="text-xs text-amber-500 mt-1">Early Neonatal</div>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4 text-center border-2 border-slate-200">
+            <div className="text-3xl font-bold text-slate-600">{stats.earlyMortality.afterSevenDays}</div>
+            <div className="text-xs text-slate-600 mt-1 font-medium">&gt; 7 Days</div>
+            <div className="text-xs text-slate-500 mt-1">Late Mortality</div>
+          </div>
+        </div>
+        <div className="mt-4 bg-blue-50 rounded-lg p-4 text-sm text-blue-800">
+          <strong>Interpretation:</strong> High mortality within 6 hours suggests need for improved resuscitation and transport.
+          Deaths in 6-24 hours may indicate inadequate stabilization. Deaths after 7 days often relate to chronic complications or nosocomial infections.
+        </div>
+      </section>
+
+      {/* Inborn vs Outborn Mortality Comparison */}
+      <section>
+        <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-indigo-500 flex items-center gap-2">
+          <IconActivity size={22} className="text-indigo-600" /> Inborn vs Outborn Mortality
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-5 border border-blue-200">
+            <h4 className="text-lg font-bold text-blue-800 mb-3 flex items-center gap-2">
+              <span className="bg-blue-500 text-white px-2 py-1 rounded text-xs">INBORN</span>
+            </h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-2xl font-bold text-blue-600">{stats.inborn}</div>
+                <div className="text-xs text-slate-600">Total</div>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-2xl font-bold text-red-600">{stats.inbornDeceased}</div>
+                <div className="text-xs text-slate-600">Deaths</div>
+              </div>
+            </div>
+            <div className="mt-4 bg-white rounded-lg p-3 text-center">
+              <div className="text-3xl font-bold text-red-600">{stats.inbornMortality}%</div>
+              <div className="text-sm text-slate-600">Mortality Rate</div>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-5 border border-orange-200">
+            <h4 className="text-lg font-bold text-orange-800 mb-3 flex items-center gap-2">
+              <span className="bg-orange-500 text-white px-2 py-1 rounded text-xs">OUTBORN</span>
+            </h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-2xl font-bold text-orange-600">{stats.outborn}</div>
+                <div className="text-xs text-slate-600">Total</div>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-2xl font-bold text-red-600">{stats.outbornDeceased}</div>
+                <div className="text-xs text-slate-600">Deaths</div>
+              </div>
+            </div>
+            <div className="mt-4 bg-white rounded-lg p-3 text-center">
+              <div className="text-3xl font-bold text-red-600">{stats.outbornMortality}%</div>
+              <div className="text-sm text-slate-600">Mortality Rate</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Average Time to Death */}
+      <section>
+        <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-slate-400 flex items-center gap-2">
+          <IconClock size={22} className="text-slate-600" /> Time to Death Statistics
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="bg-slate-50 rounded-xl p-4 text-center">
+            <div className="text-3xl font-bold text-slate-700">{stats.deceased}</div>
+            <div className="text-xs text-slate-600 mt-1">Total Deaths</div>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4 text-center">
+            <div className="text-3xl font-bold text-slate-700">{stats.avgTimeToDeathHours}h</div>
+            <div className="text-xs text-slate-600 mt-1">Avg Hours to Death</div>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4 text-center">
+            <div className="text-3xl font-bold text-slate-700">{(stats.avgTimeToDeathHours / 24).toFixed(1)}d</div>
+            <div className="text-xs text-slate-600 mt-1">Avg Days to Death</div>
           </div>
         </div>
       </section>
@@ -1383,7 +2922,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
             </div>
             <div className="bg-teal-50 rounded-xl p-4 text-center">
               <div className="text-3xl font-bold text-teal-600">{stats.dischargeRate}%</div>
-              <div className="text-xs text-slate-600 mt-1">Discharge Rate</div>
+              <div className="text-xs text-slate-600 mt-1">Overall Discharge Rate</div>
             </div>
             <div className="bg-blue-50 rounded-xl p-4 text-center">
               <div className="text-3xl font-bold text-blue-600">{stats.avgLOS} days</div>
@@ -1396,12 +2935,100 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
           </div>
         </section>
 
+        {/* Inborn vs Outborn Discharge Rates */}
+        <section>
+          <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-indigo-500 flex items-center gap-2">
+            <IconUsers size={22} className="text-indigo-600" /> Inborn vs Outborn Discharge Analysis
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Inborn Stats */}
+            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-5 border border-blue-200">
+              <h4 className="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
+                <span className="bg-blue-500 text-white px-2 py-1 rounded text-xs">INBORN</span>
+                Babies born in this facility
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-blue-600">{stats.inborn}</div>
+                  <div className="text-xs text-slate-600">Total Inborn</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-green-600">{stats.inbornDischarged}</div>
+                  <div className="text-xs text-slate-600">Discharged</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-emerald-600">{stats.inbornDischargeRate}%</div>
+                  <div className="text-xs text-slate-600">Discharge Rate</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-cyan-600">{stats.avgLosInborn} days</div>
+                  <div className="text-xs text-slate-600">Avg LOS</div>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="bg-white/60 rounded p-2">
+                  <div className="text-sm font-semibold text-red-600">{stats.inbornDeceased}</div>
+                  <div className="text-xs text-slate-500">Deceased</div>
+                </div>
+                <div className="bg-white/60 rounded p-2">
+                  <div className="text-sm font-semibold text-amber-600">{stats.inbornReferred}</div>
+                  <div className="text-xs text-slate-500">Referred</div>
+                </div>
+                <div className="bg-white/60 rounded p-2">
+                  <div className="text-sm font-semibold text-blue-600">{stats.inbornActive}</div>
+                  <div className="text-xs text-slate-500">Active</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Outborn Stats */}
+            <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-5 border border-orange-200">
+              <h4 className="text-lg font-bold text-orange-800 mb-4 flex items-center gap-2">
+                <span className="bg-orange-500 text-white px-2 py-1 rounded text-xs">OUTBORN</span>
+                Babies referred from outside
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-orange-600">{stats.outborn}</div>
+                  <div className="text-xs text-slate-600">Total Outborn</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-green-600">{stats.outbornDischarged}</div>
+                  <div className="text-xs text-slate-600">Discharged</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-emerald-600">{stats.outbornDischargeRate}%</div>
+                  <div className="text-xs text-slate-600">Discharge Rate</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                  <div className="text-2xl font-bold text-amber-600">{stats.avgLosOutborn} days</div>
+                  <div className="text-xs text-slate-600">Avg LOS</div>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="bg-white/60 rounded p-2">
+                  <div className="text-sm font-semibold text-red-600">{stats.outbornDeceased}</div>
+                  <div className="text-xs text-slate-500">Deceased</div>
+                </div>
+                <div className="bg-white/60 rounded p-2">
+                  <div className="text-sm font-semibold text-amber-600">{stats.outbornReferred}</div>
+                  <div className="text-xs text-slate-500">Referred</div>
+                </div>
+                <div className="bg-white/60 rounded p-2">
+                  <div className="text-sm font-semibold text-orange-600">{stats.outbornActive}</div>
+                  <div className="text-xs text-slate-500">Active</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Length of Stay Statistics */}
         <section>
           <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-blue-500 flex items-center gap-2">
             <IconBed size={22} className="text-blue-600" /> Length of Stay Analysis
           </h3>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="bg-slate-50 rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-slate-700">{stats.minLOS}</div>
               <div className="text-xs text-slate-600">Minimum (days)</div>
@@ -1413,6 +3040,31 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
             <div className="bg-slate-50 rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-slate-700">{stats.maxLOS}</div>
               <div className="text-xs text-slate-600">Maximum (days)</div>
+            </div>
+          </div>
+
+          {/* LOS Distribution */}
+          <h4 className="text-md font-semibold text-slate-700 mb-3">Length of Stay Distribution</h4>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="bg-green-50 rounded-lg p-3 text-center border border-green-200">
+              <div className="text-xl font-bold text-green-600">{stats.losDistribution.lessThan24hrs}</div>
+              <div className="text-xs text-slate-600">&lt; 24 hours</div>
+            </div>
+            <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-200">
+              <div className="text-xl font-bold text-blue-600">{stats.losDistribution.oneToThreeDays}</div>
+              <div className="text-xs text-slate-600">1-3 days</div>
+            </div>
+            <div className="bg-indigo-50 rounded-lg p-3 text-center border border-indigo-200">
+              <div className="text-xl font-bold text-indigo-600">{stats.losDistribution.threeToSevenDays}</div>
+              <div className="text-xs text-slate-600">3-7 days</div>
+            </div>
+            <div className="bg-purple-50 rounded-lg p-3 text-center border border-purple-200">
+              <div className="text-xl font-bold text-purple-600">{stats.losDistribution.oneToTwoWeeks}</div>
+              <div className="text-xs text-slate-600">1-2 weeks</div>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-3 text-center border border-amber-200">
+              <div className="text-xl font-bold text-amber-600">{stats.losDistribution.moreThanTwoWeeks}</div>
+              <div className="text-xs text-slate-600">&gt; 2 weeks</div>
             </div>
           </div>
         </section>
@@ -1439,7 +3091,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
         </section>
 
         {/* Discharged Patients List */}
-        {renderPatientRegistry('Discharged Patients', dischargedPatients)}
+        {renderPatientRegistry('Discharged Patients', dischargedPatients, showPatientDetails)}
       </div>
     );
   };
@@ -1500,32 +3152,81 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
         </div>
       </section>
 
-      {/* Inborn vs Outborn */}
+      {/* Inborn vs Outborn Comprehensive Analysis */}
       <section>
         <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-pink-500 flex items-center gap-2">
           <IconHeartbeat size={22} className="text-pink-600" /> Inborn vs Outborn Analysis
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-blue-50 rounded-xl p-5">
-            <h4 className="font-semibold text-blue-800 mb-3">Inborn Admissions</h4>
+          {/* Inborn Card */}
+          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-5 border border-blue-200">
+            <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2">
+              <span className="bg-blue-500 text-white px-2 py-1 rounded text-xs">INBORN</span>
+              Babies born in this facility
+            </h4>
             <div className="text-4xl font-bold text-blue-600">{stats.inborn}</div>
-            <div className="text-sm text-slate-600 mt-1">
-              {stats.total > 0 ? ((stats.inborn / stats.total) * 100).toFixed(1) : 0}% of total
+            <div className="text-sm text-slate-600 mt-1 mb-4">
+              {stats.total > 0 ? ((stats.inborn / stats.total) * 100).toFixed(1) : 0}% of total admissions
             </div>
-            <div className="mt-3 pt-3 border-t border-blue-200">
-              <span className="text-sm">Mortality Rate: </span>
-              <span className="font-semibold text-red-600">{stats.inbornMortality}%</span>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-xl font-bold text-green-600">{stats.inbornDischargeRate}%</div>
+                <div className="text-xs text-slate-600">Discharge Rate</div>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-xl font-bold text-red-600">{stats.inbornMortality}%</div>
+                <div className="text-xs text-slate-600">Mortality Rate</div>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-xl font-bold text-cyan-600">{stats.avgLosInborn}d</div>
+                <div className="text-xs text-slate-600">Avg LOS</div>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-xl font-bold text-amber-600">{stats.inbornReferralRate}%</div>
+                <div className="text-xs text-slate-600">Referral Rate</div>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-blue-200 grid grid-cols-4 gap-2 text-center text-xs">
+              <div><span className="font-bold text-green-600">{stats.inbornDischarged}</span><br/>Dischgd</div>
+              <div><span className="font-bold text-red-600">{stats.inbornDeceased}</span><br/>Deaths</div>
+              <div><span className="font-bold text-amber-600">{stats.inbornReferred}</span><br/>Referred</div>
+              <div><span className="font-bold text-blue-600">{stats.inbornActive}</span><br/>Active</div>
             </div>
           </div>
-          <div className="bg-indigo-50 rounded-xl p-5">
-            <h4 className="font-semibold text-indigo-800 mb-3">Outborn Admissions</h4>
-            <div className="text-4xl font-bold text-indigo-600">{stats.outborn}</div>
-            <div className="text-sm text-slate-600 mt-1">
-              {stats.total > 0 ? ((stats.outborn / stats.total) * 100).toFixed(1) : 0}% of total
+
+          {/* Outborn Card */}
+          <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-5 border border-orange-200">
+            <h4 className="font-bold text-orange-800 mb-4 flex items-center gap-2">
+              <span className="bg-orange-500 text-white px-2 py-1 rounded text-xs">OUTBORN</span>
+              Referred from outside
+            </h4>
+            <div className="text-4xl font-bold text-orange-600">{stats.outborn}</div>
+            <div className="text-sm text-slate-600 mt-1 mb-4">
+              {stats.total > 0 ? ((stats.outborn / stats.total) * 100).toFixed(1) : 0}% of total admissions
             </div>
-            <div className="mt-3 pt-3 border-t border-indigo-200">
-              <span className="text-sm">Mortality Rate: </span>
-              <span className="font-semibold text-red-600">{stats.outbornMortality}%</span>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-xl font-bold text-green-600">{stats.outbornDischargeRate}%</div>
+                <div className="text-xs text-slate-600">Discharge Rate</div>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-xl font-bold text-red-600">{stats.outbornMortality}%</div>
+                <div className="text-xs text-slate-600">Mortality Rate</div>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-xl font-bold text-amber-600">{stats.avgLosOutborn}d</div>
+                <div className="text-xs text-slate-600">Avg LOS</div>
+              </div>
+              <div className="bg-white rounded-lg p-3 text-center shadow-sm">
+                <div className="text-xl font-bold text-purple-600">{stats.outbornReferralRate}%</div>
+                <div className="text-xs text-slate-600">Referral Rate</div>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-orange-200 grid grid-cols-4 gap-2 text-center text-xs">
+              <div><span className="font-bold text-green-600">{stats.outbornDischarged}</span><br/>Dischgd</div>
+              <div><span className="font-bold text-red-600">{stats.outbornDeceased}</span><br/>Deaths</div>
+              <div><span className="font-bold text-amber-600">{stats.outbornReferred}</span><br/>Referred</div>
+              <div><span className="font-bold text-orange-600">{stats.outbornActive}</span><br/>Active</div>
             </div>
           </div>
         </div>
@@ -1618,74 +3319,74 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       </section>
 
       {/* Patient Registry */}
-      {renderPatientRegistry('Patient Registry', filteredPatients.slice(0, 30))}
-      {filteredPatients.length > 30 && (
-        <p className="text-xs text-slate-500 text-center italic">
-          Showing 30 of {filteredPatients.length} patients. Export to CSV for full list.
-        </p>
-      )}
+      {renderPatientRegistry('Patient Registry', filteredPatients, showPatientDetails)}
     </div>
   );
 
-  // Reusable Patient Registry component
-  const renderPatientRegistry = (title: string, patients: Patient[]) => (
-    <section>
-      <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-slate-400 flex items-center gap-2">
-        <IconClipboardList size={22} className="text-slate-600" /> {title} ({patients.length})
-      </h3>
-      {patients.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="text-left p-2 font-semibold">S.No</th>
-                <th className="text-left p-2 font-semibold">NTID</th>
-                <th className="text-left p-2 font-semibold">Name</th>
-                <th className="text-left p-2 font-semibold">Gender</th>
-                <th className="text-left p-2 font-semibold">GA</th>
-                <th className="text-left p-2 font-semibold">BW</th>
-                <th className="text-left p-2 font-semibold">Admission</th>
-                <th className="text-left p-2 font-semibold">Diagnosis</th>
-                <th className="text-left p-2 font-semibold">Outcome</th>
-              </tr>
-            </thead>
-            <tbody>
-              {patients.slice(0, 50).map((patient, index) => (
-                <tr key={patient.id} className="border-b border-slate-200">
-                  <td className="p-2">{index + 1}</td>
-                  <td className="p-2 font-mono text-xs">{patient.ntid || '-'}</td>
-                  <td className="p-2 font-medium">{patient.name}</td>
-                  <td className="p-2">{patient.gender?.charAt(0) || '-'}</td>
-                  <td className="p-2">{patient.gestationalAgeWeeks ? `${patient.gestationalAgeWeeks}w` : '-'}</td>
-                  <td className="p-2">{patient.birthWeight ? `${patient.birthWeight < 10 ? (patient.birthWeight * 1000).toFixed(0) : patient.birthWeight}g` : '-'}</td>
-                  <td className="p-2">{new Date(patient.admissionDate).toLocaleDateString('en-IN')}</td>
-                  <td className="p-2 max-w-[150px] truncate">{patient.diagnosis || '-'}</td>
-                  <td className="p-2">
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                      patient.outcome === 'Discharged' ? 'bg-green-100 text-green-700' :
-                      patient.outcome === 'Deceased' ? 'bg-red-100 text-red-700' :
-                      patient.outcome === 'Referred' ? 'bg-amber-100 text-amber-700' :
-                      patient.outcome === 'Step Down' ? 'bg-teal-100 text-teal-700' :
-                      'bg-blue-100 text-blue-700'
-                    }`}>
-                      {patient.outcome || 'Active'}
-                    </span>
-                  </td>
+  // Reusable Patient Registry component - showDetails passed explicitly to avoid closure issues
+  const renderPatientRegistry = (title: string, patients: Patient[], showDetails: boolean = showPatientDetails) => {
+    if (!showDetails) return null;
+
+    return (
+      <section>
+        <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-slate-400 flex items-center gap-2">
+          <IconClipboardList size={22} className="text-slate-600" /> {title} ({patients.length})
+        </h3>
+        {patients.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="text-left p-2 font-semibold">S.No</th>
+                  <th className="text-left p-2 font-semibold">NTID</th>
+                  <th className="text-left p-2 font-semibold">Name</th>
+                  <th className="text-left p-2 font-semibold">Admission Type</th>
+                  <th className="text-left p-2 font-semibold">Gender</th>
+                  <th className="text-left p-2 font-semibold">GA</th>
+                  <th className="text-left p-2 font-semibold">BW</th>
+                  <th className="text-left p-2 font-semibold">Admission</th>
+                  <th className="text-left p-2 font-semibold">Diagnosis</th>
+                  <th className="text-left p-2 font-semibold">Outcome</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {patients.length > 50 && (
-            <p className="text-xs text-slate-500 mt-2 text-center italic">
-              Showing 50 of {patients.length} patients. Export to CSV for full list.
-            </p>
-          )}
-        </div>
-      ) : (
-        <p className="text-slate-500 italic text-center py-8">No patients found for the selected criteria</p>
-      )}
-    </section>
-  );
+              </thead>
+              <tbody>
+                {patients.slice(0, 50).map((patient, index) => (
+                  <tr key={patient.id} className="border-b border-slate-200">
+                    <td className="p-2">{index + 1}</td>
+                    <td className="p-2 font-mono text-xs">{patient.ntid || '-'}</td>
+                    <td className="p-2 font-medium">{patient.name}</td>
+                    <td className="p-2">{getCanonicalAdmissionType(patient)}</td>
+                    <td className="p-2">{patient.gender?.charAt(0) || '-'}</td>
+                    <td className="p-2">{patient.gestationalAgeWeeks ? `${patient.gestationalAgeWeeks}w` : '-'}</td>
+                    <td className="p-2">{patient.birthWeight ? `${patient.birthWeight < 10 ? (patient.birthWeight * 1000).toFixed(0) : patient.birthWeight}g` : '-'}</td>
+                    <td className="p-2">{new Date(patient.admissionDate).toLocaleDateString('en-IN')}</td>
+                    <td className="p-2 max-w-[150px] truncate">{patient.diagnosis || '-'}</td>
+                    <td className="p-2">
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${patient.outcome === 'Discharged' ? 'bg-green-100 text-green-700' :
+                        patient.outcome === 'Deceased' ? 'bg-red-100 text-red-700' :
+                          patient.outcome === 'Referred' ? 'bg-amber-100 text-amber-700' :
+                            patient.outcome === 'Step Down' ? 'bg-teal-100 text-teal-700' :
+                              'bg-blue-100 text-blue-700'
+                        }`}>
+                        {patient.outcome || 'Active'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {patients.length > 50 && (
+              <p className="text-xs text-slate-500 mt-2 text-center italic">
+                Showing 50 of {patients.length} patients. Export to CSV for full list.
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-slate-500 italic text-center py-8">No patients found for the selected criteria</p>
+        )}
+      </section>
+    );
+  };
 
   // Render preview
   const renderPreview = () => (
@@ -1711,22 +3412,22 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
 
       <div ref={reportRef} className="bg-white text-slate-900 rounded-2xl shadow-2xl overflow-hidden print:shadow-none">
         {/* Report Header */}
-        <div className={`${
-          selectedReportType === 'deaths' || selectedReportType === 'mortality' ? 'bg-gradient-to-r from-red-700 to-rose-700' :
+        <div className={`${selectedReportType === 'deaths' || selectedReportType === 'mortality' ? 'bg-gradient-to-r from-red-700 to-rose-700' :
           selectedReportType === 'admissions' ? 'bg-gradient-to-r from-blue-700 to-cyan-700' :
-          selectedReportType === 'referred' ? 'bg-gradient-to-r from-amber-600 to-orange-600' :
-          selectedReportType === 'stepdown' ? 'bg-gradient-to-r from-teal-600 to-cyan-600' :
-          selectedReportType === 'gender' ? 'bg-gradient-to-r from-purple-600 to-pink-600' :
-          selectedReportType === 'discharge' ? 'bg-gradient-to-r from-green-600 to-emerald-600' :
-          'bg-gradient-to-r from-blue-700 to-indigo-700'
-        } text-white p-8`}>
+            selectedReportType === 'referred' ? 'bg-gradient-to-r from-amber-600 to-orange-600' :
+              selectedReportType === 'stepdown' ? 'bg-gradient-to-r from-teal-600 to-cyan-600' :
+                selectedReportType === 'gender' ? 'bg-gradient-to-r from-purple-600 to-pink-600' :
+                  selectedReportType === 'discharge' ? 'bg-gradient-to-r from-green-600 to-emerald-600' :
+                    'bg-gradient-to-r from-blue-700 to-indigo-700'
+          } text-white p-8`}>
           <div className="flex justify-between items-start">
             <div>
-              <h1 className="text-2xl font-bold">{institutionName}</h1>
+              <h1 className="text-2xl font-bold">{PDF_INSTITUTION_LABEL}</h1>
+              <p className="text-white/90 text-sm mt-1 font-medium">{PDF_UNIT_LABEL}</p>
               <h2 className="text-xl mt-1 opacity-90">{currentReportInfo.title}</h2>
               <p className="text-white/80 mt-2">{dateRangeLabel}</p>
               <p className="text-white/70 text-sm mt-1">Units: {selectedUnits.join(', ')}</p>
-              {nicuFilter !== 'all' && <p className="text-white/70 text-sm">Filter: {nicuFilter === 'inborn' ? 'Inborn Only' : 'Outborn Only'}</p>}
+              <p className="text-white/70 text-sm">Admission Type Scope: {admissionTypeScopeLabel}</p>
             </div>
             <div className="text-right text-sm text-white/70">
               <p>Generated: {new Date().toLocaleDateString('en-IN')}</p>
@@ -1750,6 +3451,38 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       </div>
     </div>
   );
+
+  // Special render for Daily Update - clean, simple UI
+  if (selectedReportType === 'dailyUpdate' && step === 'preview') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+        {/* Simple Header */}
+        <div className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-700">
+          <div className="max-w-7xl mx-auto px-4 py-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setStep('select');
+                  setDailyUpdateStep('type');
+                }}
+                className="p-2 hover:bg-slate-700 rounded-xl transition-colors"
+              >
+                <IconArrowLeft size={22} />
+              </button>
+              <div>
+                <h1 className="text-xl font-bold">Daily Update</h1>
+                <p className="text-xs text-slate-400">{institutionName}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          {renderDailyUpdateReport()}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">

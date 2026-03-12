@@ -89,6 +89,8 @@ const ReferralManagementPage: React.FC<ReferralManagementPageProps> = ({
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [editedReferralDate, setEditedReferralDate] = useState('');
+  const [updatingReferralDate, setUpdatingReferralDate] = useState(false);
 
   // Load referrals
   useEffect(() => {
@@ -407,6 +409,87 @@ const ReferralManagementPage: React.FC<ReferralManagementPageProps> = ({
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+
+  const toDateTimeLocalValue = useCallback((isoDate: string) => {
+    const parsedDate = new Date(isoDate);
+    if (Number.isNaN(parsedDate.getTime())) return '';
+    const localDate = new Date(parsedDate.getTime() - (parsedDate.getTimezoneOffset() * 60000));
+    return localDate.toISOString().slice(0, 16);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedReferral) {
+      setEditedReferralDate('');
+      return;
+    }
+    setEditedReferralDate(toDateTimeLocalValue(selectedReferral.referralDate));
+  }, [selectedReferral, toDateTimeLocalValue]);
+
+  const handleUpdateReferralDate = async () => {
+    if (!selectedReferral || !editedReferralDate) return;
+
+    if (selectedReferral.fromInstitutionId !== institutionId) {
+      alert('Only the referring institution can update the referral date.');
+      return;
+    }
+
+    const parsedDate = new Date(editedReferralDate);
+    if (Number.isNaN(parsedDate.getTime())) {
+      alert('Please enter a valid referral date and time.');
+      return;
+    }
+
+    const newReferralDate = parsedDate.toISOString();
+    const now = new Date().toISOString();
+    const previousReferralDate = selectedReferral.referralDate;
+    const dateUpdateStatus = {
+      timestamp: now,
+      updatedBy: userName,
+      updatedByEmail: userEmail,
+      updatedByRole: userRole,
+      status: 'Referral Date Updated',
+      notes: `Referral date changed from ${new Date(previousReferralDate).toLocaleString()} to ${new Date(newReferralDate).toLocaleString()}`
+    };
+
+    setUpdatingReferralDate(true);
+    try {
+      await updateDoc(doc(db, 'referrals', selectedReferral.id), {
+        referralDate: newReferralDate,
+        lastUpdatedAt: now,
+        statusUpdates: [...(selectedReferral.statusUpdates || []), dateUpdateStatus]
+      });
+
+      try {
+        await updateDoc(doc(db, 'patients', selectedReferral.patientId), {
+          releaseDate: newReferralDate,
+          lastEditedAt: now,
+          lastUpdatedBy: userRole,
+          lastUpdatedByEmail: userEmail,
+          'metadata.lastUpdatedBy': userEmail || userRole || 'unknown',
+          'metadata.lastUpdatedAt': now
+        });
+      } catch (patientSyncError) {
+        console.warn('Unable to sync patient release date after referral date update:', patientSyncError);
+      }
+
+      setSelectedReferral((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          referralDate: newReferralDate,
+          lastUpdatedAt: now,
+          statusUpdates: [...(prev.statusUpdates || []), dateUpdateStatus]
+        };
+      });
+
+      alert('Referral date updated successfully.');
+    } catch (error) {
+      console.error('Error updating referral date:', error);
+      alert('Failed to update referral date.');
+    } finally {
+      setUpdatingReferralDate(false);
+    }
   };
 
   // Loading state
@@ -1085,7 +1168,7 @@ const ReferralManagementPage: React.FC<ReferralManagementPageProps> = ({
                   <div className="space-y-6">
                     {/* Actions */}
                     {(selectedReferral.toInstitutionId === institutionId ||
-                      (selectedReferral.fromInstitutionId === institutionId && selectedReferral.status === 'Accepted')) && (
+                      selectedReferral.fromInstitutionId === institutionId) && (
                       <div className="bg-indigo-50 rounded-xl p-5 border border-indigo-100">
                         <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">
                           <Zap className="w-5 h-5 text-indigo-600" />
@@ -1126,6 +1209,28 @@ const ReferralManagementPage: React.FC<ReferralManagementPageProps> = ({
                           <p className="text-sm text-center text-slate-500 italic">
                             No further actions available.
                           </p>
+                        )}
+
+                        {selectedReferral.fromInstitutionId === institutionId && (
+                          <div className="mt-4 pt-4 border-t border-indigo-200">
+                            <p className="text-xs text-indigo-700 uppercase tracking-wider font-semibold mb-2">Referral Date</p>
+                            <input
+                              type="datetime-local"
+                              value={editedReferralDate}
+                              onChange={(e) => setEditedReferralDate(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <button
+                              onClick={handleUpdateReferralDate}
+                              disabled={updatingReferralDate || !editedReferralDate}
+                              className="w-full mt-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-all"
+                            >
+                              {updatingReferralDate ? 'Updating Date...' : 'Save Referral Date'}
+                            </button>
+                            <p className="text-xs text-indigo-700/80 mt-2">
+                              Use this when a referral was entered late and the date needs correction.
+                            </p>
+                          </div>
                         )}
                       </div>
                     )}

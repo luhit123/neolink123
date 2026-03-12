@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   collection,
   getDocs,
+  getDoc,
   addDoc,
   deleteDoc,
   doc,
@@ -20,8 +21,10 @@ import {
   limit
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Institution, UserRole, Unit, PasswordResetRequest, Official } from '../types';
+import { Institution, UserRole, Unit, PasswordResetRequest, Official, Patient } from '../types';
 import { INSTITUTION_TYPES } from '../constants';
+import PatientDetailModal from './PatientDetailModal';
+import { BackgroundSaveProvider } from '../contexts/BackgroundSaveContext';
 
 // Existing components
 import AdmissionIndicationsManager from './AdmissionIndicationsManager';
@@ -51,6 +54,9 @@ import {
   toggleAnnouncement,
   deleteAnnouncement,
   logAuditEvent,
+  searchPatients,
+  deletePatientGlobal,
+  PatientSearchFilters,
   SystemStats,
   SystemHealth,
   InstitutionStats,
@@ -158,59 +164,59 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
     </svg>
   ),
-  Search: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  Search: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
     </svg>
   ),
-  Download: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  Download: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
     </svg>
   ),
-  Eye: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  Eye: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
     </svg>
   ),
-  EyeOff: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  EyeOff: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
     </svg>
   ),
-  Trash: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  Trash: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
     </svg>
   ),
-  Edit: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  Edit: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
     </svg>
   ),
-  Key: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  Key: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
     </svg>
   ),
-  Activity: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  Activity: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
     </svg>
   ),
-  ArrowLeft: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  ArrowLeft: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
     </svg>
   ),
-  Shield: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  Shield: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
     </svg>
   ),
-  Heart: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  Heart: (props: any) => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
     </svg>
   ),
@@ -452,6 +458,19 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
     district: '',
     state: 'Assam',
   });
+
+  // Global Patient Search State
+  const [globalSearchFilters, setGlobalSearchFilters] = useState<PatientSearchFilters>({
+    searchTerm: '',
+    institutionId: 'all' as any,
+    unit: 'all' as any,
+    outcome: 'all' as any,
+  });
+  const [globalSearchResults, setGlobalSearchResults] = useState<Patient[]>([]);
+  const [isGlobalSearching, setIsGlobalSearching] = useState(false);
+  const [selectedPatientDetailed, setSelectedPatientDetailed] = useState<Patient | null>(null);
+  const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
 
   // Error/Success states
   const [error, setError] = useState('');
@@ -748,12 +767,36 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
   // Handle Update User Role
   const handleUpdateUserRole = async (userId: string, newRole: string) => {
     try {
+      // Get the user document to find their UID
+      const userDocSnap = await getDoc(doc(db, 'approved_users', userId));
+      const userData = userDocSnap.data();
+
+      // Update approved_users collection
       await updateDoc(doc(db, 'approved_users', userId), {
         role: newRole,
         lastUpdatedAt: new Date().toISOString(),
         lastUpdatedBy: userEmail,
       });
-      setSuccess('User role updated successfully');
+
+      // Also update users collection if user has logged in (has UID)
+      if (userData?.uid) {
+        try {
+          await updateDoc(doc(db, 'users', userData.uid), {
+            role: newRole,
+            lastUpdatedAt: new Date().toISOString(),
+          });
+          console.log('✅ Also updated users collection for UID:', userData.uid);
+        } catch (err) {
+          console.log('⚠️ Could not update users collection:', err);
+        }
+      }
+
+      // Refresh users list to show updated role
+      const usersQuery = query(collection(db, 'approved_users'));
+      const usersSnapshot = await getDocs(usersQuery);
+      setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      setSuccess(`Role updated to ${newRole} successfully! The change will take effect immediately.`);
       setEditingUser(null);
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
@@ -761,6 +804,7 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
       setError('Failed to update user role');
     }
   };
+
 
   // Handle Add Official
   const handleAddOfficial = async () => {
@@ -816,7 +860,6 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
         targetType: 'official',
         targetId: generatedUserID,
         details: `Created official: ${officialForm.displayName} (${generatedUserID})`,
-        status: 'success',
       });
 
       // Show credentials modal
@@ -849,6 +892,51 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
       setError(err.message || 'Failed to create official');
     } finally {
       setAddingOfficial(false);
+    }
+  };
+
+  // Handle Global Patient Search
+  const handleGlobalSearch = async () => {
+    setIsGlobalSearching(true);
+    try {
+      const filters: PatientSearchFilters = { ...globalSearchFilters };
+      // Clean up 'all' values for the service
+      if (filters.institutionId === 'all') delete filters.institutionId;
+      if (filters.unit === 'all') delete filters.unit;
+      if (filters.outcome === 'all') delete filters.outcome;
+
+      const results = await searchPatients(filters);
+      setGlobalSearchResults(results);
+    } catch (err) {
+      console.error('Global search failed:', err);
+      setError('Failed to perform global search');
+    } finally {
+      setIsGlobalSearching(false);
+    }
+  };
+
+  // Handle Global Patient Delete
+  const handleGlobalDeletePatient = async () => {
+    if (!patientToDelete || !deleteReason) {
+      setError('Please provide a reason for deletion');
+      return;
+    }
+
+    try {
+      await deletePatientGlobal(
+        patientToDelete.id,
+        patientToDelete.name,
+        'SuperAdmin',
+        userEmail,
+        deleteReason
+      );
+      setSuccess(`Patient ${patientToDelete.name} deleted successfully`);
+      setPatientToDelete(null);
+      setDeleteReason('');
+      handleGlobalSearch(); // Refresh results
+    } catch (err) {
+      console.error('Global delete failed:', err);
+      setError('Failed to delete patient');
     }
   };
 
@@ -1365,16 +1453,15 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
                           : [...prev.facilities, facility]
                       }));
                     }}
-                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                      institutionForm.facilities.includes(facility)
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${institutionForm.facilities.includes(facility)
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
                   >
                     {facility === Unit.NICU ? 'NICU' :
-                     facility === Unit.PICU ? 'PICU' :
-                     facility === Unit.SNCU ? 'SNCU' :
-                     facility === Unit.HDU ? 'HDU' : 'General Ward'}
+                      facility === Unit.PICU ? 'PICU' :
+                        facility === Unit.SNCU ? 'SNCU' :
+                          facility === Unit.HDU ? 'HDU' : 'General Ward'}
                   </button>
                 ))}
               </div>
@@ -2599,10 +2686,188 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
 
   const renderPatientsContent = () => {
     if (activeSubCategory === 'analytics') {
-      return <AdvancedAnalyticsDashboard institutions={institutions} />;
+      return <AdvancedAnalyticsDashboard institutionId="all" />;
+    }
+
+    if (activeSubCategory === 'search') {
+      return renderPatientSearchContent();
     }
 
     return <div className="text-slate-500">Select a subcategory</div>;
+  };
+
+  const renderPatientSearchContent = () => {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800">Global Patient Search</h2>
+            <p className="text-slate-500 text-sm mt-1">Search and manage patients across all institutions</p>
+          </div>
+        </div>
+
+        {/* Filter Bar */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Search Term */}
+            <div className="md:col-span-1">
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Name / NTID / ID</label>
+              <div className="relative">
+                <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <input
+                  type="text"
+                  value={globalSearchFilters.searchTerm}
+                  onChange={(e) => setGlobalSearchFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
+                  placeholder="Search patients..."
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                />
+              </div>
+            </div>
+
+            {/* Institution Filter */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Institution</label>
+              <select
+                value={globalSearchFilters.institutionId as string}
+                onChange={(e) => setGlobalSearchFilters(prev => ({ ...prev, institutionId: e.target.value }))}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500"
+              >
+                <option value="all">All Institutions</option>
+                {institutions.map(inst => (
+                  <option key={inst.id} value={inst.id}>{inst.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Unit Filter */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Unit</label>
+              <select
+                value={globalSearchFilters.unit as string}
+                onChange={(e) => setGlobalSearchFilters(prev => ({ ...prev, unit: e.target.value }))}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500"
+              >
+                <option value="all">All Units</option>
+                <option value="NICU">NICU</option>
+                <option value="PICU">PICU</option>
+                <option value="SNCU">SNCU</option>
+              </select>
+            </div>
+
+            {/* Outcome Filter */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Status</label>
+              <select
+                value={globalSearchFilters.outcome as string}
+                onChange={(e) => setGlobalSearchFilters(prev => ({ ...prev, outcome: e.target.value }))}
+                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500"
+              >
+                <option value="all">All Statuses</option>
+                <option value="In Progress">Active</option>
+                <option value="Discharged">Discharged</option>
+                <option value="Referred">Referred</option>
+                <option value="Deceased">Deceased</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end mt-4">
+            <button
+              onClick={handleGlobalSearch}
+              disabled={isGlobalSearching}
+              className="px-6 py-2 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 transition-colors flex items-center gap-2"
+            >
+              {isGlobalSearching ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Searching...
+                </>
+              ) : (
+                <>
+                  <Icons.Search />
+                  Search Patients
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Results Table */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-6 py-4 font-semibold text-slate-700">Patient</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700">Institution</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700">Unit</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700">Status</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700">Admission Date</th>
+                  <th className="px-6 py-4 font-semibold text-slate-700 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {globalSearchResults.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                      {isGlobalSearching ? 'Searching...' : 'No patients found. Adjust filters and search.'}
+                    </td>
+                  </tr>
+                ) : (
+                  globalSearchResults.map((patient) => (
+                    <tr key={patient.id} className="hover:bg-slate-50">
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-slate-800">{patient.name}</div>
+                        <div className="text-xs text-slate-500 font-mono">{patient.ntid || patient.id}</div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-600">{patient.institutionName || 'Unknown'}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-lg text-xs font-medium ${patient.unit === Unit.NICU ? 'bg-sky-100 text-sky-700' :
+                          patient.unit === Unit.PICU ? 'bg-violet-100 text-violet-700' :
+                            'bg-emerald-100 text-emerald-700'
+                          }`}>
+                          {patient.unit}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-lg text-xs font-medium ${patient.outcome === 'In Progress' ? 'bg-blue-100 text-blue-700' :
+                          patient.outcome === 'Discharged' ? 'bg-green-100 text-green-700' :
+                            patient.outcome === 'Deceased' ? 'bg-red-100 text-red-700' :
+                              'bg-amber-100 text-amber-700'
+                          }`}>
+                          {patient.outcome}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500">
+                        {patient.admissionDate ? new Date(patient.admissionDate).toLocaleDateString() : '-'}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setSelectedPatientDetailed(patient)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                            title="View Details"
+                          >
+                            <Icons.Eye />
+                          </button>
+                          <button
+                            onClick={() => setPatientToDelete(patient)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                            title="Delete Patient"
+                          >
+                            <Icons.Trash />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const renderClinicalContent = () => {
@@ -2769,7 +3034,12 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
 
   const renderSettingsContent = () => {
     if (activeSubCategory === 'migration') {
-      return <DataMigrationPanel userEmail={userEmail} />;
+      return (
+        <DataMigrationPanel
+          institutionId="all"
+          institutionName="Global System"
+        />
+      );
     }
 
     if (activeSubCategory === 'general') {
@@ -3010,6 +3280,74 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
           password={createdCredentials.password}
           userType={createdCredentials.userType}
         />
+      )}
+
+      {/* Patient Detailed View Modal */}
+      {selectedPatientDetailed && (
+        <BackgroundSaveProvider>
+          <PatientDetailModal
+            patient={selectedPatientDetailed}
+            onClose={() => setSelectedPatientDetailed(null)}
+            userEmail={userEmail}
+            userRole="SuperAdmin"
+            canEdit={false} // SuperAdmin usually views only in this specific dashboard
+          />
+        </BackgroundSaveProvider>
+      )}
+
+      {/* Global Delete Confirmation Modal */}
+      {patientToDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border-t-4 border-red-500"
+          >
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Global Record Deletion</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              You are about to <span className="text-red-600 font-bold uppercase underline">permanently delete</span> the record for:
+            </p>
+            <div className="bg-red-50 p-4 rounded-xl mb-6 border border-red-100">
+              <p className="font-bold text-red-900">{patientToDelete.name}</p>
+              <p className="text-xs text-red-700 font-mono mt-1">{patientToDelete.ntid}</p>
+              <p className="text-xs text-red-600 mt-2">Institution: {patientToDelete.institutionName}</p>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Reason for deletion <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Enter clinical or administrative reason for deletion..."
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 min-h-[100px] text-sm"
+              />
+              <p className="text-[10px] text-slate-400 mt-2">
+                Note: This action is irreversible and will be logged in the system audit trail.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setPatientToDelete(null);
+                  setDeleteReason('');
+                }}
+                className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGlobalDeletePatient}
+                disabled={!deleteReason.trim()}
+                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 disabled:opacity-50 transition-all font-bold"
+              >
+                Delete Globally
+              </button>
+            </div>
+          </motion.div>
+        </div>
       )}
 
       {/* Edit Institution Modal */}

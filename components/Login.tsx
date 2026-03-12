@@ -374,11 +374,11 @@ const Login: React.FC<LoginProps> = ({ initialError }) => {
             transition={{ duration: 0.5 }}
           >
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 shadow-lg shadow-teal-500/30 flex items-center justify-center">
-                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                </svg>
-              </div>
+              <img
+                src="/neolink-logo.png"
+                alt="NeoLink Logo"
+                className="w-14 h-14 rounded-2xl object-cover shadow-lg shadow-teal-500/30"
+              />
               <div>
                 <h1 className="text-2xl font-bold text-white">NeoLink</h1>
                 <p className="text-slate-400 text-sm">Advanced Health Care Analytics</p>

@@ -3,9 +3,12 @@ import React from 'react';
 export type OutcomeFilter = 'All' | 'Admission' | 'In Progress' | 'Discharged' | 'Referred' | 'Deceased' | 'Step Down' | 'Observation';
 
 interface PatientFiltersProps {
-  selectedOutcome: OutcomeFilter;
-  onOutcomeChange: (outcome: OutcomeFilter) => void;
-  counts: {
+  selectedOutcome?: OutcomeFilter;
+  onOutcomeChange?: (outcome: OutcomeFilter) => void;
+  // Alternative prop names used by Dashboard
+  value?: OutcomeFilter;
+  onChange?: (outcome: OutcomeFilter) => void;
+  counts?: {
     all: number;
     admission: number;
     inProgress: number;
@@ -16,11 +19,32 @@ interface PatientFiltersProps {
   };
 }
 
-const PatientFilters: React.FC<PatientFiltersProps> = ({ selectedOutcome, onOutcomeChange, counts }) => {
+const PatientFilters: React.FC<PatientFiltersProps> = ({
+  selectedOutcome,
+  onOutcomeChange,
+  value,
+  onChange,
+  counts
+}) => {
+  // Support both prop naming conventions
+  const currentOutcome = selectedOutcome ?? value ?? 'All';
+  const handleOutcomeChange = onOutcomeChange ?? onChange ?? (() => {});
+
+  // Default counts if not provided
+  const safeCounts = counts ?? {
+    all: 0,
+    admission: 0,
+    inProgress: 0,
+    discharged: 0,
+    referred: 0,
+    deceased: 0,
+    stepDown: 0
+  };
+
   const filters: { label: OutcomeFilter; count: number; icon: React.ReactNode; color: string; bgColor: string }[] = [
     {
       label: 'All',
-      count: counts.all,
+      count: safeCounts.all,
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
@@ -31,7 +55,7 @@ const PatientFilters: React.FC<PatientFiltersProps> = ({ selectedOutcome, onOutc
     },
     {
       label: 'Admission',
-      count: counts.admission,
+      count: safeCounts.admission,
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -42,14 +66,14 @@ const PatientFilters: React.FC<PatientFiltersProps> = ({ selectedOutcome, onOutc
     },
     {
       label: 'In Progress',
-      count: counts.inProgress,
+      count: safeCounts.inProgress,
       icon: <div className="w-5 h-5 rounded-full border-2 border-current animate-pulse" />,
       color: 'text-medical-blue',
       bgColor: 'bg-blue-50 hover:bg-blue-100'
     },
     {
       label: 'Discharged',
-      count: counts.discharged,
+      count: safeCounts.discharged,
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -60,7 +84,7 @@ const PatientFilters: React.FC<PatientFiltersProps> = ({ selectedOutcome, onOutc
     },
     {
       label: 'Step Down',
-      count: counts.stepDown,
+      count: safeCounts.stepDown,
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
@@ -71,7 +95,7 @@ const PatientFilters: React.FC<PatientFiltersProps> = ({ selectedOutcome, onOutc
     },
     {
       label: 'Referred',
-      count: counts.referred,
+      count: safeCounts.referred,
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -82,7 +106,7 @@ const PatientFilters: React.FC<PatientFiltersProps> = ({ selectedOutcome, onOutc
     },
     {
       label: 'Deceased',
-      count: counts.deceased,
+      count: safeCounts.deceased,
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -106,28 +130,28 @@ const PatientFilters: React.FC<PatientFiltersProps> = ({ selectedOutcome, onOutc
         {filters.map(({ label, count, icon, color, bgColor }) => (
           <button
             key={label}
-            onClick={() => onOutcomeChange(label)}
+            onClick={() => handleOutcomeChange(label)}
             className={`
               relative p-3 rounded-lg border-2 transition-all duration-200
-              ${selectedOutcome === label
+              ${currentOutcome === label
                 ? `${bgColor} border-current ${color} shadow-md`
                 : `bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100`
               }
             `}
           >
             <div className="flex flex-col items-center gap-1">
-              <div className={selectedOutcome === label ? color : 'text-slate-500'}>
+              <div className={currentOutcome === label ? color : 'text-slate-500'}>
                 {icon}
               </div>
               <span className="text-xs font-medium truncate w-full text-center">
                 {label}
               </span>
-              <span className={`text-lg font-bold ${selectedOutcome === label ? color : 'text-slate-700'}`}>
+              <span className={`text-lg font-bold ${currentOutcome === label ? color : 'text-slate-700'}`}>
                 {count}
               </span>
             </div>
 
-            {selectedOutcome === label && (
+            {currentOutcome === label && (
               <div className="absolute -top-1 -right-1 w-3 h-3 bg-medical-teal rounded-full animate-pulse" />
             )}
           </button>

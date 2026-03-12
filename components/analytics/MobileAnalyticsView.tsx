@@ -8,6 +8,7 @@ import ChartsCard from './cards/ChartsCard';
 import CaseListCard from './cards/CaseListCard';
 import AIInsightsCard from './cards/AIInsightsCard';
 import IndividualMortalityViewer from '../IndividualMortalityViewer';
+import { getCanonicalOutcome } from '../../utils/analytics';
 
 interface MobileAnalyticsViewProps {
   patients: Patient[];
@@ -31,7 +32,7 @@ const MobileAnalyticsView: React.FC<MobileAnalyticsViewProps> = ({
   const controls = useAnimation();
 
   // Filter deceased patients
-  const deceasedPatients = patients.filter(p => p.outcome === 'Deceased');
+  const deceasedPatients = patients.filter(p => getCanonicalOutcome(p) === 'Deceased');
 
   // Update card width on resize
   useEffect(() => {

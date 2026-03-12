@@ -20,6 +20,7 @@ import {
   Radar
 } from 'recharts';
 import { haptics } from '../../../utils/haptics';
+import { calculatePercentage } from '../../../utils/analytics';
 
 interface RiskFactorAnalysisProps {
   deceasedPatients: Patient[];
@@ -72,7 +73,7 @@ const RiskFactorAnalysis: React.FC<RiskFactorAnalysisProps> = ({
 
     return categories.map(c => ({
       ...c,
-      mortalityRate: c.admissions > 0 ? ((c.deaths / c.admissions) * 100).toFixed(1) : '0',
+      mortalityRate: calculatePercentage(c.deaths, c.admissions, 1).toFixed(1),
       riskLevel: c.admissions > 0 && (c.deaths / c.admissions) > 0.3 ? 'Critical' :
                  c.admissions > 0 && (c.deaths / c.admissions) > 0.2 ? 'High' :
                  c.admissions > 0 && (c.deaths / c.admissions) > 0.1 ? 'Moderate' : 'Low'
@@ -111,7 +112,7 @@ const RiskFactorAnalysis: React.FC<RiskFactorAnalysisProps> = ({
 
     return types.filter(t => t.admissions > 0).map(t => ({
       ...t,
-      mortalityRate: ((t.deaths / t.admissions) * 100).toFixed(1)
+      mortalityRate: calculatePercentage(t.deaths, t.admissions, 1).toFixed(1)
     }));
   }, [deceasedPatients, allPatients]);
 
@@ -139,7 +140,7 @@ const RiskFactorAnalysis: React.FC<RiskFactorAnalysisProps> = ({
         name,
         deaths: data.deaths,
         admissions: data.admissions,
-        mortalityRate: ((data.deaths / data.admissions) * 100).toFixed(1)
+        mortalityRate: calculatePercentage(data.deaths, data.admissions, 1).toFixed(1)
       }))
       .sort((a, b) => parseFloat(b.mortalityRate) - parseFloat(a.mortalityRate));
   }, [deceasedPatients, allPatients]);
@@ -186,41 +187,47 @@ const RiskFactorAnalysis: React.FC<RiskFactorAnalysisProps> = ({
     if (deceasedPatients.length === 0) return factors;
 
     // Calculate percentages
-    factors[0].value = Math.round((deceasedPatients.filter(p => p.birthWeight && parseFloat(p.birthWeight.toString()) < 2.5).length / deceasedPatients.length) * 100);
+    factors[0].value = calculatePercentage(
+      deceasedPatients.filter(p => p.birthWeight && parseFloat(p.birthWeight.toString()) < 2.5).length,
+      deceasedPatients.length,
+      0
+    );
 
-    factors[1].value = Math.round((deceasedPatients.filter(p => {
+    factors[1].value = calculatePercentage(deceasedPatients.filter(p => {
       const type = p.admissionType?.toLowerCase() || '';
       return type.includes('outborn') || type.includes('referred');
-    }).length / deceasedPatients.length) * 100);
+    }).length, deceasedPatients.length, 0);
 
-    factors[2].value = Math.round((deceasedPatients.filter(p => {
+    factors[2].value = calculatePercentage(deceasedPatients.filter(p => {
       if (!p.dateOfDeath || !p.admissionDate) return false;
       const hours = (new Date(p.dateOfDeath).getTime() - new Date(p.admissionDate).getTime()) / (1000 * 60 * 60);
       return hours < 24;
-    }).length / deceasedPatients.length) * 100);
+    }).length, deceasedPatients.length, 0);
 
-    factors[3].value = Math.round((deceasedPatients.filter(p => {
+    factors[3].value = calculatePercentage(deceasedPatients.filter(p => {
       if (!p.dateOfDeath) return false;
       const hour = new Date(p.dateOfDeath).getHours();
       return hour < 6 || hour >= 22;
-    }).length / deceasedPatients.length) * 100);
+    }).length, deceasedPatients.length, 0);
 
-    factors[4].value = Math.round((deceasedPatients.filter(p => {
+    factors[4].value = calculatePercentage(deceasedPatients.filter(p => {
       if (!p.dateOfDeath) return false;
       const day = new Date(p.dateOfDeath).getDay();
       return day === 0 || day === 6;
-    }).length / deceasedPatients.length) * 100);
+    }).length, deceasedPatients.length, 0);
 
-    factors[5].value = Math.round((deceasedPatients.filter(p => p.unit === Unit.NICU).length / deceasedPatients.length) * 100);
+    factors[5].value = calculatePercentage(
+      deceasedPatients.filter(p => p.unit === Unit.NICU).length,
+      deceasedPatients.length,
+      0
+    );
 
     return factors;
   }, [deceasedPatients]);
 
   // Calculate overall risk score
   const overallRiskScore = useMemo(() => {
-    const avgRate = allPatients.length > 0
-      ? (deceasedPatients.length / allPatients.length) * 100
-      : 0;
+    const avgRate = calculatePercentage(deceasedPatients.length, allPatients.length, 1);
 
     if (avgRate > 20) return { score: 'Critical', color: COLORS.critical };
     if (avgRate > 15) return { score: 'High', color: COLORS.high };
@@ -281,7 +288,7 @@ const RiskFactorAnalysis: React.FC<RiskFactorAnalysisProps> = ({
             {overallRiskScore.score} Risk
           </div>
           <span className="text-xs text-slate-500">
-            {allPatients.length > 0 ? ((deceasedPatients.length / allPatients.length) * 100).toFixed(1) : '0'}% mortality
+            {calculatePercentage(deceasedPatients.length, allPatients.length, 1).toFixed(1)}% mortality
           </span>
         </div>
       </div>

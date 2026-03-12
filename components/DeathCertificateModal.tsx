@@ -480,7 +480,12 @@ const DeathCertificateModal: React.FC<DeathCertificateModalProps> = ({
         deathCertificateSavedBy: userName,
         outcome: 'Deceased',
         dateOfDeath: dateOfDeath,
-        timeOfDeath: timeOfDeath
+        timeOfDeath: timeOfDeath,
+        metadata: {
+          ...patient.metadata,
+          lastUpdatedBy: userName || 'unknown',
+          lastUpdatedAt: now
+        }
       });
 
       if (onPatientUpdate) {
@@ -489,7 +494,12 @@ const DeathCertificateModal: React.FC<DeathCertificateModalProps> = ({
           savedDeathCertificate: certificate,
           outcome: 'Deceased',
           dateOfDeath,
-          timeOfDeath
+          timeOfDeath,
+          metadata: {
+            ...patient.metadata,
+            lastUpdatedBy: userName || 'unknown',
+            lastUpdatedAt: now
+          }
         } as any);
       }
 
@@ -546,7 +556,12 @@ const DeathCertificateModal: React.FC<DeathCertificateModalProps> = ({
         deathCertificateSavedAt: null,
         deathCertificateSavedBy: null,
         deletedDeathCertificates: [...deletedCertificates, deletedCertRecord],
-        deathCertificateDeletionCount: newDeletionCount
+        deathCertificateDeletionCount: newDeletionCount,
+        metadata: {
+          ...patient.metadata,
+          lastUpdatedBy: userName || 'unknown',
+          lastUpdatedAt: now
+        }
       });
 
       if (onPatientUpdate) {
@@ -556,7 +571,12 @@ const DeathCertificateModal: React.FC<DeathCertificateModalProps> = ({
           deathCertificateSavedAt: undefined,
           deathCertificateSavedBy: undefined,
           deletedDeathCertificates: [...deletedCertificates, deletedCertRecord],
-          deathCertificateDeletionCount: newDeletionCount
+          deathCertificateDeletionCount: newDeletionCount,
+          metadata: {
+            ...patient.metadata,
+            lastUpdatedBy: userName || 'unknown',
+            lastUpdatedAt: now
+          }
         } as any);
       }
 

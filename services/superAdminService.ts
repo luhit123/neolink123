@@ -68,7 +68,7 @@ export interface AuditLog {
   action: string;
   performedBy: string;
   performedByEmail: string;
-  targetType: 'patient' | 'user' | 'institution' | 'medication' | 'setting' | 'system';
+  targetType: 'patient' | 'user' | 'institution' | 'medication' | 'setting' | 'system' | 'official';
   targetId: string;
   details: string;
   timestamp: string;
@@ -109,6 +109,15 @@ export interface ReportConfig {
   createdAt: string;
 }
 
+export interface PatientSearchFilters {
+  searchTerm?: string;
+  institutionId?: string | string[];
+  unit?: string;
+  outcome?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 // ============================================
 // SYSTEM OVERVIEW
 // ============================================
@@ -126,7 +135,7 @@ export async function getSystemStats(): Promise<SystemStats> {
       getDocs(collection(db, 'medications'))
     ]);
 
-    const patients = patientsSnap.docs.map(doc => doc.data());
+    const patients = patientsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
 
     const activePatients = patients.filter(p => p.outcome === 'In Progress').length;
     const dischargedPatients = patients.filter(p => p.outcome === 'Discharged').length;
@@ -204,7 +213,7 @@ export async function getAllInstitutionsWithStats(): Promise<InstitutionStats[]>
       getDocs(collection(db, 'approved_users'))
     ]);
 
-    const patients = patientsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const patients = patientsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
     const users = usersSnap.docs.map(doc => doc.data());
 
     return institutionsSnap.docs.map(doc => {
@@ -218,10 +227,10 @@ export async function getAllInstitutionsWithStats(): Promise<InstitutionStats[]>
 
       // Calculate bed occupancy
       const totalBeds = (inst.bedCapacity?.NICU || 0) +
-                       (inst.bedCapacity?.PICU || 0) +
-                       (inst.bedCapacity?.SNCU || 0) +
-                       (inst.bedCapacity?.HDU || 0) +
-                       (inst.bedCapacity?.GENERAL_WARD || 0);
+        (inst.bedCapacity?.PICU || 0) +
+        (inst.bedCapacity?.SNCU || 0) +
+        (inst.bedCapacity?.HDU || 0) +
+        (inst.bedCapacity?.GENERAL_WARD || 0);
       const bedOccupancy = totalBeds > 0 ? (activePatients / totalBeds) * 100 : 0;
 
       // Calculate average length of stay
@@ -309,7 +318,7 @@ export async function getUsersByInstitution(institutionId: string): Promise<any[
       where('institutionId', '==', institutionId)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
   } catch (error) {
     console.error('Error getting users by institution:', error);
     throw error;
@@ -394,8 +403,7 @@ export async function getPatientAnalytics(
   try {
     let q = collection(db, 'patients');
     const snapshot = await getDocs(q);
-
-    let patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
 
     // Filter by institution if specified
     if (institutionId) {
@@ -505,20 +513,21 @@ export async function getPatientAnalytics(
 // AUDIT LOGGING
 // ============================================
 
-export async function logAuditEvent(
-  action: string,
-  performedBy: string,
-  performedByEmail: string,
-  targetType: AuditLog['targetType'],
-  targetId: string,
-  details: string
-): Promise<void> {
+export async function logAuditEvent(params: {
+  action: string;
+  performedBy: string;
+  performedByEmail?: string;
+  targetType: AuditLog['targetType'];
+  targetId: string;
+  details: string;
+}): Promise<void> {
+  const { action, performedBy, performedByEmail, targetType, targetId, details } = params;
   try {
     const auditRef = doc(collection(db, 'audit_logs'));
     await setDoc(auditRef, {
       action,
       performedBy,
-      performedByEmail,
+      performedByEmail: performedByEmail || performedBy,
       targetType,
       targetId,
       details,
@@ -604,7 +613,7 @@ export async function updateSystemConfig(config: Record<string, any>): Promise<v
 export async function exportAllPatients(institutionId?: string): Promise<any[]> {
   try {
     const snapshot = await getDocs(collection(db, 'patients'));
-    let patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
 
     if (institutionId) {
       patients = patients.filter(p => p.institutionId === institutionId);
@@ -699,7 +708,7 @@ export async function getMortalityAnalytics(institutionId?: string): Promise<{
 }> {
   try {
     const snapshot = await getDocs(collection(db, 'patients'));
-    let patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
 
     if (institutionId) {
       patients = patients.filter(p => p.institutionId === institutionId);
@@ -814,6 +823,94 @@ export async function deleteAnnouncement(id: string): Promise<void> {
 }
 
 // ============================================
+// GLOBAL PATIENT SEARCH & MANAGEMENT
+// ============================================
+
+export async function searchPatients(filters: PatientSearchFilters): Promise<Patient[]> {
+  try {
+    let q = query(collection(db, 'patients'));
+
+    // Apply basic filters that can be done in Firestore
+    if (filters.institutionId) {
+      if (Array.isArray(filters.institutionId)) {
+        if (filters.institutionId.length > 0) {
+          q = query(q, where('institutionId', 'in', filters.institutionId));
+        }
+      } else {
+        q = query(q, where('institutionId', '==', filters.institutionId));
+      }
+    }
+
+    if (filters.unit) {
+      q = query(q, where('unit', '==', filters.unit));
+    }
+
+    if (filters.outcome) {
+      q = query(q, where('outcome', '==', filters.outcome));
+    }
+
+    // Note: Complex range filters + multiple where filters require composite indexes
+    if (filters.startDate) {
+      q = query(q, where('admissionDate', '>=', filters.startDate));
+    }
+    if (filters.endDate) {
+      q = query(q, where('admissionDate', '<=', filters.endDate));
+    }
+
+    // Default ordering
+    q = query(q, orderBy('admissionDate', 'desc'), limit(100));
+
+    const snapshot = await getDocs(q);
+    let patients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient));
+
+    // Client-side search (for Name/NTID) as Firestore doesn't support full-text or partial string search well
+    if (filters.searchTerm) {
+      const term = filters.searchTerm.toLowerCase();
+      patients = patients.filter(p =>
+        (p.name?.toLowerCase().includes(term)) ||
+        (p.ntid?.toLowerCase().includes(term)) ||
+        (p.id.toLowerCase().includes(term))
+      );
+    }
+
+    return patients;
+  } catch (error) {
+    console.error('Error searching patients:', error);
+    throw error;
+  }
+}
+
+export async function deletePatientGlobal(
+  patientId: string,
+  patientName: string,
+  performedBy: string,
+  performedByEmail: string,
+  reason: string
+): Promise<void> {
+  try {
+    const patientRef = doc(db, 'patients', patientId);
+
+    // 1. Log the action before deletion for audit trail
+    await logAuditEvent({
+      action: 'PATIENT_DELETE_GLOBAL',
+      performedBy,
+      performedByEmail,
+      targetType: 'patient',
+      targetId: patientId,
+      details: `SuperAdmin deleted patient ${patientName}. Reason: ${reason}`
+    });
+
+    // 2. Perform deletion
+    await deleteDoc(patientRef);
+
+    console.log(`Successfully deleted patient ${patientId} globally`);
+  } catch (error) {
+    console.error('Error deleting patient globally:', error);
+    throw error;
+  }
+}
+
+// ============================================
 // BACKUP & MAINTENANCE
 // ============================================
 
@@ -906,6 +1003,8 @@ export default {
   getAnnouncements,
   toggleAnnouncement,
   deleteAnnouncement,
+  searchPatients,
+  deletePatientGlobal,
   triggerDataBackup,
   getBackupHistory,
   setMaintenanceMode,

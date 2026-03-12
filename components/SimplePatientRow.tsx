@@ -1,6 +1,7 @@
 import React from 'react';
 import { Patient, PatientOutcome } from '../types';
 import { getFormattedAge } from '../utils/ageCalculator';
+import { getCanonicalOutcome } from '../utils/analytics';
 import PatientActionMenu from './PatientActionMenu';
 
 interface SimplePatientRowProps {
@@ -56,6 +57,8 @@ const SimplePatientRow: React.FC<SimplePatientRowProps> = ({
   isSelected,
   onToggleSelection
 }) => {
+  const canonicalOutcome = getCanonicalOutcome(patient);
+
   const getPrimaryDiagnosis = () => {
     if (patient.indicationsForAdmission && patient.indicationsForAdmission.length > 0) {
       return patient.indicationsForAdmission[0];
@@ -115,8 +118,16 @@ const SimplePatientRow: React.FC<SimplePatientRowProps> = ({
         {/* Details Row */}
         <p className="text-xs sm:text-sm text-slate-500 truncate">
           {getFormattedAge(patient.dateOfBirth, patient.age, patient.ageUnit)} • {patient.gender}
-          <span className="hidden sm:inline"> • {formatDate(patient.admissionDate)}</span>
+          <span className="hidden sm:inline"> • Adm: {formatDate(patient.admissionDate)}</span>
         </p>
+        {/* Step Down Date/Time for Step Down patients */}
+        {canonicalOutcome === 'Step Down' && (patient as any).stepDownDate && (
+          <p className="text-xs text-amber-600 font-medium truncate mt-0.5">
+            ⬇️ Step Down: {new Date((patient as any).stepDownDate).toLocaleDateString()} at {new Date((patient as any).stepDownDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {(patient as any).stepDownLocation && <span> → {(patient as any).stepDownLocation}</span>}
+            {(patient as any).stepDownBy && <span className="text-amber-500"> (by {(patient as any).stepDownBy})</span>}
+          </p>
+        )}
         {/* Diagnosis - Hidden on very small screens */}
         <p className="hidden sm:block text-xs text-slate-600 truncate mt-0.5">
           {getPrimaryDiagnosis()}
@@ -125,8 +136,8 @@ const SimplePatientRow: React.FC<SimplePatientRowProps> = ({
 
       {/* Status Badge */}
       <div className="flex-shrink-0">
-        <span className={`px-2 py-1 rounded-full text-[10px] sm:text-xs font-bold whitespace-nowrap ${getStatusColor(patient.outcome)}`}>
-          {patient.outcome === 'In Progress' ? 'Active' : patient.outcome}
+        <span className={`px-2 py-1 rounded-full text-[10px] sm:text-xs font-bold whitespace-nowrap ${getStatusColor(canonicalOutcome)}`}>
+          {canonicalOutcome === 'In Progress' ? 'Active' : canonicalOutcome}
         </span>
       </div>
 

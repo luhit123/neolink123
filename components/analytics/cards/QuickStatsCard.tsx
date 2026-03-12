@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Patient, Unit } from '../../../types';
 import AnalyticsCard from '../AnalyticsCard';
+import { calculatePercentage } from '../../../utils/analytics';
 
 interface QuickStatsCardProps {
   deceasedPatients: Patient[];
@@ -59,9 +60,7 @@ const QuickStatsCard: React.FC<QuickStatsCardProps> = ({
   const stats = useMemo(() => {
     const totalDeaths = deceasedPatients.length;
     const totalAdmissions = allPatients.length;
-    const mortalityRate = totalAdmissions > 0
-      ? ((totalDeaths / totalAdmissions) * 100).toFixed(1)
-      : '0.0';
+    const mortalityRate = calculatePercentage(totalDeaths, totalAdmissions, 1).toFixed(1);
 
     // Deaths by unit
     const unitCounts: Record<string, number> = {};
@@ -88,7 +87,7 @@ const QuickStatsCard: React.FC<QuickStatsCardProps> = ({
       outbornDeaths,
       nicuTotal: nicuDeaths.length,
       aiInterpreted,
-      aiPercentage: totalDeaths > 0 ? ((aiInterpreted / totalDeaths) * 100).toFixed(0) : '0'
+      aiPercentage: calculatePercentage(aiInterpreted, totalDeaths, 0).toFixed(0)
     };
   }, [deceasedPatients, allPatients]);
 
@@ -129,9 +128,7 @@ const QuickStatsCard: React.FC<QuickStatsCardProps> = ({
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Deaths by Unit</h3>
           <div className="space-y-2">
             {Object.entries(stats.unitCounts).map(([unit, count], idx) => {
-              const percentage = stats.totalDeaths > 0
-                ? ((count / stats.totalDeaths) * 100).toFixed(0)
-                : '0';
+              const percentage = calculatePercentage(count, stats.totalDeaths, 0).toFixed(0);
               return (
                 <div key={unit} className="flex items-center gap-3">
                   <div className="flex-1">

@@ -18,7 +18,6 @@ import { BedIcon, ArrowRightOnRectangleIcon, ChartBarIcon, PlusIcon, HomeIcon, A
 import { ResponsiveContainer, Tooltip, Legend, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
 import NicuViewSelection from './NicuViewSelection';
 import DateFilter, { DateFilterValue } from './DateFilter';
-import ShiftFilter, { ShiftFilterConfigs } from './ShiftFilter';
 import DeathsAnalysis from './DeathsAnalysis';
 import DeathAnalyticsPage from './DeathAnalyticsPage';
 
@@ -31,6 +30,7 @@ import BottomSheet from './material/BottomSheet';
 import BottomNavigation, { NavItem } from './material/BottomNavigation';
 import DashboardSkeleton from './skeletons/DashboardSkeleton';
 import { haptics } from '../utils/haptics';
+import { getFormattedAge } from '../utils/ageCalculator';
 import { IconHome, IconChartBar, IconUsers, IconSettings, IconUserPlus } from '@tabler/icons-react';
 import { useChatContext } from '../contexts/ChatContext';
 import AddPatientChoiceModal from './AddPatientChoiceModal';
@@ -40,6 +40,14 @@ import { ObservationPatient, ObservationOutcome } from '../types';
 
 // Supabase sync for hybrid architecture
 import { syncPatientToSupabase, deletePatientSync } from '../services/supabaseSyncService';
+import {
+  getCanonicalAdmissionType,
+  getCanonicalOutcome,
+  isPatientActiveDuringRange,
+  isPatientAdmittedWithinRange,
+  matchesAdmissionTypeFilter,
+} from '../utils/analytics';
+import { getOperationalDateRange } from '../utils/dateRanges';
 
 // Helper to convert Firestore Timestamp to ISO string
 const timestampToISO = (value: any): string | undefined => {
@@ -138,6 +146,29 @@ const Dashboard: React.FC<DashboardProps> = ({
   // Enable only when debugging role issues by uncommenting below:
   // console.log('📋 Dashboard Roles:', { userRole, allRoles });
 
+  // Robust date parsing helper that prioritize admissionDateTime and handles various formats
+  const parseSafeDate = (dateVal: any, timeVal?: string): Date | null => {
+    if (!dateVal) return null;
+    try {
+      // If it's already an ISO string with time (T00:00:00), new Date() handles it
+      const date = new Date(dateVal);
+      if (isNaN(date.getTime())) return null;
+
+      // If we have a separate time value and the dateVal is just a date string
+      if (timeVal && !dateVal.includes('T')) {
+        const [hours, minutes] = timeVal.split(':').map(Number);
+        date.setHours(hours, minutes, 0, 0);
+      }
+      return date;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Shared date-range logic used across dashboard and registry
+  const getShiftAwareRange = (period: string, customDates?: { startDate?: string; endDate?: string }) =>
+    getOperationalDateRange(period, institutionShiftStartTime, customDates);
+
   // State declarations FIRST (before using them in handlers)
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,12 +189,41 @@ const Dashboard: React.FC<DashboardProps> = ({
   });
   const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('Inborn');
   const [dateFilter, setDateFilter] = useState<DateFilterValue>({ period: 'Today' });
-  const [shiftFilter, setShiftFilter] = useState<ShiftFilterConfigs>({
-    enabled: false,
-    startTime: '08:00',
-    endTime: '20:00'
-  });
   const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('All');
+  const [institutionShiftStartTime, setInstitutionShiftStartTime] = useState<string>('00:00');
+
+  const selectedDateRange = useMemo(() => {
+    if (dateFilter.period === 'All Time') return null;
+    if (dateFilter.period === 'Custom' && (!dateFilter.startDate || !dateFilter.endDate)) return null;
+
+    return getShiftAwareRange(dateFilter.period, {
+      startDate: dateFilter.startDate,
+      endDate: dateFilter.endDate
+    });
+  }, [dateFilter, institutionShiftStartTime]);
+
+  // Time-based refresh trigger - updates every minute to recalculate time-sensitive stats
+  // Also refreshes when user returns to the app/tab
+  const [timeRefreshTrigger, setTimeRefreshTrigger] = useState(Date.now());
+  useEffect(() => {
+    // Periodic refresh every minute
+    const interval = setInterval(() => {
+      setTimeRefreshTrigger(Date.now());
+    }, 60000);
+
+    // Refresh when tab becomes visible again (user returns to app)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setTimeRefreshTrigger(Date.now());
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   // REMOVED separate chart filter - charts now use main dateFilter for consistency
 
@@ -385,6 +445,12 @@ const Dashboard: React.FC<DashboardProps> = ({
       const institutionDoc = await getDoc(doc(db, 'institutions', institutionId));
       if (institutionDoc.exists()) {
         const data = institutionDoc.data();
+        if (data.shiftStartTime) {
+          setInstitutionShiftStartTime(data.shiftStartTime);
+        } else {
+          setInstitutionShiftStartTime('00:00');
+        }
+
         if (data.bedCapacity) {
           setBedCapacity(data.bedCapacity);
         } else {
@@ -561,12 +627,13 @@ const Dashboard: React.FC<DashboardProps> = ({
       ? patients.filter(p => p.institutionId === institutionId && p.unit === selectedUnit)
       : patients.filter(p => p.unit === selectedUnit);
 
-    // Apply Inborn/Outborn filter for NICU and SNCU
-    if ((selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && nicuView !== 'All') {
-      if (nicuView === 'Outborn') {
-        baseFiltered = baseFiltered.filter(p => p.admissionType?.includes('Outborn'));
-      } else if (nicuView === 'Inborn') {
-        baseFiltered = baseFiltered.filter(p => p.admissionType === 'Inborn');
+    // Apply Inborn/Outborn filter for NICU and SNCU.
+    // In "All" mode, exclude unknown admission types so totals equal Inborn + Outborn.
+    if (selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) {
+      if (nicuView !== 'All') {
+        baseFiltered = baseFiltered.filter(p => matchesAdmissionTypeFilter(p, nicuView));
+      } else {
+        baseFiltered = baseFiltered.filter(p => getCanonicalAdmissionType(p) !== 'Unknown');
       }
     }
 
@@ -576,185 +643,98 @@ const Dashboard: React.FC<DashboardProps> = ({
   const unitPatients = useMemo(() => {
     let filtered = baseUnitPatients;
 
-    if (dateFilter.period !== 'All Time') {
-      let startDate: Date;
-      let endDate: Date;
-
-      const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
-
-      if (periodIsMonth) {
-        const [year, month] = dateFilter.period.split('-').map(Number);
-        // Use local timezone, not UTC, to match patient date comparisons
-        startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
-        endDate = new Date(year, month, 0, 23, 59, 59, 999);
-      } else {
-        const now = new Date();
-        switch (dateFilter.period) {
-          case 'Today':
-            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-            break;
-          case 'This Week':
-            const firstDayOfWeek = new Date(now);
-            firstDayOfWeek.setDate(now.getDate() - now.getDay());
-            startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
-
-            const lastDayOfWeek = new Date(firstDayOfWeek);
-            lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
-            endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
-            break;
-          case 'This Month':
-            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-            endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-            break;
-          case 'Custom':
-            if (!dateFilter.startDate || !dateFilter.endDate) {
-              startDate = new Date(0); // Should keep baseFiltered if invalid custom range? Actually just fail open or closed.
-              // Logic below says "return baseFiltered" if invalid.
-              // Let's just set a wide range or handle "return filtered" early.
-            } else {
-              startDate = new Date(dateFilter.startDate);
-              startDate.setHours(0, 0, 0, 0);
-              endDate = new Date(dateFilter.endDate);
-              endDate.setHours(23, 59, 59, 999);
-            }
-            break;
-          default:
-            startDate = new Date(0);
-            endDate = new Date(); // Just to satisfy TS
-            break;
-        }
-      }
-
-      if (dateFilter.period === 'Custom' && (!dateFilter.startDate || !dateFilter.endDate)) {
-        // Invalid custom range - keep all patients
-      } else {
-        filtered = filtered.filter(p => {
-          const admissionDate = new Date(p.admissionDate);
-
-          // Check if patient was active at ANY point during the selected period
-          // A patient is considered active if:
-          // 1. They were admitted before or during the period, AND
-          // 2. They were either still in care OR discharged/referred/deceased during or after the period
-
-          const wasAdmittedBeforeOrDuringPeriod = admissionDate <= endDate;
-
-          // Get the outcome/release date
-          let outcomeDate: Date | null = null;
-          if (p.releaseDate) {
-            outcomeDate = new Date(p.releaseDate);
-          } else if (p.finalDischargeDate) {
-            outcomeDate = new Date(p.finalDischargeDate);
-          } else if (p.stepDownDate && p.outcome === 'Step Down') {
-            outcomeDate = new Date(p.stepDownDate);
-          }
-
-          // Patient is active during period if:
-          // - Admitted before/during period AND
-          // - (Still in progress OR outcome happened during/after period start)
-          return wasAdmittedBeforeOrDuringPeriod && (!outcomeDate || outcomeDate >= startDate);
-        });
-      }
-    }
-
-    // Apply Shift Filter if enabled
-    if (shiftFilter.enabled && shiftFilter.startTime && shiftFilter.endTime) {
+    if (selectedDateRange) {
+      const { startDate, endDate } = selectedDateRange;
       filtered = filtered.filter(p => {
-        // Determine the relevant date/time for the patient based on their outcome
-        let eventDate: Date;
-
-        if (p.outcome === 'Discharged' && (p.releaseDate || p.finalDischargeDate)) {
-          eventDate = new Date(p.finalDischargeDate || p.releaseDate!);
-        } else if (p.outcome === 'Step Down' && p.stepDownDate) {
-          eventDate = new Date(p.stepDownDate);
-        } else if (p.outcome === 'Referred' && p.releaseDate) {
-          eventDate = new Date(p.releaseDate);
-        } else if (p.outcome === 'Deceased' && p.releaseDate) {
-          eventDate = new Date(p.releaseDate);
-        } else {
-          // Default to admission date for 'In Progress' or others
-          eventDate = new Date(p.admissionDate);
-        }
-
-        const eventTime = eventDate.getHours() * 60 + eventDate.getMinutes();
-        const [startHour, startMinute] = shiftFilter.startTime.split(':').map(Number);
-        const [endHour, endMinute] = shiftFilter.endTime.split(':').map(Number);
-        const startTime = startHour * 60 + startMinute;
-        const endTime = endHour * 60 + endMinute;
-
-        if (startTime <= endTime) {
-          // Day shift (e.g. 08:00 to 20:00)
-          return eventTime >= startTime && eventTime <= endTime;
-        } else {
-          // Night shift (e.g. 20:00 to 08:00) - spans midnight
-          return eventTime >= startTime || eventTime <= endTime;
-        }
+        return isPatientActiveDuringRange(p, { startDate, endDate });
       });
     }
 
     return filtered;
-  }, [baseUnitPatients, dateFilter, shiftFilter]);
+  }, [baseUnitPatients, selectedDateRange]);
+
+  const admissionCohortPatients = useMemo(() => {
+    if (!selectedDateRange) return baseUnitPatients;
+    return baseUnitPatients.filter(p => isPatientAdmittedWithinRange(p, selectedDateRange));
+  }, [baseUnitPatients, selectedDateRange]);
 
   // Apply outcome filter
   const filteredPatients = useMemo(() => {
+    const outcomeOf = (patient: Patient) => getCanonicalOutcome(patient);
+
     if (outcomeFilter === 'All') return unitPatients;
-    return unitPatients.filter(p => p.outcome === outcomeFilter);
+    if (outcomeFilter === 'In Progress') {
+      // In Progress includes patients with no outcome, empty outcome, or explicit 'In Progress'
+      return unitPatients.filter(p => outcomeOf(p) === 'In Progress');
+    }
+    return unitPatients.filter(p => outcomeOf(p) === outcomeFilter);
   }, [unitPatients, outcomeFilter]);
 
-  const stats = useMemo(() => {
-    const total = unitPatients.length;
-    const deceased = unitPatients.filter(p => p.outcome === 'Deceased').length;
-    const discharged = unitPatients.filter(p => p.outcome === 'Discharged').length;
-    const referred = unitPatients.filter(p => p.outcome === 'Referred').length;
-    const inProgress = unitPatients.filter(p => p.outcome === 'In Progress').length;
-    const stepDown = unitPatients.filter(p => p.outcome === 'Step Down').length;
+  // Active observation patients filtered by selected unit AND date filter AND Inborn/Outborn view
+  const activeObservationPatients = useMemo(() => {
+    let filtered = observationPatients.filter(p =>
+      p.unit === selectedUnit &&
+      p.outcome === ObservationOutcome.InObservation
+    );
 
-    // Calculate new admissions in this period
-    const newAdmissions = unitPatients.filter(p => {
-      // Filter logic already handles date range for unitPatients, so just check if admission date is within range if needed
-      // But unitPatients is already filtered by the main period.
-      return true;
-    }).length; // This is same as total for unitPatients based on current filter logic, effectively.
-    // Wait, unitPatients logic filters by *active* status during period, not just admission.
-    // We want specifically NEW admissions during this period.
+    if ((selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && nicuView !== 'All') {
+      filtered = filtered.filter(p => matchesAdmissionTypeFilter(p, nicuView));
+    } else if (selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) {
+      filtered = filtered.filter(p => {
+        const normalized = String(p.admissionType || '').trim().toLowerCase();
+        return normalized.includes('inborn') || normalized.includes('outborn');
+      });
+    }
 
-    const admissionsCount = unitPatients.filter(p => {
-      if (dateFilter.period === 'All Time') return true;
-      const admissionDate = new Date(p.admissionDate);
-      let startDate: Date;
-      let endDate: Date;
+    if (dateFilter.period !== 'All Time') {
+      const { startDate, endDate } = getShiftAwareRange(dateFilter.period, {
+        startDate: dateFilter.startDate,
+        endDate: dateFilter.endDate
+      });
 
-      // Re-calculate dates for specific admission check (since unitPatients includes active-but-admitted-earlier)
-      // Ideally we should move the date calculation/parsing out to a helper
-      // reusing the date filter logic roughly:
-      const now = new Date();
-      if (/\d{4}-\d{2}/.test(dateFilter.period)) {
-        const [year, month] = dateFilter.period.split('-').map(Number);
-        // Use local timezone, not UTC, to match patient date comparisons
-        startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
-        endDate = new Date(year, month, 0, 23, 59, 59, 999);
-      } else if (dateFilter.period === 'Today') {
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      } else if (dateFilter.period === 'This Week') {
-        const firstDayOfWeek = new Date(now);
-        firstDayOfWeek.setDate(now.getDate() - now.getDay());
-        startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
-        const lastDayOfWeek = new Date(firstDayOfWeek);
-        lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
-        endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
-      } else if (dateFilter.period === 'This Month') {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-      } else if (dateFilter.period === 'Custom' && dateFilter.startDate && dateFilter.endDate) {
-        startDate = new Date(dateFilter.startDate);
-        endDate = new Date(dateFilter.endDate);
-        endDate.setHours(23, 59, 59, 999);
-      } else {
-        return true;
+      if (dateFilter.period !== 'Custom' || (dateFilter.startDate && dateFilter.endDate)) {
+        filtered = filtered.filter(p => {
+          const observationDate = new Date(p.dateOfObservation);
+          const wasInObservationDuringPeriod = observationDate <= endDate;
+
+          let outcomeDate: Date | null = null;
+          if (p.dischargedAt) {
+            outcomeDate = new Date(p.dischargedAt);
+          }
+
+          return wasInObservationDuringPeriod && (!outcomeDate || outcomeDate >= startDate);
+        });
       }
-      return admissionDate >= startDate && admissionDate <= endDate;
-    }).length;
+    }
+
+    return filtered;
+  }, [observationPatients, selectedUnit, dateFilter, nicuView, institutionShiftStartTime]);
+
+  const stats = useMemo(() => {
+    const outcomeOf = (patient: Patient) => getCanonicalOutcome(patient);
+    const admissionTypeOf = (patient: Patient) => getCanonicalAdmissionType(patient);
+
+    const total = unitPatients.length;
+    const deceased = unitPatients.filter(p => outcomeOf(p) === 'Deceased').length;
+    const discharged = unitPatients.filter(p => outcomeOf(p) === 'Discharged').length;
+    const referred = unitPatients.filter(p => outcomeOf(p) === 'Referred').length;
+    // In Progress includes patients with no outcome, empty outcome, or explicit 'In Progress'
+    const inProgress = unitPatients.filter(p => outcomeOf(p) === 'In Progress').length;
+    const stepDown = unitPatients.filter(p => outcomeOf(p) === 'Step Down').length;
+
+    const inObservation = activeObservationPatients.length;
+    // Active card is an operational view: admitted in-progress + current observations.
+    const patientsInCare = inProgress + inObservation;
+
+    // "New Admissions" should follow the selected admission cohort, not the
+    // active-during-period overlap set used for occupancy/outcome metrics.
+    const todayNewAdmissions = baseUnitPatients.filter(p =>
+      isPatientAdmittedWithinRange(p, getShiftAwareRange('Today'))
+    ).length;
+    const admissionsCount = selectedDateRange
+      ? admissionCohortPatients.length
+      : baseUnitPatients.length;
+
 
     const mortalityRate = total > 0 ? ((deceased / total) * 100).toFixed(1) : '0';
     const mortalityPercentage = mortalityRate + '%';
@@ -768,18 +748,18 @@ const Dashboard: React.FC<DashboardProps> = ({
     const stepDownPercentage = stepDownRate + '%';
 
     if (selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) {
-      const inbornDeaths = unitPatients.filter(p => p.outcome === 'Deceased' && p.admissionType === 'Inborn').length;
-      const outbornDeaths = unitPatients.filter(p => p.outcome === 'Deceased' && p.admissionType?.includes('Outborn')).length;
-      const inbornTotal = unitPatients.filter(p => p.admissionType === 'Inborn').length;
-      const outbornTotal = unitPatients.filter(p => p.admissionType?.includes('Outborn')).length;
+      const inbornDeaths = unitPatients.filter(p => outcomeOf(p) === 'Deceased' && admissionTypeOf(p) === 'Inborn').length;
+      const outbornDeaths = unitPatients.filter(p => outcomeOf(p) === 'Deceased' && admissionTypeOf(p) === 'Outborn').length;
+      const inbornTotal = unitPatients.filter(p => admissionTypeOf(p) === 'Inborn').length;
+      const outbornTotal = unitPatients.filter(p => admissionTypeOf(p) === 'Outborn').length;
       const inbornMortalityRate = inbornTotal > 0 ? ((inbornDeaths / inbornTotal) * 100).toFixed(1) + '%' : '0%';
       const outbornMortalityRate = outbornTotal > 0 ? ((outbornDeaths / outbornTotal) * 100).toFixed(1) + '%' : '0%';
 
       return {
-        total, deceased, discharged, referred, inProgress, stepDown,
+        total, deceased, discharged, referred, inProgress, stepDown, inObservation, patientsInCare,
         mortalityRate: mortalityPercentage, dischargeRate: dischargePercentage, referralRate: referralPercentage,
         inProgressPercentage, stepDownPercentage,
-        inbornDeaths, outbornDeaths, inbornMortalityRate, outbornMortalityRate, admissionsCount
+        inbornDeaths, outbornDeaths, inbornMortalityRate, outbornMortalityRate, admissionsCount, todayNewAdmissions
       };
     }
 
@@ -792,108 +772,24 @@ const Dashboard: React.FC<DashboardProps> = ({
         if (p.ageUnit === 'days') return true;
         return false;
       });
-      const under5Deaths = under5Patients.filter(p => p.outcome === 'Deceased').length;
+      const under5Deaths = under5Patients.filter(p => getCanonicalOutcome(p) === 'Deceased').length;
       const under5Total = under5Patients.length;
       const under5MortalityRate = under5Total > 0 ? ((under5Deaths / under5Total) * 100).toFixed(1) + '%' : '0%';
 
       return {
-        total, deceased, discharged, referred, inProgress, stepDown,
+        total, deceased, discharged, referred, inProgress, stepDown, inObservation, patientsInCare,
         mortalityRate: mortalityPercentage, dischargeRate: dischargePercentage, referralRate: referralPercentage,
-        inProgressPercentage, stepDownPercentage, admissionsCount,
+        inProgressPercentage, stepDownPercentage, admissionsCount, todayNewAdmissions,
         under5Deaths, under5Total, under5MortalityRate
       };
     }
 
     return {
-      total, deceased, discharged, referred, inProgress, stepDown, admissionsCount,
+      total, deceased, discharged, referred, inProgress, stepDown, inObservation, patientsInCare, admissionsCount, todayNewAdmissions,
       mortalityRate: mortalityPercentage, dischargeRate: dischargePercentage, referralRate: referralPercentage,
       inProgressPercentage, stepDownPercentage
     };
-  }, [unitPatients, selectedUnit]);
-
-  // Active observation patients filtered by selected unit AND date filter
-  const activeObservationPatients = useMemo(() => {
-    let filtered = observationPatients.filter(p =>
-      p.unit === selectedUnit &&
-      p.outcome === ObservationOutcome.InObservation
-    );
-
-    // Apply date filter
-    if (dateFilter.period !== 'All Time') {
-      let startDate: Date;
-      let endDate: Date;
-
-      const periodIsMonth = /\d{4}-\d{2}/.test(dateFilter.period);
-
-      if (periodIsMonth) {
-        const [year, month] = dateFilter.period.split('-').map(Number);
-        startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
-        endDate = new Date(year, month, 0, 23, 59, 59, 999);
-      } else {
-        const now = new Date();
-        switch (dateFilter.period) {
-          case 'Today':
-            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-            break;
-          case 'This Week':
-            const firstDayOfWeek = new Date(now);
-            firstDayOfWeek.setDate(now.getDate() - now.getDay());
-            startDate = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), firstDayOfWeek.getDate());
-            const lastDayOfWeek = new Date(firstDayOfWeek);
-            lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
-            endDate = new Date(lastDayOfWeek.getFullYear(), lastDayOfWeek.getMonth(), lastDayOfWeek.getDate(), 23, 59, 59, 999);
-            break;
-          case 'This Month':
-            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-            endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-            break;
-          case 'Custom':
-            if (!dateFilter.startDate || !dateFilter.endDate) {
-              startDate = new Date(0);
-              endDate = new Date();
-            } else {
-              startDate = new Date(dateFilter.startDate);
-              startDate.setHours(0, 0, 0, 0);
-              endDate = new Date(dateFilter.endDate);
-              endDate.setHours(23, 59, 59, 999);
-            }
-            break;
-          default:
-            startDate = new Date(0);
-            endDate = new Date();
-            break;
-        }
-      }
-
-      if (dateFilter.period === 'Custom' && (!dateFilter.startDate || !dateFilter.endDate)) {
-        // Keep filtered as is
-      } else {
-        filtered = filtered.filter(p => {
-          const observationDate = new Date(p.dateOfObservation);
-
-          // Check if patient was in observation during the selected period
-          const wasInObservationDuringPeriod = observationDate <= endDate;
-
-          // Get the outcome/release date
-          let outcomeDate: Date | null = null;
-          if (p.dischargedAt) {
-            outcomeDate = new Date(p.dischargedAt);
-          }
-
-          // Patient is active during period if:
-          // - Started observation before/during period AND
-          // - (Still in observation OR outcome happened during/after period start)
-          const wasActiveDuringPeriod = wasInObservationDuringPeriod &&
-            (!outcomeDate || outcomeDate >= startDate);
-
-          return wasActiveDuringPeriod;
-        });
-      }
-    }
-
-    return filtered;
-  }, [observationPatients, selectedUnit, dateFilter]);
+  }, [unitPatients, selectedUnit, activeObservationPatients, baseUnitPatients, admissionCohortPatients, selectedDateRange, dateFilter, institutionShiftStartTime, timeRefreshTrigger]);
 
   // Completed observation patients (handed over or converted to admission) - loaded on demand
   const completedObservationPatients = useMemo(() => {
@@ -913,16 +809,20 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Chart stats based on chart-filtered patients
   const chartStats = useMemo(() => {
+    const outcomeOf = (patient: Patient) => getCanonicalOutcome(patient);
+    const admissionTypeOf = (patient: Patient) => getCanonicalAdmissionType(patient);
+
     const total = chartFilteredPatients.length;
-    const deceased = chartFilteredPatients.filter(p => p.outcome === 'Deceased').length;
-    const discharged = chartFilteredPatients.filter(p => p.outcome === 'Discharged').length;
-    const referred = chartFilteredPatients.filter(p => p.outcome === 'Referred').length;
-    const inProgress = chartFilteredPatients.filter(p => p.outcome === 'In Progress').length;
-    const stepDown = chartFilteredPatients.filter(p => p.outcome === 'Step Down').length;
+    const deceased = chartFilteredPatients.filter(p => outcomeOf(p) === 'Deceased').length;
+    const discharged = chartFilteredPatients.filter(p => outcomeOf(p) === 'Discharged').length;
+    const referred = chartFilteredPatients.filter(p => outcomeOf(p) === 'Referred').length;
+    // In Progress includes patients with no outcome, empty outcome, or explicit 'In Progress'
+    const inProgress = chartFilteredPatients.filter(p => outcomeOf(p) === 'In Progress').length;
+    const stepDown = chartFilteredPatients.filter(p => outcomeOf(p) === 'Step Down').length;
 
     if (selectedUnit === Unit.NICU) {
-      const inbornDeaths = chartFilteredPatients.filter(p => p.outcome === 'Deceased' && p.admissionType === 'Inborn').length;
-      const outbornDeaths = chartFilteredPatients.filter(p => p.outcome === 'Deceased' && p.admissionType?.includes('Outborn')).length;
+      const inbornDeaths = chartFilteredPatients.filter(p => outcomeOf(p) === 'Deceased' && admissionTypeOf(p) === 'Inborn').length;
+      const outbornDeaths = chartFilteredPatients.filter(p => outcomeOf(p) === 'Deceased' && admissionTypeOf(p) === 'Outborn').length;
 
       return {
         total, deceased, discharged, referred, inProgress, stepDown,
@@ -987,10 +887,20 @@ const Dashboard: React.FC<DashboardProps> = ({
         return;
       }
 
+      const now = new Date().toISOString();
+
       // Clean the data: remove undefined values and ensure progress notes is always an array
       const cleanedData = {
         ...patientData,
         progressNotes: patientData.progressNotes || [],
+        // Add required metadata fields for Firebase rules
+        metadata: {
+          ...(patientData as any).metadata,
+          createdBy: userEmail || userName || 'unknown',
+          createdAt: patientToEdit ? ((patientData as any).metadata?.createdAt || now) : now,
+          lastUpdatedBy: userEmail || userName || 'unknown',
+          lastUpdatedAt: now
+        }
       };
 
       // Remove undefined fields to prevent Firestore errors
@@ -1074,13 +984,16 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
 
     try {
+      const dischargeTimestamp = new Date().toISOString();
       const updatedPatient: Patient = {
         ...patient,
         outcome: 'Discharged',
-        finalDischargeDate: new Date().toISOString(),
+        isStepDown: false,
+        finalDischargeDate: dischargeTimestamp,
+        releaseDate: dischargeTimestamp,
         lastUpdatedBy: userRole,
         lastUpdatedByEmail: userEmail,
-        lastEditedAt: new Date().toISOString()
+        lastEditedAt: dischargeTimestamp
       };
 
       // Update patient in top-level patients collection
@@ -1113,15 +1026,17 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
 
     try {
+      const readmissionDateTime = new Date().toISOString();
       const updatedPatient: Patient = {
         ...patient,
         outcome: 'In Progress',
         unit: originalUnit,
         isStepDown: false,
         readmissionFromStepDown: true,
+        readmissionDate: readmissionDateTime,
         lastUpdatedBy: userRole,
         lastUpdatedByEmail: userEmail,
-        lastEditedAt: new Date().toISOString()
+        lastEditedAt: readmissionDateTime
       };
 
       // Update patient in top-level patients collection
@@ -1228,7 +1143,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         onEdit={handleEditPatient}
         userRole={userRole}
         allRoles={allRoles}
-        observationPatients={activeObservationPatients}
+        observationPatients={observationPatients}
         completedObservationPatients={completedObservationPatients}
         onLoadObservationHistory={loadObservationHistory}
         loadingObservationHistory={loadingObservationHistory}
@@ -1236,6 +1151,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         institutionId={institutionId}
         userEmail={userEmail || ''}
         userName={displayName || userEmail?.split('@')[0] || 'User'}
+        shiftStartTime={institutionShiftStartTime}
         onPatientUpdate={async (updatedPatient) => {
           // Update patient in Firestore
           if (updatedPatient.id) {
@@ -1255,7 +1171,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           setShowPatientDetailsPage(false);
           if (onShowAddPatient) {
             const now = new Date().toISOString();
-            const partialPatient: Partial<Patient> = {
+            const partialPatient: Partial<Patient> & { _fromObservationId?: string } = {
               name: observationPatient.babyName,
               motherName: observationPatient.motherName,
               dateOfBirth: observationPatient.dateOfBirth,
@@ -1265,6 +1181,9 @@ const Dashboard: React.FC<DashboardProps> = ({
               admissionDate: now,
               admissionDateTime: now,
               outcome: 'In Progress',
+              gender: observationPatient.gender,
+              // Store the observation patient ID to update after admission
+              _fromObservationId: observationPatient.id,
             };
             onShowAddPatient(partialPatient as Patient, observationPatient.unit);
           }
@@ -1500,10 +1419,9 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
           )}
 
-          {/* Row 3: Filters - Date & Shift */}
+          {/* Row 3: Date Filter */}
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
             <DateFilter onFilterChange={setDateFilter} />
-            <ShiftFilter onFilterChange={setShiftFilter} />
           </div>
 
         </div>
@@ -1516,15 +1434,24 @@ const Dashboard: React.FC<DashboardProps> = ({
               <BedIcon className="w-6 h-6 opacity-80" />
               <span className="text-xs font-medium bg-white/20 px-2 py-0.5 rounded-full">Active</span>
             </div>
-            <p className="text-3xl font-bold">{stats.inProgress}</p>
-            <p className="text-xs text-blue-100 mt-1">Patients in Care</p>
+            <p className="text-3xl font-bold">{stats.patientsInCare}</p>
+            <p className="text-xs text-blue-100 mt-1">Active Patients</p>
           </div>
 
-          {/* Total Admissions */}
+          {/* New Admissions - Shows based on selected date filter */}
           <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl p-4 text-white shadow-lg shadow-indigo-500/25">
             <div className="flex items-center justify-between mb-2">
               <PlusIcon className="w-6 h-6 opacity-80" />
-              <span className="text-xs font-medium bg-white/20 px-2 py-0.5 rounded-full">{getPeriodTitle(dateFilter.period).replace(/[()]/g, '')}</span>
+              <span className="text-xs font-medium bg-white/20 px-2 py-0.5 rounded-full">
+                {dateFilter.period === 'Today' ? 'Today' :
+                 dateFilter.period === 'Yesterday' ? 'Yesterday' :
+                 dateFilter.period === 'This Week' ? 'This Week' :
+                 dateFilter.period === 'Last Week' ? 'Last Week' :
+                 dateFilter.period === 'This Month' ? 'This Month' :
+                 dateFilter.period === 'Last Month' ? 'Last Month' :
+                 dateFilter.period === 'Custom' ? 'Custom' :
+                 dateFilter.period === 'All Time' ? 'All Time' : dateFilter.period}
+              </span>
             </div>
             <p className="text-3xl font-bold">{stats.admissionsCount}</p>
             <p className="text-xs text-indigo-100 mt-1">New Admissions</p>
@@ -1552,11 +1479,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* Secondary Stats Row - More subtle */}
-        <div className="grid grid-cols-4 gap-2 px-1">
-          <div className="text-center py-2 px-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-            <p className="text-lg font-bold text-slate-900 dark:text-white">{stats.total}</p>
-            <p className="text-[10px] text-slate-500">Total</p>
-          </div>
+        <div className="grid grid-cols-3 gap-2 px-1">
           <div className="text-center py-2 px-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
             <p className="text-lg font-bold text-amber-600">{stats.referred}</p>
             <p className="text-[10px] text-slate-500">Referred</p>
@@ -1571,52 +1494,32 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        {/* Quick Analytics Preview & Link to Full Analytics */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-4 md:p-6" data-analytics-section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <IconChartBar size={24} className="text-blue-500" />
-              Analytics Overview
-            </h2>
-            <button
-              onClick={() => {
-                haptics.tap();
-                if (onShowAnalytics) {
-                  onShowAnalytics();
-                }
-              }}
-              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-semibold text-sm flex items-center gap-2 shadow-lg hover:shadow-xl hover:from-blue-600 hover:to-indigo-700 transition-all"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              View Full Analytics
-            </button>
-          </div>
-
-          {/* Quick Stats Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/30 dark:to-blue-800/20 rounded-xl p-3 border border-blue-200 dark:border-blue-800/50">
-              <p className="text-2xl md:text-3xl font-bold text-blue-600 dark:text-blue-400">{stats.total}</p>
-              <p className="text-xs text-blue-700 dark:text-blue-300">Total Patients</p>
+        {/* Analytics Card - Prominent access to analytics dashboard */}
+        {onShowAnalytics && (
+          <button
+            onClick={() => {
+              haptics.tap();
+              onShowAnalytics();
+            }}
+            className="w-full bg-gradient-to-r from-violet-500 to-purple-600 rounded-2xl p-4 text-white shadow-lg shadow-purple-500/25 flex items-center justify-between hover:from-violet-600 hover:to-purple-700 transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                <ChartBarIcon className="w-6 h-6" />
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-lg">Analytics Dashboard</p>
+                <p className="text-sm text-purple-100">Trends, charts & insights</p>
+              </div>
             </div>
-            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/30 dark:to-emerald-800/20 rounded-xl p-3 border border-emerald-200 dark:border-emerald-800/50">
-              <p className="text-2xl md:text-3xl font-bold text-emerald-600 dark:text-emerald-400">{stats.discharged}</p>
-              <p className="text-xs text-emerald-700 dark:text-emerald-300">Discharged</p>
-            </div>
-            <div className="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/20 rounded-xl p-3 border border-amber-200 dark:border-amber-800/50">
-              <p className="text-2xl md:text-3xl font-bold text-amber-600 dark:text-amber-400">{stats.referred}</p>
-              <p className="text-xs text-amber-700 dark:text-amber-300">Referred</p>
-            </div>
-            <div className="bg-gradient-to-br from-rose-50 to-rose-100 dark:from-rose-900/30 dark:to-rose-800/20 rounded-xl p-3 border border-rose-200 dark:border-rose-800/50">
-              <p className="text-2xl md:text-3xl font-bold text-rose-600 dark:text-rose-400">{stats.mortalityRate}</p>
-              <p className="text-xs text-rose-700 dark:text-rose-300">Mortality Rate</p>
-            </div>
-          </div>
-        </div>
+            <svg className="w-6 h-6 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
 
         {/* Bed Occupancy - Keep this as it's useful for quick overview */}
-        <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} availableUnits={enabledFacilities} observationPatients={observationPatients} nicuView={nicuView} />
+        <BedOccupancy patients={unitPatients} bedCapacity={bedCapacity} availableUnits={enabledFacilities} observationPatients={activeObservationPatients} nicuView={nicuView} />
 
         {/* Active Patients Quick View - Hidden for Officials */}
         {userRole !== UserRole.Official && stats.inProgress > 0 && (
@@ -1644,7 +1547,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             {/* Active patients list - show first 5 */}
             <div className="space-y-2">
               {unitPatients
-                .filter(p => p.outcome === 'In Progress')
+                .filter(p => getCanonicalOutcome(p) === 'In Progress')
                 .slice(0, 5)
                 .map((patient) => (
                   <div
@@ -1659,7 +1562,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <div>
                         <p className="font-medium text-slate-900 dark:text-white">{patient.name}</p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {patient.age} {patient.ageUnit} | {patient.gender}
+                          {getFormattedAge(patient.dateOfBirth, patient.age, patient.ageUnit)} | {patient.gender}
                         </p>
                       </div>
                     </div>
@@ -1740,14 +1643,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             />
           </div>
 
-          <div>
-            <h3 className="font-semibold text-slate-900 mb-2">Shift Filter</h3>
-            <ShiftFilter
-              value={shiftFilter}
-              onChange={setShiftFilter}
-            />
-          </div>
-
           <button
             onClick={() => {
               setShowFilterSheet(false);
@@ -1781,6 +1676,21 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
               Admin Dashboard
+            </button>
+          )}
+
+          {/* Analytics Dashboard */}
+          {onShowAnalytics && (
+            <button
+              onClick={() => {
+                haptics.tap();
+                setShowQuickActions(false);
+                onShowAnalytics();
+              }}
+              className="w-full bg-gradient-to-r from-violet-500 to-purple-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 shadow-lg hover:from-violet-600 hover:to-purple-700 transition-all"
+            >
+              <ChartBarIcon className="w-5 h-5" />
+              Analytics Dashboard
             </button>
           )}
 
@@ -1886,8 +1796,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         hasRole(UserRole.SuperAdmin) ||
         hasRole(UserRole.DistrictAdmin)
       ) && (
-        <AddPatientFAB onClick={() => setShowAddPatientChoice(true)} />
-      )}
+          <AddPatientFAB onClick={() => setShowAddPatientChoice(true)} />
+        )}
 
       {/* Add Patient Choice Modal */}
       <AddPatientChoiceModal

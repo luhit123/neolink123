@@ -49,8 +49,8 @@ body {
 
 .form-input:focus {
   outline: none;
-  border-color: var(--color-medical-teal);
-  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+  border-color: #EC4899; /* pink-500 */
+  box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.18);
 }
 
 /* React Datepicker Custom Styles */
@@ -61,7 +61,7 @@ body {
 .react-datepicker__input-container input {
   width: 100%;
   background-color: white;
-  border: 2px solid #93C5FD; /* blue-300 */
+  border: 2px solid #F9A8D4; /* pink-300 */
   color: rgb(30 41 59); /* slate-800 */
   border-radius: 0.5rem; /* rounded-lg */
   padding: 0.5rem 0.75rem;
@@ -72,8 +72,8 @@ body {
 }
 
 .react-datepicker__input-container input:focus {
-  border-color: #3B82F6; /* blue-500 */
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  border-color: #EC4899; /* pink-500 */
+  box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.18);
 }
 
 .react-datepicker {
@@ -85,14 +85,14 @@ body {
 }
 
 .react-datepicker__header {
-  background-color: #EFF6FF; /* blue-50 */
+  background-color: #FFF1F2; /* rose-50 */
   border-bottom: 1px solid #E2E8F0;
   padding-top: 1rem;
 }
 
 .react-datepicker__current-month,
 .react-datepicker-time__header {
-  color: #1E3A8A; /* blue-900 */
+  color: #701A75; /* fuchsia-900 */
   font-weight: 700;
 }
 
@@ -106,18 +106,18 @@ body {
 }
 
 .react-datepicker__day:hover {
-  background-color: #DBEAFE; /* blue-100 */
+  background-color: #FFE4E6; /* rose-100 */
 }
 
 .react-datepicker__day--selected,
 .react-datepicker__day--keyboard-selected {
-  background-color: #2563EB !important; /* blue-600 */
+  background-color: #DB2777 !important; /* pink-600 */
   color: white !important;
 }
 
 .react-datepicker__day--today {
   font-weight: bold;
-  color: #2563EB;
+  color: #DB2777; /* pink-600 */
 }
 
 .react-datepicker__time-container {
@@ -125,7 +125,7 @@ body {
 }
 
 .react-datepicker__time-list-item--selected {
-  background-color: #2563EB !important; /* blue-600 */
+  background-color: #DB2777 !important; /* pink-600 */
 }
 
 .react-datepicker__close-icon::after {
@@ -230,8 +230,8 @@ body {
 
 /* Loading spinner for inline use */
 .inline-spinner {
-  border: 2px solid rgba(20, 184, 166, 0.2);
-  border-top-color: #14b8a6;
+  border: 2px solid rgba(236, 72, 153, 0.18);
+  border-top-color: #EC4899;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -240,4 +240,25 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* App background (pink glassmorphism backdrop) */
+body {
+  background-color: #fff7fb;
+}
+
+.neolink-app {
+  background:
+    radial-gradient(1200px 800px at 10% 0%, rgba(236, 72, 153, 0.22), transparent 60%),
+    radial-gradient(1000px 700px at 100% 20%, rgba(168, 85, 247, 0.18), transparent 55%),
+    radial-gradient(900px 700px at 50% 100%, rgba(59, 130, 246, 0.12), transparent 55%),
+    linear-gradient(180deg, #fff7fb 0%, #f7fbff 40%, #ffffff 100%);
+}
+
+.dark .neolink-app {
+  background:
+    radial-gradient(1200px 800px at 10% 0%, rgba(236, 72, 153, 0.18), transparent 60%),
+    radial-gradient(1000px 700px at 100% 20%, rgba(168, 85, 247, 0.14), transparent 55%),
+    radial-gradient(900px 700px at 50% 100%, rgba(59, 130, 246, 0.10), transparent 55%),
+    linear-gradient(180deg, #070a13 0%, #0b1222 40%, #070a13 100%);
 }

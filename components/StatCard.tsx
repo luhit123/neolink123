@@ -2,6 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Ripple from './material/Ripple';
 import { haptics } from '../utils/haptics';
+import { glassClasses, glassmorphism } from '../theme/glassmorphism';
 
 interface StatCardProps {
   title: string;
@@ -21,14 +22,18 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color, onClick 
 
   return (
     <Ripple
-      className={`bg-white rounded-lg md:rounded-xl shadow-md-elevation-2 border border-slate-200 overflow-hidden ${
+      className={glassClasses(
+        glassmorphism.backdrop.tinted,
+        glassmorphism.border.light,
+        glassmorphism.shadow.card,
+        'rounded-2xl overflow-hidden',
         onClick ? 'cursor-pointer' : ''
-      }`}
+      )}
       onClick={handleClick}
     >
       <motion.div
         className="p-3 md:p-6"
-        whileHover={onClick ? { y: -4, boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)' } : {}}
+        whileHover={onClick ? { y: -4, boxShadow: '0 25px 80px -10px rgba(236, 72, 153, 0.35)' } : {}}
         whileTap={onClick ? { scale: 0.98 } : {}}
         transition={{ type: 'spring', stiffness: 400, damping: 25 }}
       >

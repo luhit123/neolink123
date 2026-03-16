@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ObservationPatient, ObservationOutcome, Unit } from '../types';
 import { db } from '../firebaseConfig';
-import { collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 
 interface ObservationManagementProps {
   institutionId: string;
@@ -59,10 +59,7 @@ const ObservationManagement: React.FC<ObservationManagementProps> = ({
     if (!confirm(`Hand over ${patient.babyName} to mother?`)) return;
 
     try {
-      await updateDoc(doc(db, 'observationPatients', patient.id), {
-        outcome: ObservationOutcome.HandedOverToMother,
-        dischargedAt: new Date().toISOString()
-      });
+      await deleteDoc(doc(db, 'observationPatients', patient.id));
       alert('Patient handed over to mother successfully!');
     } catch (error) {
       console.error('Error handing over patient:', error);

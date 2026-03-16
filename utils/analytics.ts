@@ -169,9 +169,15 @@ export const getPatientOutcomeDate = (patient: Partial<Patient>): Date | null =>
 export const getPatientOperationalEndDate = (patient: Partial<Patient>): Date | null => {
   const outcome = getCanonicalOutcome(patient);
 
-  // Step down is a care transition, not a hospital exit. Keep those patients
-  // visible in operational lists until a terminal outcome is recorded.
+  // Terminal outcomes end the patient's operational period.
   if (outcome === 'Discharged' || outcome === 'Deceased' || outcome === 'Referred') {
+    return getPatientOutcomeDate(patient);
+  }
+
+  // Step Down is a care transition — the patient leaves the ORIGINAL unit.
+  // Treat stepDownDate as the operational end for unit-filtering purposes
+  // so stepped-down patients no longer inflate the source unit's active counts.
+  if (outcome === 'Step Down') {
     return getPatientOutcomeDate(patient);
   }
 

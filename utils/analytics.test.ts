@@ -94,7 +94,7 @@ describe('analytics helpers', () => {
     expect(getCanonicalOutcome(staleStepDownPatient)).toBe('Discharged');
   });
 
-  it('keeps current step down patients visible across later operational ranges', () => {
+  it('removes step down patients from ranges after their step-down date', () => {
     const patient = {
       admissionDate: '2026-02-17T18:40:00.000Z',
       stepDownDate: '2026-03-01T09:30:00.000Z',
@@ -107,7 +107,24 @@ describe('analytics helpers', () => {
       endDate: new Date('2026-03-12T23:59:59.999Z'),
     });
 
-    expect(inMarchWeek).toBe(true);
+    // Step-down patients should NOT appear in ranges after step-down date
+    expect(inMarchWeek).toBe(false);
+  });
+
+  it('keeps step down patients visible during ranges that include the step-down date', () => {
+    const patient = {
+      admissionDate: '2026-02-17T18:40:00.000Z',
+      stepDownDate: '2026-03-01T09:30:00.000Z',
+      outcome: 'Step Down',
+      unit: Unit.PICU,
+    };
+
+    const duringStepDown = isPatientActiveDuringRange(patient, {
+      startDate: new Date('2026-02-25T00:00:00.000Z'),
+      endDate: new Date('2026-03-05T23:59:59.999Z'),
+    });
+
+    expect(duringStepDown).toBe(true);
   });
 
   it('still removes terminal outcomes after the patient leaves care', () => {

@@ -55,8 +55,8 @@ export const PremiumButton: React.FC<PremiumButtonProps> = ({
         primary: glassClasses(
           glassmorphism.backdrop.light,
           glassmorphism.border.glow,
-          'bg-gradient-to-r from-sky-500/80 to-blue-600/80',
-          'hover:from-sky-600/90 hover:to-blue-700/90',
+          'bg-gradient-to-r from-rose-500/80 to-fuchsia-600/80',
+          'hover:from-rose-600/90 hover:to-fuchsia-700/90',
           'text-white font-semibold',
           glassmorphism.shadow.elevated
         ),
@@ -64,7 +64,7 @@ export const PremiumButton: React.FC<PremiumButtonProps> = ({
           glassmorphism.backdrop.light,
           glassmorphism.border.light,
           'hover:bg-white/80',
-          'text-sky-700 font-semibold',
+          'text-fuchsia-700 font-semibold',
           glassmorphism.shadow.card
         ),
         success: glassClasses(
@@ -85,23 +85,23 @@ export const PremiumButton: React.FC<PremiumButtonProps> = ({
         ),
         outline: glassClasses(
           'bg-transparent',
-          'border-2 border-sky-400',
-          'hover:bg-sky-50/50',
-          'text-sky-600 font-semibold'
+          'border-2 border-rose-400',
+          'hover:bg-rose-50/50',
+          'text-fuchsia-700 font-semibold'
         ),
         ghost: glassClasses(
           'bg-transparent',
           'hover:bg-white/30',
-          'text-sky-700 font-medium'
+          'text-fuchsia-700 font-medium'
         ),
       }[variant]
     : // Non-glass solid variants
       {
-        primary: 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-semibold shadow-lg',
+        primary: 'bg-gradient-to-r from-rose-500 to-fuchsia-600 hover:from-rose-600 hover:to-fuchsia-700 text-white font-semibold shadow-lg',
         secondary: 'bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold shadow',
         success: 'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-semibold shadow-lg',
         danger: 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-semibold shadow-lg',
-        outline: 'bg-transparent border-2 border-sky-400 hover:bg-sky-50 text-sky-600 font-semibold',
+        outline: 'bg-transparent border-2 border-rose-400 hover:bg-rose-50 text-fuchsia-700 font-semibold',
         ghost: 'bg-transparent hover:bg-slate-100 text-slate-700 font-medium',
       }[variant];
 
@@ -202,20 +202,20 @@ export const IconButton: React.FC<{
         primary: glassClasses(
           glassmorphism.backdrop.light,
           glassmorphism.border.glow,
-          'bg-gradient-to-br from-sky-500/80 to-blue-600/80',
-          'hover:from-sky-600/90 hover:to-blue-700/90',
+          'bg-gradient-to-br from-rose-500/80 to-fuchsia-600/80',
+          'hover:from-rose-600/90 hover:to-fuchsia-700/90',
           'text-white'
         ),
         secondary: glassClasses(
           glassmorphism.backdrop.light,
           glassmorphism.border.light,
           'hover:bg-white/80',
-          'text-sky-700'
+          'text-fuchsia-700'
         ),
-        ghost: 'bg-transparent hover:bg-white/30 text-sky-700',
+        ghost: 'bg-transparent hover:bg-white/30 text-fuchsia-700',
       }[variant]
     : {
-        primary: 'bg-gradient-to-br from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white shadow-lg',
+        primary: 'bg-gradient-to-br from-rose-500 to-fuchsia-600 hover:from-rose-600 hover:to-fuchsia-700 text-white shadow-lg',
         secondary: 'bg-slate-100 hover:bg-slate-200 text-slate-700 shadow',
         ghost: 'bg-transparent hover:bg-slate-100 text-slate-700',
       }[variant];

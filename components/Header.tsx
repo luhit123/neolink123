@@ -3,6 +3,7 @@ import { UserRole } from '../types';
 import { AdminIcon, DoctorIcon, NurseIcon } from './common/Icons';
 import NotificationBell from './NotificationBell';
 import DigitalClock from './DigitalClock';
+import { glassClasses } from '../theme/glassmorphism';
 
 interface HeaderProps {
   userRole: UserRole;
@@ -32,23 +33,23 @@ const Header: React.FC<HeaderProps> = ({ userRole, onLogout, collegeName, onShow
   const storedUserEmail = userEmail || localStorage.getItem('userEmail') || '';
 
   return (
-    <header className="bg-white backdrop-blur-sm p-2 sticky top-0 z-40 border-b border-medical-teal/20 shadow-md">
+    <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/55 dark:bg-slate-900/55 border-b border-white/30 dark:border-white/10 shadow-[0_12px_50px_rgba(236,72,153,0.12)] p-2 sm:p-3">
       <div className="container mx-auto flex justify-between items-center">
         <div className="flex items-center gap-3">
           <img
             src="/neolink-logo.png"
             alt="NeoLink"
-            className="w-10 h-10 rounded-xl object-cover shadow-sm"
+            className="w-10 h-10 rounded-xl object-cover shadow-sm ring-1 ring-white/40"
           />
           <div className="flex flex-col">
-            <div className="text-xl sm:text-2xl font-bold text-slate-900">
-              <span className="text-medical-teal">Neo</span>Link
+            <div className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              <span className="bg-gradient-to-r from-fuchsia-600 to-rose-500 bg-clip-text text-transparent">Neo</span>Link
             </div>
-            <div className="text-xs text-slate-600">
+            <div className="text-xs text-slate-600 dark:text-slate-300">
               {displayCollegeName}
             </div>
           </div>
-          <div className="hidden md:block text-xs text-slate-600 border-l border-slate-300 pl-3">
+          <div className="hidden md:block text-xs text-slate-600 dark:text-slate-300 border-l border-white/30 dark:border-white/10 pl-3">
             Advanced Healthcare Analytics
           </div>
         </div>
@@ -56,9 +57,9 @@ const Header: React.FC<HeaderProps> = ({ userRole, onLogout, collegeName, onShow
           <div className="hidden md:block scale-90 origin-right">
             <DigitalClock />
           </div>
-          <div className="flex items-center gap-2 bg-medical-teal/10 border border-medical-teal/30 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm">
+          <div className="flex items-center gap-2 bg-white/35 dark:bg-slate-800/45 border border-white/30 dark:border-white/10 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm shadow-sm">
             {getRoleIcon(userRole)}
-            <span className="font-semibold text-medical-teal">{userRole}</span>
+            <span className="font-semibold text-fuchsia-700 dark:text-fuchsia-300">{userRole}</span>
           </div>
 
           {/* Notification Bell */}
@@ -71,7 +72,11 @@ const Header: React.FC<HeaderProps> = ({ userRole, onLogout, collegeName, onShow
 
           <button
             onClick={() => window.location.reload()}
-            className="px-3 sm:px-4 py-2 bg-blue-50 text-sky-700 rounded-lg hover:bg-sky-100 transition-all text-xs sm:text-sm font-semibold shadow-sm border border-sky-200"
+            className={glassClasses(
+              'px-3 sm:px-4 py-2 rounded-lg transition-all text-xs sm:text-sm font-semibold shadow-sm',
+              'backdrop-blur-xl bg-white/35 dark:bg-slate-800/45 border border-white/30 dark:border-white/10',
+              'text-fuchsia-700 dark:text-fuchsia-300 hover:bg-white/50 dark:hover:bg-slate-800/60'
+            )}
             title="Refresh to load latest data"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -80,7 +85,11 @@ const Header: React.FC<HeaderProps> = ({ userRole, onLogout, collegeName, onShow
           </button>
           <button
             onClick={onLogout}
-            className="px-3 sm:px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-all text-xs sm:text-sm font-semibold shadow-sm border border-red-200"
+            className={glassClasses(
+              'px-3 sm:px-4 py-2 rounded-lg transition-all text-xs sm:text-sm font-semibold shadow-sm',
+              'backdrop-blur-xl bg-white/35 dark:bg-slate-800/45 border border-red-200/70 dark:border-red-400/20',
+              'text-red-700 dark:text-red-300 hover:bg-red-50/60 dark:hover:bg-slate-800/60'
+            )}
           >
             Logout
           </button >
@@ -91,4 +100,3 @@ const Header: React.FC<HeaderProps> = ({ userRole, onLogout, collegeName, onShow
 };
 
 export default Header;
-

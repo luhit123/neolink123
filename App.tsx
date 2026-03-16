@@ -1048,7 +1048,7 @@ function App() {
   // User profile not loaded
   if (!userProfile) {
     return (
-      <div className="bg-sky-100 min-h-screen flex items-center justify-center pwa-full-height">
+      <div className="neolink-app min-h-screen flex items-center justify-center pwa-full-height">
         <motion.div
           className="flex flex-col items-center gap-4"
           initial={{ opacity: 0, scale: 0.8 }}
@@ -1065,7 +1065,7 @@ function App() {
   // Show SuperAdmin Dashboard - SuperAdmins ONLY see this dashboard
   if (userProfile.role === UserRole.SuperAdmin && !superAdminViewingInstitution) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900">
+      <div className="min-h-screen neolink-app text-slate-900">
         <Header
           userRole={UserRole.SuperAdmin}
           onLogout={handleLogout}
@@ -1087,7 +1087,7 @@ function App() {
   // Show Admin Dashboard
   if (showAdminPanel && userProfile.role === UserRole.Admin && userProfile.institutionId) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900">
+      <div className="min-h-screen neolink-app text-slate-900">
         <Header
           userRole={userProfile.role}
           onLogout={handleLogout}
@@ -1113,7 +1113,7 @@ function App() {
   // Show District Admin Dashboard
   if (userProfile.role === UserRole.DistrictAdmin && !districtAdminViewingInstitution) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900">
+      <div className="min-h-screen neolink-app text-slate-900">
         <Header
           userRole={UserRole.DistrictAdmin}
           onLogout={handleLogout}
@@ -1122,7 +1122,7 @@ function App() {
         <main>
           <div className="container mx-auto p-4 sm:p-6">
             <Suspense fallback={
-              <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+              <div className="neolink-app min-h-screen flex items-center justify-center">
                 <div className="text-center">
                   <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
                   <p className="text-slate-600 text-lg">Loading District Dashboard...</p>
@@ -1164,7 +1164,7 @@ function App() {
   // Show District Admin viewing specific Institution
   if (districtAdminViewingInstitution && userProfile.role === UserRole.DistrictAdmin) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900">
+      <div className="min-h-screen neolink-app text-slate-900">
         <Header
           userRole={UserRole.DistrictAdmin} // Pass as DistrictAdmin so they see correct header options
           onLogout={handleLogout}
@@ -1213,7 +1213,7 @@ function App() {
   if (superAdminViewingInstitution && userProfile.role === UserRole.SuperAdmin) {
     return (
       <Suspense fallback={
-        <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+        <div className="neolink-app min-h-screen flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-medical-blue mx-auto mb-4"></div>
             <p className="text-slate-600 text-lg">Loading Institution Dashboard...</p>
@@ -1233,7 +1233,7 @@ function App() {
   // Show Referral Management Page
   if (showReferralManagement && userProfile.institutionId) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900 pb-20">
+      <div className="min-h-screen neolink-app text-slate-900 pb-20">
         <Header
           userRole={userProfile.role}
           onLogout={handleLogout}
@@ -1243,7 +1243,7 @@ function App() {
         <main>
           <div className="container mx-auto p-4 sm:p-6">
             <Suspense fallback={
-              <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+              <div className="neolink-app min-h-screen flex items-center justify-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
               </div>
             }>
@@ -1278,9 +1278,9 @@ function App() {
   // Show Analytics Page - Full dedicated analytics view (lazy loaded with its own data fetching)
   if (showAnalyticsPage && userProfile.institutionId) {
     return (
-      <div className="min-h-screen bg-sky-100 text-slate-900">
+      <div className="min-h-screen neolink-app text-slate-900">
         <Suspense fallback={
-          <div className="bg-sky-100 min-h-screen flex items-center justify-center">
+          <div className="neolink-app min-h-screen flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500 mx-auto mb-4"></div>
               <p className="text-slate-600 text-lg">Loading Analytics...</p>
@@ -1439,7 +1439,7 @@ function App() {
               }}
               reducedMotion="user"
             >
-              <div className="min-h-screen bg-sky-100 text-slate-900 no-double-tap-zoom">
+              <div className="min-h-screen neolink-app text-slate-900 no-double-tap-zoom">
                 <Header
                   userRole={userProfile.role}
                   onLogout={handleLogout}

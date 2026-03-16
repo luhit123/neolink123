@@ -530,10 +530,24 @@ const Dashboard: React.FC<DashboardProps> = ({
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const activeObservations = snapshot.docs.map(doc => ({
-          ...doc.data(),
-          id: doc.id,
-        } as ObservationPatient));
+        const now = new Date();
+        const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 48 hours
+        const activeObservations: ObservationPatient[] = [];
+
+        snapshot.docs.forEach(docSnap => {
+          const data = { ...docSnap.data(), id: docSnap.id } as ObservationPatient;
+          const observationDate = new Date(data.dateOfObservation);
+          const ageMs = now.getTime() - observationDate.getTime();
+
+          if (ageMs > STALE_THRESHOLD_MS) {
+            // Auto-close stale observation patients (older than 48 hours)
+            console.warn(`⚠️ Auto-closing stale observation patient: ${data.babyName} (${data.id}) - in observation for ${Math.round(ageMs / (1000 * 60 * 60))}h`);
+            const obsRef = doc(db, 'observationPatients', data.id);
+            deleteDoc(obsRef).catch(err => console.error('❌ Failed to auto-delete stale observation:', err));
+          } else {
+            activeObservations.push(data);
+          }
+        });
 
         setObservationPatients(activeObservations);
       },
@@ -1201,13 +1215,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             const durationHours = Math.floor(durationMs / (1000 * 60 * 60));
             const durationMinutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
 
-            await updateDoc(observationRef, {
-              outcome: ObservationOutcome.HandedOverToMother,
-              dischargedAt: now,
-              updatedAt: now,
-              observationDurationHours: durationHours,
-              observationDurationMinutes: durationMinutes,
-            });
+            await deleteDoc(observationRef);
 
             console.log(`✅ Observation patient ${observationPatient.babyName} handed over to mother after ${durationHours}h ${durationMinutes}m`);
 
@@ -1230,7 +1238,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   return (
     <>
       <div className="container mx-auto px-0 sm:px-6 py-2 sm:py-6 space-y-4 sm:space-y-6 pb-24 md:pb-6">
-        <div className="bg-white dark:bg-slate-800 px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-200 dark:border-slate-700 shadow-sm transition-all duration-200 mb-4">
+        <div className="backdrop-blur-xl bg-white/65 dark:bg-slate-900/55 px-4 sm:px-6 py-4 sm:py-5 border border-white/30 dark:border-white/10 shadow-[0_20px_70px_-10px_rgba(236,72,153,0.18)] rounded-3xl transition-all duration-200 mb-4">
 
           {/* Clean Header */}
           <div className="flex items-center justify-between mb-4">

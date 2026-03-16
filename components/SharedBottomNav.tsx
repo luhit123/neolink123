@@ -19,7 +19,7 @@ const SharedBottomNav: React.FC<SharedBottomNavProps> = ({
     showAddButton = false
 }) => {
     return (
-        <div className={`fixed bottom-0 left-0 right-0 md:hidden bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 shadow-2xl z-50 px-2 py-2 safe-area-bottom ${className}`}>
+        <div className={`fixed bottom-0 left-0 right-0 md:hidden backdrop-blur-2xl bg-white/70 dark:bg-slate-900/55 border-t border-white/25 dark:border-white/10 shadow-[0_-12px_50px_rgba(236,72,153,0.12)] z-50 px-2 py-2 safe-area-bottom ${className}`}>
             <div className="flex items-center justify-around max-w-md mx-auto">
                 {/* Home */}
                 <button
@@ -27,9 +27,9 @@ const SharedBottomNav: React.FC<SharedBottomNavProps> = ({
                         haptics.tap();
                         onTabChange('home');
                     }}
-                    className={`flex flex-col items-center justify-center gap-0.5 px-2 py-1.5 ${activeTab === 'home'
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-slate-500 dark:text-slate-400'}`}
+                    className={`flex flex-col items-center justify-center gap-0.5 px-2 py-1.5 rounded-xl transition-colors ${activeTab === 'home'
+                        ? 'text-fuchsia-700 dark:text-fuchsia-300 bg-white/25 dark:bg-white/5'
+                        : 'text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100'}`}
                 >
                     <svg className="w-5 h-5" fill={activeTab === 'home' ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={activeTab === 'home'
@@ -49,9 +49,9 @@ const SharedBottomNav: React.FC<SharedBottomNavProps> = ({
                         haptics.tap();
                         onTabChange('patients');
                     }}
-                    className={`flex flex-col items-center justify-center gap-0.5 px-2 py-1.5 ${activeTab === 'patients'
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-slate-500 dark:text-slate-400'}`}
+                    className={`flex flex-col items-center justify-center gap-0.5 px-2 py-1.5 rounded-xl transition-colors ${activeTab === 'patients'
+                        ? 'text-fuchsia-700 dark:text-fuchsia-300 bg-white/25 dark:bg-white/5'
+                        : 'text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100'}`}
                 >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -66,7 +66,7 @@ const SharedBottomNav: React.FC<SharedBottomNavProps> = ({
                             haptics.tap();
                             onAddPatient();
                         }}
-                        className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl shadow-lg -mt-4"
+                        className="flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 bg-gradient-to-r from-rose-500 to-fuchsia-600 text-white rounded-xl shadow-lg shadow-pink-500/30 -mt-4"
                     >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -84,9 +84,9 @@ const SharedBottomNav: React.FC<SharedBottomNavProps> = ({
                         haptics.tap();
                         onTabChange('analytics');
                     }}
-                    className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 ${activeTab === 'analytics'
-                        ? 'text-purple-600 dark:text-purple-400'
-                        : 'text-slate-500 dark:text-slate-400'}`}
+                    className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors ${activeTab === 'analytics'
+                        ? 'text-fuchsia-700 dark:text-fuchsia-300 bg-white/25 dark:bg-white/5'
+                        : 'text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100'}`}
                 >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -100,9 +100,9 @@ const SharedBottomNav: React.FC<SharedBottomNavProps> = ({
                         haptics.tap();
                         onTabChange('more');
                     }}
-                    className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 ${activeTab === 'more'
-                        ? 'text-blue-600 dark:text-blue-400'
-                        : 'text-slate-500 dark:text-slate-400'} relative`}
+                    className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors ${activeTab === 'more'
+                        ? 'text-fuchsia-700 dark:text-fuchsia-300 bg-white/25 dark:bg-white/5'
+                        : 'text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100'} relative`}
                 >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />

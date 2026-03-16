@@ -13,7 +13,9 @@ export const glassmorphism = {
     light: 'backdrop-blur-xl bg-white/60',
     medium: 'backdrop-blur-2xl bg-white/80',
     heavy: 'backdrop-blur-3xl bg-white/90',
-    tinted: 'backdrop-blur-xl bg-gradient-to-br from-white/70 to-sky-50/70',
+    // Default tinted glass leans pink for a softer, premium feel.
+    tinted: 'backdrop-blur-xl bg-gradient-to-br from-white/70 to-rose-50/70',
+    tintedPink: 'backdrop-blur-xl bg-gradient-to-br from-white/70 to-pink-50/70',
     tintedPurple: 'backdrop-blur-xl bg-gradient-to-br from-white/70 to-purple-50/70',
     tintedGreen: 'backdrop-blur-xl bg-gradient-to-br from-white/70 to-emerald-50/70',
     dark: 'backdrop-blur-xl bg-slate-900/80',
@@ -27,7 +29,8 @@ export const glassmorphism = {
     light: 'border border-white/20',
     medium: 'border border-white/30',
     heavy: 'border border-white/40',
-    glow: 'border border-white/30 shadow-lg shadow-sky-500/10',
+    glow: 'border border-white/30 shadow-lg shadow-pink-500/10',
+    glowPink: 'border border-white/30 shadow-lg shadow-pink-500/15',
     glowPurple: 'border border-white/30 shadow-lg shadow-purple-500/10',
     glowGreen: 'border border-white/30 shadow-lg shadow-emerald-500/10',
     glowRed: 'border border-white/30 shadow-lg shadow-red-500/10',
@@ -39,9 +42,9 @@ export const glassmorphism = {
    */
   shadow: {
     soft: 'shadow-2xl shadow-black/5',
-    elevated: 'shadow-2xl shadow-sky-500/20',
-    floating: 'shadow-[0_20px_70px_-10px_rgba(14,165,233,0.3)]',
-    floatingHover: 'shadow-[0_25px_80px_-10px_rgba(14,165,233,0.4)]',
+    elevated: 'shadow-2xl shadow-pink-500/20',
+    floating: 'shadow-[0_20px_70px_-10px_rgba(236,72,153,0.30)]',
+    floatingHover: 'shadow-[0_25px_80px_-10px_rgba(236,72,153,0.40)]',
     card: 'shadow-[0_8px_30px_rgba(0,0,0,0.08)]',
     cardHover: 'shadow-[0_12px_40px_rgba(0,0,0,0.12)]',
     inner: 'shadow-inner shadow-black/10',
@@ -84,8 +87,8 @@ export const glassmorphism = {
    * Gradient backgrounds
    */
   gradient: {
-    primary: 'bg-gradient-to-br from-sky-400 to-blue-600',
-    primarySubtle: 'bg-gradient-to-br from-sky-50 to-blue-100',
+    primary: 'bg-gradient-to-br from-rose-400 to-fuchsia-600',
+    primarySubtle: 'bg-gradient-to-br from-rose-50 to-fuchsia-100',
     success: 'bg-gradient-to-br from-emerald-400 to-green-600',
     successSubtle: 'bg-gradient-to-br from-emerald-50 to-green-100',
     warning: 'bg-gradient-to-br from-yellow-400 to-orange-600',
@@ -103,7 +106,7 @@ export const glassmorphism = {
   statusGlow: {
     critical: 'border-2 border-red-300 shadow-[0_0_30px_rgba(239,68,68,0.4)]',
     urgent: 'border-2 border-orange-300 shadow-[0_0_20px_rgba(249,115,22,0.3)]',
-    routine: 'border border-sky-200 shadow-[0_0_15px_rgba(14,165,233,0.2)]',
+    routine: 'border border-rose-200 shadow-[0_0_15px_rgba(236,72,153,0.18)]',
     improving: 'border border-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.2)]',
   },
 
@@ -111,10 +114,10 @@ export const glassmorphism = {
    * Common class combinations for components
    */
   components: {
-    card: 'backdrop-blur-xl bg-white/70 border border-white/20 rounded-3xl shadow-[0_20px_70px_-10px_rgba(14,165,233,0.3)] transition-all duration-300',
-    cardHover: 'hover:shadow-[0_25px_80px_-10px_rgba(14,165,233,0.4)] hover:bg-white/75',
+    card: 'backdrop-blur-xl bg-white/70 border border-white/20 rounded-3xl shadow-[0_20px_70px_-10px_rgba(236,72,153,0.30)] transition-all duration-300',
+    cardHover: 'hover:shadow-[0_25px_80px_-10px_rgba(236,72,153,0.40)] hover:bg-white/75',
     button: 'backdrop-blur-lg bg-white/60 border border-white/30 rounded-xl shadow-lg hover:bg-white/70 transition-all duration-200',
-    input: 'backdrop-blur-lg bg-white/50 border border-white/30 rounded-lg shadow-sm focus:bg-white/60 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition-all',
+    input: 'backdrop-blur-lg bg-white/50 border border-white/30 rounded-lg shadow-sm focus:bg-white/60 focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 transition-all',
     modal: 'backdrop-blur-2xl bg-white/90 border border-white/20 rounded-3xl shadow-[0_30px_90px_-10px_rgba(0,0,0,0.3)]',
     chip: 'backdrop-blur-lg bg-white/70 border border-white/20 rounded-full px-4 py-1.5 text-sm font-medium shadow-md',
   },

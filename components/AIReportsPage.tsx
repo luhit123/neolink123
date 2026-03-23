@@ -11,7 +11,6 @@ import {
   parseAnalyticsDate,
   toAnalyticsPatients,
 } from '../utils/analytics';
-import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import {
   IconArrowLeft,
@@ -776,6 +775,98 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
         return parsed.toLocaleDateString('en-IN');
       };
 
+      const formatPercent = (value: unknown, digits = 1): string => `${Number(value ?? 0).toFixed(digits)}%`;
+
+      const outcomeOf = (patient: Patient) => getCanonicalOutcome(patient);
+
+      const addDistributionTable = (
+        title: string,
+        source: Record<string, number>,
+        firstHeader: string,
+        limit = 10
+      ) => {
+        const rows = Object.entries(source || {})
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, limit)
+          .map(([label, count]) => [label || 'Unspecified', count]);
+
+        if (rows.length > 0) {
+          addTable(title, [firstHeader, 'Count'], rows, [4, 1]);
+        }
+      };
+
+      const addPatientLineList = (title: string, patientList: Patient[], limit = 120) => {
+        if (!showPatientDetails || patientList.length === 0) return;
+
+        const patientRows = [...patientList]
+          .sort((a, b) => {
+            const aTime = parseSafeDate(a.admissionDateTime || a.admissionDate)?.getTime() || 0;
+            const bTime = parseSafeDate(b.admissionDateTime || b.admissionDate)?.getTime() || 0;
+            return bTime - aTime;
+          })
+          .slice(0, limit)
+          .map((patient) => [
+            patient.ntid || '-',
+            patient.name || '-',
+            patient.unit || '-',
+            getCanonicalAdmissionType(patient),
+            formatDate(patient.admissionDateTime || patient.admissionDate),
+            outcomeOf(patient),
+            patient.gender || '-'
+          ]);
+
+        addTable(
+          `${title} (Latest ${Math.min(limit, patientList.length)})`,
+          ['NTID', 'Name', 'Unit', 'Admission Type', 'Admission Date', 'Outcome', 'Gender'],
+          patientRows,
+          [1.1, 2.3, 0.9, 1.2, 1.2, 1.3, 0.8]
+        );
+      };
+
+      const addComprehensiveSummary = () => {
+        addSectionTitle('Executive Summary');
+        addMetricCards([
+          { label: 'Total Admissions', value: Number(s.total ?? filteredPatients.length) },
+          { label: 'Active Patients', value: Number(s.active ?? 0) },
+          { label: 'Discharged', value: Number(s.discharged ?? 0) },
+          { label: 'Referred', value: Number(s.referred ?? 0) },
+          { label: 'Deceased', value: Number(s.deceased ?? 0) },
+          { label: 'Step Down', value: Number(s.stepDown ?? 0) },
+        ]);
+
+        addKeyValue('Mortality Rate', formatPercent(s.mortalityRate));
+        addKeyValue('Discharge Rate', formatPercent(s.dischargeRate));
+        addKeyValue('Survival Rate', formatPercent(s.survivalRate));
+        y += 2;
+
+        addTable(
+          'Outcome Breakdown',
+          ['Outcome', 'Count', 'Rate'],
+          [
+            ['Active (In Progress)', Number(s.active ?? 0), `${Number(s.total ?? 0) > 0 ? ((Number(s.active ?? 0) / Number(s.total ?? 1)) * 100).toFixed(1) : '0.0'}%`],
+            ['Discharged', Number(s.discharged ?? 0), formatPercent(s.dischargeRate)],
+            ['Referred', Number(s.referred ?? 0), formatPercent(s.referralRate)],
+            ['Step Down', Number(s.stepDown ?? 0), formatPercent(s.stepDownRate)],
+            ['Deceased', Number(s.deceased ?? 0), formatPercent(s.mortalityRate)],
+          ],
+          [2.5, 1, 1]
+        );
+
+        addTable(
+          'Gender Distribution',
+          ['Gender', 'Count'],
+          [
+            ['Male', Number(s.males ?? 0)],
+            ['Female', Number(s.females ?? 0)],
+            ['Ambiguous/Other', Number(s.ambiguous ?? 0)],
+          ],
+          [2.5, 1]
+        );
+
+        addDistributionTable('Top Diagnoses', (s.diagnosisDistribution || {}) as Record<string, number>, 'Diagnosis');
+        addPatientLineList('Patient Line List', filteredPatients);
+      };
+
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(18);
       pdf.setTextColor(15, 23, 42);
@@ -788,78 +879,245 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       addParagraph(`Generated on ${generatedAt.toLocaleDateString('en-IN')} at ${generatedAt.toLocaleTimeString('en-IN')}`);
       y += 2;
 
-      addSectionTitle('Executive Summary');
-      addMetricCards([
-        { label: 'Total Admissions', value: Number(s.total ?? filteredPatients.length) },
-        { label: 'Active Patients', value: Number(s.active ?? 0) },
-        { label: 'Discharged', value: Number(s.discharged ?? 0) },
-        { label: 'Referred', value: Number(s.referred ?? 0) },
-        { label: 'Deceased', value: Number(s.deceased ?? 0) },
-        { label: 'Step Down', value: Number(s.stepDown ?? 0) },
-      ]);
+      switch (selectedReportType) {
+        case 'admissions': {
+          addSectionTitle('Admission Summary');
+          addMetricCards([
+            { label: 'Total Admissions', value: Number(s.total ?? 0) },
+            { label: 'Inborn', value: Number(s.inborn ?? 0) },
+            { label: 'Outborn', value: Number(s.outborn ?? 0) },
+            { label: 'Currently Active', value: Number(s.active ?? 0) },
+          ]);
+          addDistributionTable('Unit-wise Distribution', (s.unitDistribution || {}) as Record<string, number>, 'Unit');
+          addTable(
+            'Gender Distribution',
+            ['Gender', 'Count'],
+            [
+              ['Male', Number(s.males ?? 0)],
+              ['Female', Number(s.females ?? 0)],
+              ['Ambiguous/Other', Number(s.ambiguous ?? 0)],
+            ],
+            [2.5, 1]
+          );
+          addDistributionTable('Birth Weight Distribution', (s.bwDistribution || {}) as Record<string, number>, 'Category');
+          addDistributionTable('Gestational Age Distribution', (s.gaDistribution || {}) as Record<string, number>, 'Category');
+          addDistributionTable('Top Admission Diagnoses', (s.diagnosisDistribution || {}) as Record<string, number>, 'Diagnosis', 15);
+          addPatientLineList('Admitted Patients', filteredPatients);
+          break;
+        }
 
-      addKeyValue('Mortality Rate', `${Number(s.mortalityRate ?? 0).toFixed(1)}%`);
-      addKeyValue('Discharge Rate', `${Number(s.dischargeRate ?? 0).toFixed(1)}%`);
-      addKeyValue('Survival Rate', `${Number(s.survivalRate ?? 0).toFixed(1)}%`);
-      y += 2;
+        case 'deaths': {
+          addSectionTitle('Death Summary');
+          addMetricCards([
+            { label: 'Total Deaths', value: Number(s.deceased ?? 0) },
+            { label: 'Mortality Rate', value: formatPercent(s.mortalityRate) },
+            { label: 'Avg Time to Death', value: `${Number(s.avgTimeToDeathHours ?? 0)}h` },
+            { label: 'Survival Rate', value: formatPercent(s.survivalRate) },
+          ]);
+          addTable(
+            'Age at Death Distribution',
+            ['Age Band', 'Count'],
+            Object.entries((s.ageAtDeathDist || {}) as Record<string, number>).map(([label, count]) => [label, count]),
+            [3.5, 1]
+          );
 
-      addTable(
-        'Outcome Breakdown',
-        ['Outcome', 'Count', 'Rate'],
-        [
-          ['Active (In Progress)', Number(s.active ?? 0), `${Number(s.total ?? 0) > 0 ? ((Number(s.active ?? 0) / Number(s.total ?? 1)) * 100).toFixed(1) : '0.0'}%`],
-          ['Discharged', Number(s.discharged ?? 0), `${Number(s.dischargeRate ?? 0).toFixed(1)}%`],
-          ['Referred', Number(s.referred ?? 0), `${Number(s.referralRate ?? 0).toFixed(1)}%`],
-          ['Step Down', Number(s.stepDown ?? 0), `${Number(s.stepDownRate ?? 0).toFixed(1)}%`],
-          ['Deceased', Number(s.deceased ?? 0), `${Number(s.mortalityRate ?? 0).toFixed(1)}%`],
-        ],
-        [2.5, 1, 1]
-      );
+          const deathDiagnoses: Record<string, number> = {};
+          ((s.deceasedPatients || []) as Patient[]).forEach((patient: Patient) => {
+            const diagnosis = patient.diagnosis?.split(',')[0].trim() || 'Not Specified';
+            deathDiagnoses[diagnosis] = (deathDiagnoses[diagnosis] || 0) + 1;
+          });
+          addDistributionTable('Primary Diagnoses of Deceased Patients', deathDiagnoses, 'Diagnosis');
+          addPatientLineList('Deceased Patients', (s.deceasedPatients || []) as Patient[]);
+          break;
+        }
 
-      addTable(
-        'Gender Distribution',
-        ['Gender', 'Count'],
-        [
-          ['Male', Number(s.males ?? 0)],
-          ['Female', Number(s.females ?? 0)],
-          ['Ambiguous/Other', Number(s.ambiguous ?? 0)],
-        ],
-        [2.5, 1]
-      );
+        case 'referred': {
+          addSectionTitle('Referral Summary');
+          addMetricCards([
+            { label: 'Total Referrals Out', value: Number(s.referred ?? 0) },
+            { label: 'Referral Rate', value: formatPercent(s.referralRate) },
+            { label: 'Total Admissions', value: Number(s.total ?? 0) },
+          ]);
+          addDistributionTable('Referral Destinations', (s.referralDestinations || {}) as Record<string, number>, 'Destination', 20);
+          addPatientLineList('Referred Patients', (s.referredPatients || []) as Patient[]);
+          break;
+        }
 
-      const diagnosisRows = Object.entries((s.diagnosisDistribution || {}) as Record<string, number>)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 10)
-        .map(([diagnosis, count]) => [diagnosis || 'Unspecified', count]);
+        case 'stepdown': {
+          const stepDownPatients = ((s.stepDownPatients || []) as Patient[]);
+          const currentStepDownPatients = stepDownPatients.filter((patient) => outcomeOf(patient) === 'Step Down');
+          const dischargedFromStepDown = stepDownPatients.filter((patient) => patient.stepDownDate && outcomeOf(patient) === 'Discharged').length;
+          const readmittedFromStepDown = stepDownPatients.filter((patient) => patient.readmissionFromStepDown).length;
+          const deceasedAfterStepDown = stepDownPatients.filter((patient) => patient.stepDownDate && outcomeOf(patient) === 'Deceased').length;
+          const otherOutcomeAfterStepDown = Math.max(0, Number(s.stepDown ?? 0) - currentStepDownPatients.length - dischargedFromStepDown - deceasedAfterStepDown);
 
-      if (diagnosisRows.length > 0) {
-        addTable('Top Diagnoses', ['Diagnosis', 'Count'], diagnosisRows, [4, 1]);
-      }
+          addSectionTitle('Step Down Summary');
+          addMetricCards([
+            { label: 'Total Step Downs', value: Number(s.stepDown ?? 0) },
+            { label: 'Step Down Rate', value: formatPercent(s.stepDownRate) },
+            { label: 'Total Admissions', value: Number(s.total ?? 0) },
+          ]);
+          addTable(
+            'Current Status of Step Down Patients',
+            ['Status', 'Count'],
+            [
+              ['Currently in Step Down', currentStepDownPatients.length],
+              ['Discharged', dischargedFromStepDown],
+              ['Readmitted to ICU', readmittedFromStepDown],
+              ['Deceased', deceasedAfterStepDown],
+              ['Other Outcome', otherOutcomeAfterStepDown],
+            ],
+            [3, 1]
+          );
+          addDistributionTable('Step Down Locations', (s.stepDownLocations || {}) as Record<string, number>, 'Location', 20);
+          addPatientLineList('Current Step Down Patients', currentStepDownPatients);
+          break;
+        }
 
-      const patientRows = [...filteredPatients]
-        .sort((a, b) => {
-          const aTime = parseSafeDate(a.admissionDateTime || a.admissionDate)?.getTime() || 0;
-          const bTime = parseSafeDate(b.admissionDateTime || b.admissionDate)?.getTime() || 0;
-          return bTime - aTime;
-        })
-        .slice(0, 120)
-        .map((patient) => [
-          patient.ntid || '-',
-          patient.name || '-',
-          patient.unit || '-',
-          getCanonicalAdmissionType(patient),
-          formatDate(patient.admissionDateTime || patient.admissionDate),
-          getCanonicalOutcome(patient),
-          patient.gender || '-'
-        ]);
+        case 'mortality': {
+          addSectionTitle('Key Mortality Indicators');
+          addMetricCards([
+            { label: 'Overall Mortality Rate', value: formatPercent(s.mortalityRate) },
+            { label: 'Inborn Mortality', value: formatPercent(s.inbornMortality) },
+            { label: 'Outborn Mortality', value: formatPercent(s.outbornMortality) },
+            { label: 'Survival Rate', value: formatPercent(s.survivalRate) },
+          ]);
+          addKeyValue('Average Time to Death', `${Number(s.avgTimeToDeathHours ?? 0)} hours`);
+          addTable(
+            'Mortality by Birth Weight Category',
+            ['Category', 'Total', 'Deaths', 'Mortality Rate'],
+            ['ELBW (<1000g)', 'VLBW (1000-1499g)', 'LBW (1500-2499g)', 'Normal (≥2500g)', 'Unknown'].map((category) => {
+              const data = ((s.mortalityByBW || {}) as Record<string, { total: number; deceased: number }>)[category] || { total: 0, deceased: 0 };
+              const rate = data.total > 0 ? ((data.deceased / data.total) * 100).toFixed(1) : '0.0';
+              return [category, data.total, data.deceased, `${rate}%`];
+            }),
+            [2.5, 1, 1, 1.2]
+          );
+          addTable(
+            'Mortality by Gestational Age',
+            ['Category', 'Total', 'Deaths', 'Mortality Rate'],
+            ['Extremely Preterm (<28 weeks)', 'Very Preterm (28-31 weeks)', 'Moderate/Late Preterm (32-36 weeks)', 'Term (≥37 weeks)', 'Unknown'].map((category) => {
+              const data = ((s.mortalityByGA || {}) as Record<string, { total: number; deceased: number }>)[category] || { total: 0, deceased: 0 };
+              const rate = data.total > 0 ? ((data.deceased / data.total) * 100).toFixed(1) : '0.0';
+              return [category, data.total, data.deceased, `${rate}%`];
+            }),
+            [2.8, 1, 1, 1.2]
+          );
+          addTable(
+            'Gender-wise Mortality',
+            ['Gender', 'Deaths', 'Total', 'Mortality Rate'],
+            [
+              ['Male', Number(s.maleDeceased ?? 0), Number(s.males ?? 0), `${Number(s.males ?? 0) > 0 ? ((Number(s.maleDeceased ?? 0) / Number(s.males ?? 1)) * 100).toFixed(1) : '0.0'}%`],
+              ['Female', Number(s.femaleDeceased ?? 0), Number(s.females ?? 0), `${Number(s.females ?? 0) > 0 ? ((Number(s.femaleDeceased ?? 0) / Number(s.females ?? 1)) * 100).toFixed(1) : '0.0'}%`],
+            ],
+            [2, 1, 1, 1.2]
+          );
+          addTable(
+            'Mortality Timing Analysis',
+            ['Interval from Admission', 'Deaths'],
+            [
+              ['Within 6 Hours', Number(s.earlyMortality?.within6Hours ?? 0)],
+              ['6-24 Hours', Number(s.earlyMortality?.sixTo24Hours ?? 0)],
+              ['1-7 Days', Number(s.earlyMortality?.oneToSevenDays ?? 0)],
+              ['After 7 Days', Number(s.earlyMortality?.afterSevenDays ?? 0)],
+            ],
+            [3, 1]
+          );
+          break;
+        }
 
-      if (patientRows.length > 0) {
-        addTable(
-          'Patient Line List (Latest 120)',
-          ['NTID', 'Name', 'Unit', 'Admission Type', 'Admission Date', 'Outcome', 'Gender'],
-          patientRows,
-          [1.1, 2.3, 0.9, 1.2, 1.2, 1.3, 0.8]
-        );
+        case 'gender': {
+          addSectionTitle('Gender Distribution Summary');
+          addMetricCards([
+            { label: 'Male Patients', value: Number(s.males ?? 0) },
+            { label: 'Female Patients', value: Number(s.females ?? 0) },
+            { label: 'Ambiguous/Other', value: Number(s.ambiguous ?? 0) },
+          ]);
+          addKeyValue('Male Percentage', `${Number(s.total ?? 0) > 0 ? ((Number(s.males ?? 0) / Number(s.total ?? 1)) * 100).toFixed(1) : '0.0'}%`);
+          addKeyValue('Female Percentage', `${Number(s.total ?? 0) > 0 ? ((Number(s.females ?? 0) / Number(s.total ?? 1)) * 100).toFixed(1) : '0.0'}%`);
+          addTable(
+            'Outcomes by Gender',
+            ['Outcome', 'Male', 'Female', 'Total'],
+            [
+              ['Discharged', Number(s.maleDischarged ?? 0), Number(s.femaleDischarged ?? 0), Number(s.maleDischarged ?? 0) + Number(s.femaleDischarged ?? 0)],
+              ['Deceased', Number(s.maleDeceased ?? 0), Number(s.femaleDeceased ?? 0), Number(s.maleDeceased ?? 0) + Number(s.femaleDeceased ?? 0)],
+              [
+                'Referred',
+                filteredPatients.filter(patient => patient.gender === 'Male' && outcomeOf(patient) === 'Referred').length,
+                filteredPatients.filter(patient => patient.gender === 'Female' && outcomeOf(patient) === 'Referred').length,
+                filteredPatients.filter(patient => outcomeOf(patient) === 'Referred').length
+              ],
+              [
+                'Active/In Progress',
+                filteredPatients.filter(patient => patient.gender === 'Male' && outcomeOf(patient) === 'In Progress').length,
+                filteredPatients.filter(patient => patient.gender === 'Female' && outcomeOf(patient) === 'In Progress').length,
+                filteredPatients.filter(patient => outcomeOf(patient) === 'In Progress').length
+              ],
+            ],
+            [2.5, 1, 1, 1]
+          );
+          addTable(
+            'Gender-wise Mortality Rates',
+            ['Gender', 'Deaths', 'Total', 'Mortality Rate'],
+            [
+              ['Male', Number(s.maleDeceased ?? 0), Number(s.males ?? 0), `${Number(s.males ?? 0) > 0 ? ((Number(s.maleDeceased ?? 0) / Number(s.males ?? 1)) * 100).toFixed(1) : '0.0'}%`],
+              ['Female', Number(s.femaleDeceased ?? 0), Number(s.females ?? 0), `${Number(s.females ?? 0) > 0 ? ((Number(s.femaleDeceased ?? 0) / Number(s.females ?? 1)) * 100).toFixed(1) : '0.0'}%`],
+            ],
+            [2, 1, 1, 1.2]
+          );
+          addPatientLineList('Patient Registry', filteredPatients);
+          break;
+        }
+
+        case 'discharge': {
+          const dischargedPatients = filteredPatients.filter((patient) => outcomeOf(patient) === 'Discharged');
+          addSectionTitle('Discharge Summary');
+          addMetricCards([
+            { label: 'Total Discharged', value: Number(s.discharged ?? 0) },
+            { label: 'Discharge Rate', value: formatPercent(s.dischargeRate) },
+            { label: 'Average LOS', value: `${s.avgLOS || '0'} days` },
+            { label: 'LAMA Cases', value: Number(s.lama ?? 0) },
+          ]);
+          addTable(
+            'Length of Stay Distribution',
+            ['LOS Bucket', 'Count'],
+            [
+              ['< 24 hours', Number(s.losDistribution?.lessThan24hrs ?? 0)],
+              ['1-3 days', Number(s.losDistribution?.oneToThreeDays ?? 0)],
+              ['3-7 days', Number(s.losDistribution?.threeToSevenDays ?? 0)],
+              ['1-2 weeks', Number(s.losDistribution?.oneToTwoWeeks ?? 0)],
+              ['> 2 weeks', Number(s.losDistribution?.moreThanTwoWeeks ?? 0)],
+            ],
+            [3, 1]
+          );
+          addTable(
+            'Inborn vs Outborn Discharge Analysis',
+            ['Group', 'Total', 'Discharged', 'Discharge Rate', 'Avg LOS'],
+            [
+              ['Inborn', Number(s.inborn ?? 0), Number(s.inbornDischarged ?? 0), formatPercent(s.inbornDischargeRate), `${s.avgLosInborn || '0'} days`],
+              ['Outborn', Number(s.outborn ?? 0), Number(s.outbornDischarged ?? 0), formatPercent(s.outbornDischargeRate), `${s.avgLosOutborn || '0'} days`],
+            ],
+            [2, 1, 1, 1.2, 1.2]
+          );
+          addPatientLineList('Discharged Patients', dischargedPatients);
+          break;
+        }
+
+        case 'dailyUpdate': {
+          addSectionTitle('Daily Update Summary');
+          addParagraph('This PDF was generated from the daily update flow. Use the on-screen copy action for the WhatsApp-ready text version.');
+          addMetricCards([
+            { label: 'Total Admissions', value: Number(s.total ?? 0) },
+            { label: 'Active Patients', value: Number(s.active ?? 0) },
+            { label: 'Discharged', value: Number(s.discharged ?? 0) },
+            { label: 'Deceased', value: Number(s.deceased ?? 0) },
+          ]);
+          break;
+        }
+
+        default:
+          addComprehensiveSummary();
+          break;
       }
 
       const totalPages = pdf.getNumberOfPages();
@@ -890,419 +1148,10 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       pdf.save(fileName);
     };
     try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      // Professional page layout
-      const marginLeft = 10;
-      const marginRight = 10;
-      const marginTop = 10;
-      const marginBottom = 10;
-      const headerBand = 8;
-      const footerBand = 8;
-      const contentGap = 3;
-      const contentWidth = pageWidth - marginLeft - marginRight;
-      const contentTop = marginTop + headerBand;
-      const contentBottom = pageHeight - marginBottom - footerBand;
-      const maxPageContentHeight = contentBottom - contentTop;
-
-      const reportTitle = REPORT_TYPES.find(r => r.id === selectedReportType)?.title || 'Clinical Report';
-      const { startDate, endDate } = getDateRange();
-      const generatedAt = new Date();
-
-      pdf.setProperties({
-        title: `${reportTitle} - ${PDF_UNIT_LABEL}`,
-        subject: `${startDate.toLocaleDateString('en-IN')} - ${endDate.toLocaleDateString('en-IN')}`,
-        author: PDF_INSTITUTION_LABEL,
-        creator: 'NeoLink AI Reports'
-      });
-
-      // html2canvas does not support modern color functions like oklch().
-      // Convert problematic values to rgba() in the cloned DOM before render.
-      const COLOR_FUNCTION_PATTERN = /(oklch|oklab|color-mix|color)\(/i;
-
-      const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
-
-      const parseAngle = (raw: string): number => {
-        const value = raw.trim().toLowerCase();
-        if (value.endsWith('deg')) return parseFloat(value);
-        if (value.endsWith('turn')) return parseFloat(value) * 360;
-        if (value.endsWith('rad')) return parseFloat(value) * (180 / Math.PI);
-        if (value.endsWith('grad')) return parseFloat(value) * 0.9;
-        return parseFloat(value);
-      };
-
-      const parseAlpha = (raw: string | undefined): number => {
-        if (!raw) return 1;
-        const value = raw.trim();
-        if (value.endsWith('%')) return clamp01(parseFloat(value) / 100);
-        return clamp01(parseFloat(value));
-      };
-
-      const parseLightness = (raw: string): number => {
-        const value = raw.trim();
-        if (value.endsWith('%')) return clamp01(parseFloat(value) / 100);
-        return clamp01(parseFloat(value));
-      };
-
-      const linearToSrgb = (x: number): number => {
-        const clamped = clamp01(x);
-        if (clamped <= 0.0031308) return 12.92 * clamped;
-        return 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
-      };
-
-      const oklabToRgba = (l: number, a: number, b: number, alpha = 1): string => {
-        const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
-        const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
-        const s_ = l - 0.0894841775 * a - 1.291485548 * b;
-
-        const l3 = l_ * l_ * l_;
-        const m3 = m_ * m_ * m_;
-        const s3 = s_ * s_ * s_;
-
-        const rLin = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
-        const gLin = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
-        const bLin = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
-
-        const r = Math.round(clamp01(linearToSrgb(rLin)) * 255);
-        const g = Math.round(clamp01(linearToSrgb(gLin)) * 255);
-        const bl = Math.round(clamp01(linearToSrgb(bLin)) * 255);
-        const aOut = clamp01(alpha);
-
-        return `rgba(${r}, ${g}, ${bl}, ${aOut.toFixed(3)})`;
-      };
-
-      const convertOklchFunction = (source: string): string | null => {
-        const match = source.match(/oklch\(([^)]+)\)/i);
-        if (!match) return null;
-
-        const raw = match[1].trim();
-        const [channelsRaw, alphaRaw] = raw.split('/').map(part => part.trim());
-        const channels = channelsRaw.split(/\s+/).filter(Boolean);
-        if (channels.length < 3) return null;
-
-        const l = parseLightness(channels[0]);
-        const c = parseFloat(channels[1]);
-        const h = parseAngle(channels[2]);
-        const alpha = parseAlpha(alphaRaw);
-
-        if (!Number.isFinite(l) || !Number.isFinite(c) || !Number.isFinite(h) || !Number.isFinite(alpha)) {
-          return null;
-        }
-
-        const hRad = (h * Math.PI) / 180;
-        const a = c * Math.cos(hRad);
-        const b = c * Math.sin(hRad);
-        return oklabToRgba(l, a, b, alpha);
-      };
-
-      const convertOklabFunction = (source: string): string | null => {
-        const match = source.match(/oklab\(([^)]+)\)/i);
-        if (!match) return null;
-
-        const raw = match[1].trim();
-        const [channelsRaw, alphaRaw] = raw.split('/').map(part => part.trim());
-        const channels = channelsRaw.split(/\s+/).filter(Boolean);
-        if (channels.length < 3) return null;
-
-        const l = parseLightness(channels[0]);
-        const a = parseFloat(channels[1]);
-        const b = parseFloat(channels[2]);
-        const alpha = parseAlpha(alphaRaw);
-
-        if (!Number.isFinite(l) || !Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(alpha)) {
-          return null;
-        }
-
-        return oklabToRgba(l, a, b, alpha);
-      };
-
-      const toSafeColor = (value: string, property: string): string => {
-        const trimmed = String(value || '').trim();
-        if (!trimmed) return trimmed;
-
-        if (/oklch\(/i.test(trimmed)) {
-          const converted = convertOklchFunction(trimmed);
-          if (converted) return converted;
-        }
-        if (/oklab\(/i.test(trimmed)) {
-          const converted = convertOklabFunction(trimmed);
-          if (converted) return converted;
-        }
-
-        // Fall back for other unsupported color functions.
-        if (/background|border|outline/i.test(property)) return 'rgba(255, 255, 255, 1)';
-        return 'rgba(15, 23, 42, 1)';
-      };
-
-      const sanitizeColorValue = (
-        rawValue: string,
-        property: string,
-        clonedDoc: Document,
-        cache: Map<string, string>
-      ): string => {
-        const value = String(rawValue || '').trim();
-        if (!value) return value;
-        if (!COLOR_FUNCTION_PATTERN.test(value)) return value;
-
-        const cacheKey = `${property}::${value}`;
-        const cached = cache.get(cacheKey);
-        if (cached) return cached;
-
-        // Explicit conversion first (reliable for html2canvas).
-        const converted = toSafeColor(value, property);
-        if (converted && !COLOR_FUNCTION_PATTERN.test(converted)) {
-          cache.set(cacheKey, converted);
-          return converted;
-        }
-
-        // Last fallback: browser-resolved computed value from probe element.
-        const probe = clonedDoc.createElement('span');
-        probe.style.position = 'fixed';
-        probe.style.left = '-9999px';
-        probe.style.top = '-9999px';
-        if (/background/i.test(property)) {
-          probe.style.backgroundColor = value;
-        } else if (/border|outline/i.test(property)) {
-          probe.style.borderTopColor = value;
-        } else {
-          probe.style.color = value;
-        }
-        clonedDoc.body.appendChild(probe);
-
-        const computed = clonedDoc.defaultView?.getComputedStyle(probe);
-        const resolved = (() => {
-          if (!computed) return '';
-          if (/background/i.test(property)) return computed.backgroundColor?.trim();
-          if (/border|outline/i.test(property)) return computed.borderTopColor?.trim();
-          return computed.color?.trim();
-        })();
-        probe.remove();
-
-        const safe = resolved && resolved !== '' && !COLOR_FUNCTION_PATTERN.test(resolved)
-          ? resolved
-          : toSafeColor(value, property);
-        cache.set(cacheKey, safe);
-        return safe;
-      };
-
-      const sanitizeClonedDocumentForPdf = (clonedDoc: Document) => {
-        const view = clonedDoc.defaultView;
-        if (!view) return;
-
-        const colorCache = new Map<string, string>();
-        const colorProperties = [
-          'color',
-          'background-color',
-          'caret-color',
-          'border-top-color',
-          'border-right-color',
-          'border-bottom-color',
-          'border-left-color',
-          'outline-color',
-          'text-decoration-color'
-        ];
-
-        const allElements = clonedDoc.querySelectorAll<HTMLElement>('*');
-        allElements.forEach((element) => {
-          const computed = view.getComputedStyle(element);
-
-          colorProperties.forEach((property) => {
-            const computedValue = computed.getPropertyValue(property);
-            if (!computedValue || !COLOR_FUNCTION_PATTERN.test(computedValue)) return;
-            const safeColor = sanitizeColorValue(computedValue, property, clonedDoc, colorCache);
-            element.style.setProperty(property, safeColor, 'important');
-          });
-
-          const backgroundImage = computed.backgroundImage;
-          if (backgroundImage && COLOR_FUNCTION_PATTERN.test(backgroundImage)) {
-            element.style.setProperty('background-image', 'none', 'important');
-          }
-
-          const boxShadow = computed.boxShadow;
-          if (boxShadow && COLOR_FUNCTION_PATTERN.test(boxShadow)) {
-            element.style.setProperty('box-shadow', 'none', 'important');
-          }
-
-          const textShadow = computed.textShadow;
-          if (textShadow && COLOR_FUNCTION_PATTERN.test(textShadow)) {
-            element.style.setProperty('text-shadow', 'none', 'important');
-          }
-        });
-
-        // Remove inborn-vs-outborn comparison sections from exported PDFs.
-        const comparisonPattern = /inborn\s*vs\s*outborn/i;
-        const sectionNodes = Array.from(clonedDoc.querySelectorAll('section'));
-        sectionNodes.forEach((section) => {
-          const heading = section.querySelector('h1,h2,h3,h4,h5,h6');
-          const titleText = (heading?.textContent || section.textContent || '').trim();
-          if (comparisonPattern.test(titleText)) {
-            section.remove();
-          }
-        });
-      };
-
-      const renderCanvas = async (element: HTMLElement): Promise<HTMLCanvasElement> => {
-        return html2canvas(element, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          imageTimeout: 20000,
-          windowWidth: Math.max(element.scrollWidth, element.clientWidth),
-          windowHeight: Math.max(element.scrollHeight, element.clientHeight),
-          scrollX: 0,
-          scrollY: -window.scrollY,
-          onclone: (clonedDoc) => {
-            sanitizeClonedDocumentForPdf(clonedDoc);
-          }
-        });
-      };
-
-      let cursorY = contentTop;
-
-      const addNewPage = () => {
-        pdf.addPage();
-        cursorY = contentTop;
-      };
-
-      const addCanvasSlice = (sliceCanvas: HTMLCanvasElement, targetY: number) => {
-        const sliceHeightMm = (sliceCanvas.height * contentWidth) / sliceCanvas.width;
-        const imgData = sliceCanvas.toDataURL('image/jpeg', 0.95);
-        pdf.addImage(imgData, 'JPEG', marginLeft, targetY, contentWidth, sliceHeightMm, undefined, 'FAST');
-        return sliceHeightMm;
-      };
-
-      const addCanvasBlock = (blockCanvas: HTMLCanvasElement) => {
-        const blockHeightMm = (blockCanvas.height * contentWidth) / blockCanvas.width;
-
-        // If this block fits in one page but not current remaining space, start a new page.
-        if (blockHeightMm <= maxPageContentHeight && cursorY + blockHeightMm > contentBottom) {
-          addNewPage();
-        }
-
-        // Normal case: place whole block.
-        if (blockHeightMm <= maxPageContentHeight) {
-          const placedHeight = addCanvasSlice(blockCanvas, cursorY);
-          cursorY += placedHeight + contentGap;
-          return;
-        }
-
-        // Tall block (for long tables): slice across pages safely.
-        const pxPerMm = blockCanvas.width / contentWidth;
-        let yOffsetPx = 0;
-
-        while (yOffsetPx < blockCanvas.height) {
-          const remainingMmOnPage = contentBottom - cursorY;
-          if (remainingMmOnPage <= 5) {
-            addNewPage();
-            continue;
-          }
-
-          const maxSlicePx = Math.max(1, Math.floor(remainingMmOnPage * pxPerMm));
-          const sliceHeightPx = Math.min(maxSlicePx, blockCanvas.height - yOffsetPx);
-
-          const sliceCanvas = document.createElement('canvas');
-          sliceCanvas.width = blockCanvas.width;
-          sliceCanvas.height = sliceHeightPx;
-          const sliceCtx = sliceCanvas.getContext('2d');
-          if (!sliceCtx) {
-            throw new Error('Failed to initialize PDF slice canvas');
-          }
-          sliceCtx.drawImage(
-            blockCanvas,
-            0, yOffsetPx, blockCanvas.width, sliceHeightPx,
-            0, 0, blockCanvas.width, sliceHeightPx
-          );
-
-          const placedHeight = addCanvasSlice(sliceCanvas, cursorY);
-          yOffsetPx += sliceHeightPx;
-          cursorY += placedHeight;
-
-          if (yOffsetPx < blockCanvas.height) {
-            addNewPage();
-          } else {
-            cursorY += contentGap;
-          }
-        }
-      };
-
-      // Build render blocks: header + each body child section for cleaner page breaks.
-      const root = reportRef.current;
-      const topHeader = root.firstElementChild as HTMLElement | null;
-      const bodyWrapper = root.lastElementChild as HTMLElement | null;
-
-      const exportBlocks: HTMLElement[] = [];
-      if (topHeader) exportBlocks.push(topHeader);
-      if (bodyWrapper) {
-        const sectionBlocks = Array.from(bodyWrapper.children).filter(Boolean) as HTMLElement[];
-        if (sectionBlocks.length > 0) {
-          exportBlocks.push(...sectionBlocks);
-        } else {
-          exportBlocks.push(bodyWrapper);
-        }
-      } else {
-        exportBlocks.push(root);
-      }
-
-      for (const block of exportBlocks) {
-        const blockCanvas = await renderCanvas(block);
-        addCanvasBlock(blockCanvas);
-      }
-
-      // Add consistent professional page chrome at the end (known total page count).
-      const totalPages = pdf.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        pdf.setPage(i);
-
-        // Header line + title
-        pdf.setDrawColor(203, 213, 225); // slate-300
-        pdf.setLineWidth(0.2);
-        pdf.line(marginLeft, marginTop + headerBand, pageWidth - marginRight, marginTop + headerBand);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(9);
-        pdf.setTextColor(30, 41, 59); // slate-800
-        pdf.text(reportTitle, marginLeft, marginTop + 5.5);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8);
-        pdf.setTextColor(71, 85, 105); // slate-600
-        pdf.text(
-          `${PDF_UNIT_LABEL} | ${PDF_INSTITUTION_LABEL} | ${admissionTypeScopeLabel}`,
-          pageWidth - marginRight,
-          marginTop + 5.5,
-          { align: 'right' }
-        );
-
-        // Footer line + page numbers
-        pdf.setDrawColor(226, 232, 240); // slate-200
-        pdf.line(marginLeft, pageHeight - marginBottom - footerBand, pageWidth - marginRight, pageHeight - marginBottom - footerBand);
-        pdf.setFontSize(8);
-        pdf.setTextColor(100, 116, 139); // slate-500
-        pdf.text(
-          `Generated ${generatedAt.toLocaleDateString('en-IN')} ${generatedAt.toLocaleTimeString('en-IN')}`,
-          marginLeft,
-          pageHeight - marginBottom - 2.5
-        );
-        pdf.text(
-          `Page ${i} of ${totalPages}`,
-          pageWidth - marginRight,
-          pageHeight - marginBottom - 2.5,
-          { align: 'right' }
-        );
-      }
-
-      const reportTypeName = REPORT_TYPES.find(r => r.id === selectedReportType)?.title || 'Report';
-      const fileName = `${reportTypeName.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}_${PDF_INSTITUTION_LABEL.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}_${startDate.toISOString().split('T')[0]}.pdf`;
-      pdf.save(fileName);
+      saveStructuredFallbackPdf();
     } catch (error) {
-      console.warn('Primary PDF renderer failed, using structured fallback PDF:', error);
-      try {
-        saveStructuredFallbackPdf();
-      } catch (fallbackError) {
-        console.error('Structured fallback PDF generation failed:', fallbackError);
-        alert('PDF generation failed. Please try again.');
-      }
+      console.error('Structured PDF generation failed:', error);
+      alert('PDF generation failed. Please try again.');
     } finally {
       setGenerating(false);
     }
@@ -2375,13 +2224,14 @@ ${summaryRows.map(row => `${row.label}: ${row.value}${row.suffix || ''}`).join('
   );
 
   // Step Down Report
-  const renderStepDownReport = () => {
-    // Calculate step-down status breakdown
-    const currentlyInStepDown = stats.stepDownPatients.filter(p => getCanonicalOutcome(p) === 'Step Down').length;
-    const dischargedFromStepDown = stats.stepDownPatients.filter(p => p.stepDownDate && getCanonicalOutcome(p) === 'Discharged').length;
-    const readmittedFromStepDown = stats.stepDownPatients.filter(p => p.readmissionFromStepDown).length;
-    const deceasedAfterStepDown = stats.stepDownPatients.filter(p => p.stepDownDate && getCanonicalOutcome(p) === 'Deceased').length;
-    const otherOutcomeAfterStepDown = stats.stepDown - currentlyInStepDown - dischargedFromStepDown - deceasedAfterStepDown;
+	  const renderStepDownReport = () => {
+	    // Calculate step-down status breakdown
+	    const currentStepDownPatients = stats.stepDownPatients.filter(p => getCanonicalOutcome(p) === 'Step Down');
+	    const currentlyInStepDown = currentStepDownPatients.length;
+	    const dischargedFromStepDown = stats.stepDownPatients.filter(p => p.stepDownDate && getCanonicalOutcome(p) === 'Discharged').length;
+	    const readmittedFromStepDown = stats.stepDownPatients.filter(p => p.readmissionFromStepDown).length;
+	    const deceasedAfterStepDown = stats.stepDownPatients.filter(p => p.stepDownDate && getCanonicalOutcome(p) === 'Deceased').length;
+	    const otherOutcomeAfterStepDown = stats.stepDown - currentlyInStepDown - dischargedFromStepDown - deceasedAfterStepDown;
 
     return (
       <div className="space-y-8">
@@ -2454,14 +2304,14 @@ ${summaryRows.map(row => `${row.label}: ${row.value}${row.suffix || ''}`).join('
           )}
         </section>
 
-        {/* Step Down Patients List - with enhanced info */}
-        {showPatientDetails && (
-          <section>
-            <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-indigo-500 flex items-center gap-2">
-              <IconClipboardList size={22} className="text-indigo-600" /> Step Down Patient Registry ({stats.stepDownPatients.length})
-            </h3>
-            <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
-              <table className="w-full text-sm">
+	        {/* Step Down Patients List - with enhanced info */}
+	        {showPatientDetails && (
+	          <section>
+	            <h3 className="text-xl font-bold text-slate-800 mb-4 pb-2 border-b-2 border-indigo-500 flex items-center gap-2">
+	              <IconClipboardList size={22} className="text-indigo-600" /> Step Down Patient Registry ({currentStepDownPatients.length})
+	            </h3>
+	            <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
+	              <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
                     <th className="text-left p-3 font-semibold text-slate-700">Patient</th>
@@ -2471,12 +2321,12 @@ ${summaryRows.map(row => `${row.label}: ${row.value}${row.suffix || ''}`).join('
                     <th className="text-left p-3 font-semibold text-slate-700">Current Status</th>
                     <th className="text-left p-3 font-semibold text-slate-700">Final Discharge</th>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {stats.stepDownPatients.map((patient, idx) => {
-                    const canonicalOutcome = getCanonicalOutcome(patient);
-                    return (
-                    <tr key={idx} className="hover:bg-slate-50">
+	                </thead>
+	                <tbody className="divide-y divide-slate-100">
+	                  {currentStepDownPatients.map((patient, idx) => {
+	                    const canonicalOutcome = getCanonicalOutcome(patient);
+	                    return (
+	                    <tr key={idx} className="hover:bg-slate-50">
                       <td className="p-3">
                         <div className="font-medium text-slate-800">{patient.name}</div>
                       </td>
@@ -2849,13 +2699,13 @@ ${summaryRows.map(row => `${row.label}: ${row.value}${row.suffix || ''}`).join('
                 { outcome: 'Deceased', male: stats.maleDeceased, female: stats.femaleDeceased },
                 {
                   outcome: 'Referred',
-                  male: filteredPatients.filter(p => p.gender === 'Male' && p.outcome === 'Referred').length,
-                  female: filteredPatients.filter(p => p.gender === 'Female' && p.outcome === 'Referred').length
+                  male: filteredPatients.filter(p => p.gender === 'Male' && outcomeOf(p) === 'Referred').length,
+                  female: filteredPatients.filter(p => p.gender === 'Female' && outcomeOf(p) === 'Referred').length
                 },
                 {
                   outcome: 'Active/In Progress',
-                  male: filteredPatients.filter(p => p.gender === 'Male' && (!p.outcome || p.outcome === 'In Progress')).length,
-                  female: filteredPatients.filter(p => p.gender === 'Female' && (!p.outcome || p.outcome === 'In Progress')).length
+                  male: filteredPatients.filter(p => p.gender === 'Male' && outcomeOf(p) === 'In Progress').length,
+                  female: filteredPatients.filter(p => p.gender === 'Female' && outcomeOf(p) === 'In Progress').length
                 }
               ].map(row => (
                 <tr key={row.outcome} className="border-b border-slate-200">
@@ -2907,7 +2757,7 @@ ${summaryRows.map(row => `${row.label}: ${row.value}${row.suffix || ''}`).join('
 
   // Discharge Report
   const renderDischargeReport = () => {
-    const dischargedPatients = filteredPatients.filter(p => p.outcome === 'Discharged');
+    const dischargedPatients = filteredPatients.filter(p => outcomeOf(p) === 'Discharged');
 
     return (
       <div className="space-y-8">

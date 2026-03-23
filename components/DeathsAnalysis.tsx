@@ -369,7 +369,7 @@ const DeathsAnalysis: React.FC<DeathsAnalysisProps> = ({ patients, onBack }) => 
       </div>
 
       {/* Date Filter */}
-      <DateFilter onFilterChange={setDateFilter} />
+      <DateFilter value={dateFilter} onChange={setDateFilter} />
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-xl border-2 border-sky-200 p-4 sm:p-6">

@@ -295,9 +295,9 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({
               </div>
             </div>
 
-            {/* Date Filter */}
-            <DateFilter onFilterChange={setDateFilter} />
-          </div>
+	            {/* Date Filter */}
+	            <DateFilter value={dateFilter} onChange={setDateFilter} />
+	          </div>
 
           {/* Unit Selection Row */}
           <div className="flex items-center gap-3 flex-wrap">

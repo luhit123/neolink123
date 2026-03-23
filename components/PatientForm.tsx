@@ -383,11 +383,16 @@ const PatientForm: React.FC<PatientFormProps> = ({
       }
 
       // Handle Step Down logic for both NICU and PICU
-      if (name === 'outcome' && value === 'Step Down') {
-        updated.stepDownDate = new Date().toISOString();
-        updated.stepDownFrom = prev.unit; // Can be NICU or PICU
-        updated.isStepDown = true;
-        updated.outcome = 'Step Down';
+      if (name === 'outcome') {
+        if (value === 'Step Down') {
+          updated.stepDownDate = new Date().toISOString();
+          updated.stepDownFrom = prev.unit; // Can be NICU or PICU
+          updated.isStepDown = true;
+          updated.outcome = 'Step Down';
+        } else {
+          // Step down is a current status flag; clear it when outcome moves away.
+          updated.isStepDown = false;
+        }
       }
 
       // Sync admissionDateTime with admissionDate for backward compatibility

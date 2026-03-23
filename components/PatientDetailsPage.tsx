@@ -145,7 +145,9 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
     startTime: '08:00',
     endTime: '20:00'
   });
-  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('In Progress');
+  // Match the main dashboard's broader default view so current step-down patients
+  // are visible immediately when users open the registry.
+  const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('All');
   const [nicuView, setNicuView] = useState<'All' | 'Inborn' | 'Outborn'>('Inborn');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
@@ -301,7 +303,16 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
       const { startDate, endDate } = selectedDateRange;
 
       filtered = filtered.filter(p => {
-        return isPatientActiveDuringRange(p, { startDate, endDate });
+        if (isPatientActiveDuringRange(p, { startDate, endDate })) return true;
+
+        // Step-down patients remain under active follow-up until final discharge/readmission.
+        // Keep CURRENT step-down patients visible even when their step-down date is before the selected range.
+        if (p.isStepDown && getCanonicalOutcome(p) === 'Step Down') {
+          const admissionDate = getPatientAdmissionDate(p);
+          return !!admissionDate && admissionDate <= endDate;
+        }
+
+        return false;
       });
     }
 
@@ -1168,14 +1179,14 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
               )}
             </div>
 
-            {/* Date Filter */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Calendar className="w-4 h-4 text-blue-500" />
-                <h3 className="font-bold text-slate-900">Date Range</h3>
-              </div>
-              <DateFilter onFilterChange={setDateFilter} />
-            </div>
+	            {/* Date Filter */}
+	            <div>
+	              <div className="flex items-center gap-2 mb-3">
+	                <Calendar className="w-4 h-4 text-blue-500" />
+	                <h3 className="font-bold text-slate-900">Date Range</h3>
+	              </div>
+	              <DateFilter value={dateFilter} onChange={setDateFilter} />
+	            </div>
 
             {/* Shift Filter */}
             <div>
@@ -1390,7 +1401,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                   {(outcomeFilter !== 'In Progress' || searchQuery || hasActiveFilters) && (
                     <button
                       onClick={() => {
-                        setOutcomeFilter('In Progress');
+                        setOutcomeFilter('All');
                         setSearchQuery('');
                         setDateFilter({ period: 'All Time' });
                         setShiftFilter({ enabled: false, startTime: '08:00', endTime: '20:00' });
@@ -1468,14 +1479,14 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
                   </div>
                 </div>
 
-                {/* Date Filter */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Calendar className="w-4 h-4 text-blue-500" />
-                    <h3 className="font-bold text-slate-900">Date Range</h3>
-                  </div>
-                  <DateFilter onFilterChange={setDateFilter} />
-                </div>
+	                {/* Date Filter */}
+	                <div>
+	                  <div className="flex items-center gap-2 mb-3">
+	                    <Calendar className="w-4 h-4 text-blue-500" />
+	                    <h3 className="font-bold text-slate-900">Date Range</h3>
+	                  </div>
+	                  <DateFilter value={dateFilter} onChange={setDateFilter} />
+	                </div>
 
                 {/* Shift Filter */}
                 <div>

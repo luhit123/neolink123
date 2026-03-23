@@ -87,40 +87,61 @@ export const getCanonicalOutcome = (patient: Partial<Patient>): PatientOutcome =
     return null;
   })();
 
+  const stepDownDate = parseAnalyticsDate(patient.stepDownDate);
+  const releaseDate = parseAnalyticsDate(patient.releaseDate);
+  const dischargeDate = parseAnalyticsDate(patient.finalDischargeDate || patient.dischargeDateTime);
   const hasDeathEvidence = !!(patient.dateOfDeath || patient.savedDeathCertificate || patient.diagnosisAtDeath || patient.aiInterpretedDeathDiagnosis);
   const hasReferralEvidence = !!(patient.referredTo || patient.referralReason);
   const hasDischargeEvidence = !!(patient.finalDischargeDate || patient.dischargeDateTime || patient.savedDischargeSummary || patient.dischargeSavedAt);
   const hasStepDownEvidence = !!(patient.isStepDown || (patient.stepDownDate && !patient.readmissionFromStepDown));
+  const hasPostStepDownDischargeEvidence = !!(
+    stepDownDate &&
+    (
+      (dischargeDate && dischargeDate >= stepDownDate) ||
+      (releaseDate && releaseDate >= stepDownDate)
+    )
+  );
 
-  // ── 1. Explicit "Step Down" outcome ────────────────────────────────
-  // When the clinician has explicitly marked outcome = "Step Down", honour it
-  // immediately.  A step-down baby may still carry a stale dischargeDateTime
-  // from their NICU stay — that must NOT flip them to 'Discharged'.
-  if (inferredRawOutcome === 'Step Down') {
-    if (hasDeathEvidence) return 'Deceased';   // death always wins
-    return 'Step Down';
-  }
-
-  // ── 2. Other explicit/evidence-based outcomes ────────────────────
   if (inferredRawOutcome === 'Deceased' || hasDeathEvidence) {
     return 'Deceased';
   }
 
-  if (inferredRawOutcome === 'Referred' || hasReferralEvidence) {
-    return 'Referred';
+  if (patient.readmissionFromStepDown) {
+    if (inferredRawOutcome === 'Discharged' || hasDischargeEvidence) {
+      return 'Discharged';
+    }
+    return 'In Progress';
   }
 
-  if (inferredRawOutcome === 'Discharged' || hasDischargeEvidence) {
+  // Step down is a transition. Keep the state unless there is evidence of a
+  // later terminal event such as a final discharge after the step-down date.
+  if (inferredRawOutcome === 'Step Down' || (!inferredRawOutcome && hasStepDownEvidence)) {
+    if (hasDischargeEvidence || hasPostStepDownDischargeEvidence) {
+      return 'Discharged';
+    }
+    return 'Step Down';
+  }
+
+  if (inferredRawOutcome === 'Discharged') {
     return 'Discharged';
+  }
+
+  if (inferredRawOutcome === 'Referred') {
+    return 'Referred';
   }
 
   if (inferredRawOutcome === 'In Progress') {
     return 'In Progress';
   }
 
-  // ── 3. Fallback: no explicit outcome text — use field evidence ───
-  // Only reach here when outcome is blank/undefined/unrecognised.
-  if (hasStepDownEvidence) return 'Step Down';
+  if (hasDischargeEvidence) {
+    return 'Discharged';
+  }
+
+  if (hasReferralEvidence) {
+    return 'Referred';
+  }
+
   return 'In Progress';
 };
 
@@ -176,13 +197,6 @@ export const getPatientOperationalEndDate = (patient: Partial<Patient>): Date | 
 
   // Terminal outcomes end the patient's operational period.
   if (outcome === 'Discharged' || outcome === 'Deceased' || outcome === 'Referred') {
-    return getPatientOutcomeDate(patient);
-  }
-
-  // Step Down is a care transition — the patient leaves the ORIGINAL unit.
-  // Treat stepDownDate as the operational end for unit-filtering purposes
-  // so stepped-down patients no longer inflate the source unit's active counts.
-  if (outcome === 'Step Down') {
     return getPatientOutcomeDate(patient);
   }
 

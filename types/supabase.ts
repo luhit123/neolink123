@@ -52,6 +52,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       units: {
         Row: {
@@ -72,6 +73,7 @@ export interface Database {
           name?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       monthly_records: {
         Row: {
@@ -95,6 +97,7 @@ export interface Database {
           month?: number;
           created_at?: string;
         };
+        Relationships: [];
       };
       patients: {
         Row: {
@@ -235,6 +238,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       progress_notes: {
         Row: {
@@ -303,6 +307,7 @@ export interface Database {
           added_by_email?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       clinical_notes: {
         Row: {
@@ -338,6 +343,7 @@ export interface Database {
           year_month?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       discharge_summaries: {
         Row: {
@@ -373,6 +379,7 @@ export interface Database {
           verified_by?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       death_records: {
         Row: {
@@ -405,6 +412,7 @@ export interface Database {
           ai_analysis?: Json | null;
           created_at?: string;
         };
+        Relationships: [];
       };
     };
     Views: {
@@ -418,6 +426,7 @@ export interface Database {
           deceased: number | null;
           in_progress: number | null;
         };
+        Relationships: [];
       };
       patient_hierarchy: {
         Row: {
@@ -432,6 +441,7 @@ export interface Database {
           note_count: number | null;
           clinical_note_count: number | null;
         };
+        Relationships: [];
       };
     };
     Functions: {

@@ -182,12 +182,14 @@ window.AudioContext = vi.fn().mockImplementation(() => ({
 }));
 
 // Mock MediaRecorder
-global.MediaRecorder = vi.fn().mockImplementation(() => ({
+const MediaRecorderMock = vi.fn().mockImplementation(() => ({
   start: vi.fn(),
   stop: vi.fn(),
   ondataavailable: vi.fn(),
   state: 'inactive'
 }));
+(MediaRecorderMock as any).isTypeSupported = vi.fn(() => true);
+(global as any).MediaRecorder = MediaRecorderMock;
 
 // Mock navigator.mediaDevices
 Object.defineProperty(navigator, 'mediaDevices', {

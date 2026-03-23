@@ -15,7 +15,7 @@ describe('analytics helpers', () => {
     const patient = {
       admissionDate: '2026-02-17T18:40:00.000Z',
       releaseDate: '2026-03-06T09:30:00.000Z',
-      outcome: 'Discharged',
+      outcome: 'Discharged' as const,
       unit: Unit.NICU,
     };
 
@@ -84,6 +84,38 @@ describe('analytics helpers', () => {
     expect(getCanonicalOutcome(clearlyDischargedPatient)).toBe('Discharged');
   });
 
+  it('does not let stale referral fields override an explicit discharge outcome', () => {
+    const dischargedWithReferralFields = {
+      outcome: 'Discharged',
+      referredTo: 'Some Hospital',
+      referralReason: 'Bed not available',
+    } as any;
+
+    expect(getCanonicalOutcome(dischargedWithReferralFields)).toBe('Discharged');
+  });
+
+  it('still infers referral when outcome is empty but referral fields exist', () => {
+    const referredViaFields = {
+      outcome: '',
+      referredTo: 'Some Hospital',
+      referralReason: 'Needs higher care',
+    } as any;
+
+    expect(getCanonicalOutcome(referredViaFields)).toBe('Referred');
+  });
+
+  it('treats readmitted step-down patients as in progress even if referral fields linger', () => {
+    const readmittedPatient = {
+      outcome: '',
+      stepDownDate: '2026-02-23T13:17:00.000Z',
+      readmissionFromStepDown: true,
+      referredTo: 'Some Hospital',
+      referralReason: 'Stale referral info',
+    } as any;
+
+    expect(getCanonicalOutcome(readmittedPatient)).toBe('In Progress');
+  });
+
   it('treats stale step-down records with final discharge data as discharged', () => {
     const staleStepDownPatient = {
       outcome: 'Step Down',
@@ -95,11 +127,22 @@ describe('analytics helpers', () => {
     expect(getCanonicalOutcome(staleStepDownPatient)).toBe('Discharged');
   });
 
-  it('removes step down patients from ranges after their step-down date', () => {
+  it('treats step-down records with releaseDate after stepDownDate as discharged', () => {
+    const dischargedFromStepDownPatient = {
+      outcome: 'Step Down',
+      stepDownDate: '2026-02-23T13:17:00.000Z',
+      releaseDate: '2026-02-25T10:00:00.000Z',
+      isStepDown: true,
+    } as any;
+
+    expect(getCanonicalOutcome(dischargedFromStepDownPatient)).toBe('Discharged');
+  });
+
+  it('keeps step down patients active after their step-down date', () => {
     const patient = {
       admissionDate: '2026-02-17T18:40:00.000Z',
       stepDownDate: '2026-03-01T09:30:00.000Z',
-      outcome: 'Step Down',
+      outcome: 'Step Down' as const,
       unit: Unit.PICU,
     };
 
@@ -108,15 +151,15 @@ describe('analytics helpers', () => {
       endDate: new Date('2026-03-12T23:59:59.999Z'),
     });
 
-    // Step-down patients should NOT appear in ranges after step-down date
-    expect(inMarchWeek).toBe(false);
+    // Step-down is a transition; patients remain in care until a terminal outcome.
+    expect(inMarchWeek).toBe(true);
   });
 
   it('keeps step down patients visible during ranges that include the step-down date', () => {
     const patient = {
       admissionDate: '2026-02-17T18:40:00.000Z',
       stepDownDate: '2026-03-01T09:30:00.000Z',
-      outcome: 'Step Down',
+      outcome: 'Step Down' as const,
       unit: Unit.PICU,
     };
 
@@ -132,7 +175,7 @@ describe('analytics helpers', () => {
     const patient = {
       admissionDate: '2026-02-17T18:40:00.000Z',
       finalDischargeDate: '2026-03-01T09:30:00.000Z',
-      outcome: 'Discharged',
+      outcome: 'Discharged' as const,
       unit: Unit.PICU,
     };
 
@@ -149,7 +192,7 @@ describe('analytics helpers', () => {
       unit: Unit.GENERAL_WARD,
       stepDownFrom: Unit.NICU,
       stepDownDate: '2026-03-01T09:30:00.000Z',
-      outcome: 'Step Down',
+      outcome: 'Step Down' as const,
     } as any;
 
     expect(matchesRegistryUnit(steppedDownPatient, Unit.NICU)).toBe(true);

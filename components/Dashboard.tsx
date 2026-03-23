@@ -1447,10 +1447,10 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
           )}
 
-          {/* Row 3: Date Filter */}
-          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
-            <DateFilter onFilterChange={setDateFilter} />
-          </div>
+	          {/* Row 3: Date Filter */}
+	          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+	            <DateFilter value={dateFilter} onChange={setDateFilter} />
+	          </div>
 
         </div>
 

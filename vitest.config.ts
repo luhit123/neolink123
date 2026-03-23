@@ -9,7 +9,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./test/setup.ts'],
     include: ['**/*.{test,spec}.{ts,tsx}'],
-    exclude: ['node_modules', 'dist', 'e2e', '.firebase', 'functions'],
+    exclude: ['node_modules', 'dist', 'e2e', '.firebase', 'functions', '.claude'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
@@ -22,6 +22,7 @@ export default defineConfig({
         '**/types/**',
         'dist/',
         '.firebase/',
+        '.claude/',
         'functions/',
         'scripts/',
         'data/',

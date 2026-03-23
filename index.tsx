@@ -3,6 +3,7 @@ import './index.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -12,7 +13,9 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );
 
@@ -22,39 +25,28 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     navigator.serviceWorker
       .register('/sw.js')
       .then((registration) => {
-        console.log('✅ PWA Service Worker registered:', registration.scope);
-
-        // Check for updates periodically
-        setInterval(() => {
-          registration.update();
-        }, 60 * 60 * 1000); // Check every hour
+        // Check for updates every hour
+        setInterval(() => { registration.update(); }, 60 * 60 * 1000);
       })
-      .catch((error) => {
-        console.error('❌ Service Worker registration failed:', error);
+      .catch((_error) => {
+        // SW registration failure is non-fatal; app still works without offline support
       });
 
-    // Listen for service worker updates
+    // Reload when new service worker takes control
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      console.log('🔄 New service worker activated, reloading...');
       window.location.reload();
     });
   });
 }
 
 // Add to home screen prompt handling (Android)
-let deferredPrompt: any;
+let deferredPrompt: BeforeInstallPromptEvent | null = null;
 window.addEventListener('beforeinstallprompt', (e) => {
-  console.log('💾 Install prompt available');
   e.preventDefault();
-  deferredPrompt = e;
-
-  // Show custom install button if desired
-  // This can be triggered later via a button: deferredPrompt.prompt()
+  deferredPrompt = e as BeforeInstallPromptEvent;
 });
 
-// Track when app is installed
 window.addEventListener('appinstalled', () => {
-  console.log('✅ PWA installed successfully');
   deferredPrompt = null;
 });
 

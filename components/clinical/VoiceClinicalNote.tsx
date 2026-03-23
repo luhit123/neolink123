@@ -218,8 +218,8 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
 
   // Calculate day of admission
   const getDayOfAdmission = (): number => {
-    if (!patient?.dateOfAdmission) return 0;
-    const admission = new Date(patient.dateOfAdmission);
+    if (!patient?.admissionDateTime || patient?.admissionDate) return 0;
+    const admission = new Date(patient.admissionDateTime || patient.admissionDate);
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - admission.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -228,8 +228,8 @@ const VoiceClinicalNote: React.FC<VoiceClinicalNoteProps> = ({
 
   // Format admission date and time
   const getAdmissionDateTime = (): string => {
-    if (!patient?.dateOfAdmission) return 'N/A';
-    const admission = new Date(patient.dateOfAdmission);
+    if (!patient?.admissionDateTime || patient?.admissionDate) return 'N/A';
+    const admission = new Date(patient.admissionDateTime || patient.admissionDate);
     const date = admission.toLocaleDateString('en-IN', {
       day: '2-digit',
       month: '2-digit',

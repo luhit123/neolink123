@@ -26,7 +26,7 @@ import {
   limit
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Patient, ProgressNote, Unit } from '../types';
+import { Patient, ProgressNote, Unit, AdmissionType } from '../types';
 
 // Types
 interface DashboardStats {
@@ -86,9 +86,21 @@ const isThisWeek = (date: Date | string | undefined): boolean => {
   return d >= weekAgo;
 };
 
+// Helper: Map Unit enum value to byUnit object key
+const unitToKey = (unit: Unit): 'PICU' | 'NICU' | 'SNCU' | 'HDU' | 'GENERAL_WARD' | undefined => {
+  const map: Record<Unit, 'PICU' | 'NICU' | 'SNCU' | 'HDU' | 'GENERAL_WARD'> = {
+    [Unit.PICU]: 'PICU',
+    [Unit.NICU]: 'NICU',
+    [Unit.SNCU]: 'SNCU',
+    [Unit.HDU]: 'HDU',
+    [Unit.GENERAL_WARD]: 'GENERAL_WARD',
+  };
+  return map[unit];
+};
+
 // Helper: Check if patient is in progress
 const isInProgress = (patient: Patient): boolean => {
-  return !patient.outcome || patient.outcome === '' || patient.outcome === 'In Progress';
+  return !patient.outcome || patient.outcome === 'In Progress';
 };
 
 /**
@@ -139,7 +151,7 @@ export function useDashboardData(options: UseDashboardDataOptions): UseDashboard
             dateOfBirth: data.dateOfBirth?.toDate?.() || data.dateOfBirth,
             // Don't load progressNotes here - lazy load on demand
             progressNotes: [],
-          } as Patient;
+          } as unknown as Patient;
         });
 
         setPatients(loadedPatients);
@@ -177,21 +189,21 @@ export function useDashboardData(options: UseDashboardDataOptions): UseDashboard
     let weekAdmissions = 0;
 
     patients.forEach(patient => {
-      const unit = patient.admissionUnit as keyof typeof byUnit;
+      const unitKey = unitToKey(patient.unit);
       const patientInProgress = isInProgress(patient);
 
       // Count by unit
-      if (byUnit[unit]) {
-        byUnit[unit].total++;
+      if (unitKey && byUnit[unitKey]) {
+        byUnit[unitKey].total++;
         if (patientInProgress) {
-          byUnit[unit].inProgress++;
-          byUnit[unit].occupied++;
+          byUnit[unitKey].inProgress++;
+          byUnit[unitKey].occupied++;
         }
 
         // NICU specific
-        if (unit === 'NICU') {
-          if (patient.nicuAdmissionType === 'Inborn') byUnit.NICU.inborn++;
-          else if (patient.nicuAdmissionType === 'Outborn') byUnit.NICU.outborn++;
+        if (unitKey === 'NICU') {
+          if (patient.admissionType === AdmissionType.Inborn) byUnit.NICU.inborn++;
+          else if (patient.admissionType === AdmissionType.Outborn) byUnit.NICU.outborn++;
         }
       }
 
@@ -234,7 +246,7 @@ export function useDashboardData(options: UseDashboardDataOptions): UseDashboard
         admissionDate: data.admissionDate?.toDate?.() || data.admissionDate,
         dischargeDate: data.dischargeDate?.toDate?.() || data.dischargeDate,
         dateOfBirth: data.dateOfBirth?.toDate?.() || data.dateOfBirth,
-      } as Patient;
+      } as unknown as Patient;
 
       // Load progress notes (lazy loaded)
       const notesRef = collection(db, 'patients', patientId, 'progressNotes');
@@ -284,12 +296,12 @@ export function useFilteredPatients(
 
     // Filter by unit
     if (filters.unit) {
-      filtered = filtered.filter(p => p.admissionUnit === filters.unit);
+      filtered = filtered.filter(p => p.unit === filters.unit);
     }
 
     // Filter by NICU type
-    if (filters.unit === 'NICU' && filters.nicuType) {
-      filtered = filtered.filter(p => p.nicuAdmissionType === filters.nicuType);
+    if (filters.unit === Unit.NICU && filters.nicuType) {
+      filtered = filtered.filter(p => p.admissionType === filters.nicuType as AdmissionType);
     }
 
     // Filter by date
@@ -330,7 +342,7 @@ export function useFilteredPatients(
         p.name?.toLowerCase().includes(term) ||
         p.ntid?.toLowerCase().includes(term) ||
         p.diagnosis?.toLowerCase().includes(term) ||
-        p.mothersName?.toLowerCase().includes(term)
+        p.motherName?.toLowerCase().includes(term)
       );
     }
 

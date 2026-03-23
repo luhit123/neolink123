@@ -37,7 +37,7 @@ export interface PatientICD10 {
   assignedAt: string;
   assignedBy: string;
   assignedByName?: string;
-  source: 'template' | 'ai' | 'manual';
+  source: 'template' | 'ai' | 'manual' | 'history';
   aiConfidence?: number;
   notes?: string;
 }

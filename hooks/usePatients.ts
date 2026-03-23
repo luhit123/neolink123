@@ -63,7 +63,7 @@ const docToPatient = (doc: QueryDocumentSnapshot<DocumentData>): Patient => {
     admissionDate: data.admissionDate?.toDate?.() || data.admissionDate,
     dischargeDate: data.dischargeDate?.toDate?.() || data.dischargeDate,
     dateOfBirth: data.dateOfBirth?.toDate?.() || data.dateOfBirth,
-  } as Patient;
+  } as unknown as Patient;
 };
 
 // Helper: Get date range for filter
@@ -131,7 +131,7 @@ async function fetchPaginatedPatients(
 
   // Client-side filtering for complex filters that can't be done in Firestore
   if (nicuType && unit === 'NICU') {
-    patients = patients.filter(p => p.nicuAdmissionType === nicuType);
+    patients = patients.filter(p => p.admissionType === nicuType);
   }
 
   if (dateFilter && dateFilter !== 'all') {
@@ -145,7 +145,7 @@ async function fetchPaginatedPatients(
   }
 
   if (outcomeFilter === 'In Progress') {
-    patients = patients.filter(p => !p.outcome || p.outcome === '' || p.outcome === 'In Progress');
+    patients = patients.filter(p => !p.outcome || p.outcome === 'In Progress');
   }
 
   if (searchTerm) {
@@ -154,7 +154,7 @@ async function fetchPaginatedPatients(
       p.name?.toLowerCase().includes(term) ||
       p.ntid?.toLowerCase().includes(term) ||
       p.diagnosis?.toLowerCase().includes(term) ||
-      p.mothersName?.toLowerCase().includes(term)
+      p.motherName?.toLowerCase().includes(term)
     );
   }
 
@@ -351,7 +351,7 @@ export function useAnalyticsData(institutionId: string) {
         admissionDate: doc.data().admissionDate?.toDate?.() || doc.data().admissionDate,
         dischargeDate: doc.data().dischargeDate?.toDate?.() || doc.data().dischargeDate,
         dateOfBirth: doc.data().dateOfBirth?.toDate?.() || doc.data().dateOfBirth,
-      })) as Patient[];
+      })) as unknown as Patient[];
 
       setData({
         patients,

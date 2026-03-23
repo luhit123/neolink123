@@ -42,7 +42,8 @@ import {
   IconCheck,
   IconCopy,
   IconClipboard,
-  IconSun
+  IconSun,
+  IconClock
 } from '@tabler/icons-react';
 
 interface AIReportsPageProps {

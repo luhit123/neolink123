@@ -34,39 +34,39 @@ import { AppLoadingSkeleton, DashboardSkeleton } from './components/AppSkeleton'
 // Module-level flag to ensure redirect is handled only once per page load
 let redirectHandled = false;
 
+const FIRESTORE_TIMEOUT_MS = 10_000;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const OFFLINE_DOC = { exists: () => false, data: () => null, metadata: { fromCache: true } } as any;
+
 // Helper to get document using onSnapshot (handles offline gracefully)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getDocWithSnapshot = (docRef: any): Promise<any> => {
-  return new Promise((resolve, reject) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new Promise<any>((resolve, reject) => {
     const unsubscribe = onSnapshot(
       docRef,
       { includeMetadataChanges: true },
-      (snapshot) => {
-        unsubscribe(); // Only need first result
-        if (snapshot.metadata.fromCache) {
-          console.log('📦 Got document from cache:', docRef.path);
-        } else {
-          console.log('🌐 Got document from server:', docRef.path);
-        }
+      (snapshot: unknown) => {
+        unsubscribe();
         resolve(snapshot);
       },
-      (error) => {
+      (error: { code: string; message: string }) => {
         unsubscribe();
-        // For "unavailable" errors, don't reject - return empty doc
         if (error.code === 'unavailable') {
-          console.warn('⚠️ Firestore temporarily offline for:', docRef.path);
-          resolve({ exists: () => false, data: () => null, metadata: { fromCache: true } });
+          if (import.meta.env.DEV) console.warn('⚠️ Firestore offline:', docRef?.path);
+          resolve(OFFLINE_DOC);
         } else {
           reject(error);
         }
       }
     );
 
-    // Timeout fallback - if no response in 10s, return empty
     setTimeout(() => {
       unsubscribe();
-      console.warn('⚠️ Timeout waiting for document:', docRef.path);
-      resolve({ exists: () => false, data: () => null, metadata: { fromCache: true } });
-    }, 10000);
+      if (import.meta.env.DEV) console.warn('⚠️ Firestore timeout:', docRef?.path);
+      resolve(OFFLINE_DOC);
+    }, FIRESTORE_TIMEOUT_MS);
   });
 };
 

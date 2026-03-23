@@ -997,7 +997,6 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
         targetType: 'official',
         targetId: officialId,
         details: `Deleted official: ${officialName}`,
-        status: 'success',
       });
       setSuccess('Official deleted successfully');
       setTimeout(() => setSuccess(''), 3000);
@@ -1034,7 +1033,6 @@ const SuperAdminDashboardEnhanced: React.FC<SuperAdminDashboardEnhancedProps> = 
         targetType: 'official',
         targetId: official.id,
         details: `Reset password for official: ${official.displayName}`,
-        status: 'success',
       });
 
       setSuccess('Password reset successfully! New credentials are shown in the modal.');

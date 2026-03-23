@@ -200,7 +200,7 @@ const CollapsiblePatientCard: React.FC<CollapsiblePatientCardProps> = ({ patient
                 <label className="text-xs font-bold text-sky-600 uppercase tracking-wide mb-2 block">Admission Type</label>
                 <p className="text-sm text-sky-900 font-medium">{patient.admissionType}</p>
               </div>
-              {patient.admissionType === 'Outborn' && patient.referringHospital && (
+              {patient.admissionType != null && String(patient.admissionType).includes('Outborn') && patient.referringHospital && (
                 <div className="bg-white rounded-lg p-3 sm:p-4 border border-sky-200">
                   <label className="text-xs font-bold text-sky-600 uppercase tracking-wide mb-2 block">Referring Hospital</label>
                   <p className="text-sm text-sky-900 font-medium">{patient.referringHospital}</p>

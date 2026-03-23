@@ -4,7 +4,7 @@
  * Provides smart data fetching, caching, and state management.
  */
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Create a client with optimized settings
@@ -46,13 +46,6 @@ export { queryClient };
 
 // Provider component
 export const QueryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Clear all cached queries on page load/refresh to ensure fresh data
-  useEffect(() => {
-    // Invalidate all queries to force refetch with fresh server data
-    queryClient.invalidateQueries();
-    console.log('🔄 Query cache invalidated on page load');
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       {children}

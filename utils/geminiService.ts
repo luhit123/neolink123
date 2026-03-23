@@ -1,7 +1,5 @@
 import { Patient, ReferralDetails, ProgressNote, Medication } from '../types';
-
-// Get Gemini API key from environment variables
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+import { callGeminiProxy } from '../services/aiProxyClient';
 
 interface ReferralLetterParams {
   patient: Patient;
@@ -99,11 +97,6 @@ export async function generateReferralLetter(params: ReferralLetterParams): Prom
     referralDate
   } = params;
 
-  // Validate API key
-  if (!GEMINI_API_KEY) {
-    throw new Error('Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env file.');
-  }
-
   // Format patient age
   const patientAge = `${patient.age} ${patient.ageUnit}`;
 
@@ -182,71 +175,16 @@ Generate a COMPREHENSIVE clinical summary that includes:
 Write in a professional medical narrative format (not bullet points). Keep it detailed but concise (6-8 sentences). Use plain text only - NO markdown, NO bold, NO bullet points, NO asterisks. The summary should give the receiving institution a complete picture of the patient's journey and why this referral is necessary.`;
 
   try {
-    // Call Gemini API with Gemini 2.0 Flash Experimental model
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: prompt
-                }
-              ]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.4,
-            topK: 32,
-            topP: 1,
-            maxOutputTokens: 2048,
-          },
-          safetySettings: [
-            {
-              category: 'HARM_CATEGORY_HARASSMENT',
-              threshold: 'BLOCK_MEDIUM_AND_ABOVE'
-            },
-            {
-              category: 'HARM_CATEGORY_HATE_SPEECH',
-              threshold: 'BLOCK_MEDIUM_AND_ABOVE'
-            },
-            {
-              category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-              threshold: 'BLOCK_MEDIUM_AND_ABOVE'
-            },
-            {
-              category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-              threshold: 'BLOCK_MEDIUM_AND_ABOVE'
-            }
-          ]
-        })
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini API Error Response:', errorText);
-      let errorMessage = `API Error (${response.status}): ${response.statusText}`;
-
-      try {
-        const errorData = JSON.parse(errorText);
-        if (errorData.error?.message) {
-          errorMessage = errorData.error.message;
-        }
-      } catch (e) {
-        // If parsing fails, use the text as is
-        errorMessage = errorText || errorMessage;
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const data = await response.json();
+    const data = await callGeminiProxy({
+      model: 'gemini-2.0-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.4,
+        topK: 32,
+        topP: 1,
+        maxOutputTokens: 2048,
+      },
+    });
 
     // Extract the generated text
     if (data.candidates && data.candidates.length > 0) {
@@ -270,10 +208,6 @@ export async function generateClinicalSummary(
   condition: string,
   investigations?: string
 ): Promise<string> {
-  if (!GEMINI_API_KEY) {
-    throw new Error('Gemini API key is not configured.');
-  }
-
   const prompt = `Generate a concise clinical summary (2-3 sentences) based on:
 
 Diagnosis: ${diagnosis}
@@ -284,30 +218,11 @@ ${investigations ? `Investigations: ${investigations}` : ''}
 Make it professional and medically accurate, suitable for a referral letter.`;
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 256,
-          }
-        })
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini API Error:', errorText);
-      throw new Error(`Gemini API request failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
+    const data = await callGeminiProxy({
+      model: 'gemini-2.0-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 256 },
+    });
 
     if (data.candidates && data.candidates.length > 0) {
       return data.candidates[0].content.parts[0].text.trim();
@@ -324,28 +239,13 @@ Make it professional and medically accurate, suitable for a referral letter.`;
  * Test if Gemini API key is configured and working
  */
 export async function testGeminiConnection(): Promise<boolean> {
-  if (!GEMINI_API_KEY) {
-    return false;
-  }
-
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Hello' }] }],
-          generationConfig: {
-            maxOutputTokens: 10,
-          }
-        })
-      }
-    );
-
-    return response.ok;
+    await callGeminiProxy({
+      model: 'gemini-2.0-flash',
+      contents: [{ role: 'user', parts: [{ text: 'Hello' }] }],
+      generationConfig: { maxOutputTokens: 10 },
+    });
+    return true;
   } catch (error) {
     console.error('Gemini connection test failed:', error);
     return false;

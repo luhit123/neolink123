@@ -285,7 +285,7 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
       isCustom: true, // Flag to identify custom institutions
       phone: customInstitution.phone.trim(),
       address: customInstitution.address.trim()
-    } as Institution & { isCustom: boolean; phone?: string; address?: string };
+    } as unknown as Institution & { isCustom: boolean; phone?: string; address?: string };
 
     setSelectedInstitution(customInst);
     setShowCustomInstitutionForm(false);
@@ -1428,7 +1428,7 @@ const ReferralForm: React.FC<ReferralFormProps> = ({
               <option value="Pediatric Ward">Pediatric Ward</option>
               <option value="General Ward">General Ward</option>
             </select>
-            {selectedInstitution && selectedInstitution.facilities && selectedUnit && !selectedInstitution.facilities.includes(selectedUnit as Unit) && selectedUnit !== 'HDU' && selectedUnit !== 'Pediatric Ward' && selectedUnit !== 'General Ward' && (
+            {selectedInstitution && selectedInstitution.facilities && selectedUnit && !selectedInstitution.facilities.includes(selectedUnit as Unit) && (selectedUnit as string) !== 'HDU' && (selectedUnit as string) !== 'Pediatric Ward' && (selectedUnit as string) !== 'General Ward' && (
               <p className="text-orange-500 text-sm mt-1">
                 ⚠️ Note: {selectedInstitution.name} may not have {selectedUnit} facility. Please confirm availability.
               </p>

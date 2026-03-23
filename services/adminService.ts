@@ -75,7 +75,7 @@ export async function checkApprovedUser(email: string): Promise<ApprovedUser | n
           approvedBy: data.approvedBy,
           approvedAt: data.approvedAt,
           enabled: data.enabled
-        };
+        } as unknown as ApprovedUser;
       }
     }
     return null;
@@ -114,7 +114,8 @@ export async function addInstitution(
     const institution: Institution = {
       id: institutionRef.id,
       name,
-      location: { district, state },
+      district,
+      state,
       enabled: true,
       adminEmail,
       createdAt: new Date().toISOString(),

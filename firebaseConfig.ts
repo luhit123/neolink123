@@ -27,8 +27,11 @@ const requiredEnvVars = [
 
 const missingEnvVars = requiredEnvVars.filter(varName => !import.meta.env[varName]);
 if (missingEnvVars.length > 0) {
-  console.error('Missing required environment variables:', missingEnvVars.join(', '));
-  console.error('Please create a .env file based on .env.example and add your Firebase credentials.');
+  // Always show this error — missing Firebase config is a hard failure
+  throw new Error(
+    `Missing required Firebase environment variables: ${missingEnvVars.join(', ')}. ` +
+    'Create a .env file based on .env.example and add your Firebase credentials.'
+  );
 }
 
 // Initialize Firebase
@@ -52,37 +55,32 @@ const db = initializeFirestore(app, {
 export const authReady: Promise<void> = (async () => {
   try {
     await setPersistence(auth, browserLocalPersistence);
-    console.log('✅ Auth persistence set to localStorage');
+    if (import.meta.env.DEV) console.log('✅ Auth persistence set to localStorage');
   } catch (error) {
-    console.warn('⚠️ Failed to set auth persistence:', error);
+    if (import.meta.env.DEV) console.warn('⚠️ Failed to set auth persistence:', error);
     // Continue anyway - Firebase will use default persistence
   }
 })();
 
 // Check for redirect result AFTER persistence is ready
-// This ensures Firebase can find the stored redirect auth state
 export const pendingRedirectResult: Promise<UserCredential | null> = authReady
-  .then(() => {
-    console.log('🔄 Checking for pending redirect result...');
-    return getRedirectResult(auth);
-  })
+  .then(() => getRedirectResult(auth))
   .then((result) => {
-    if (result?.user) {
-      console.log('✅ Redirect result found:', result.user.email);
-    } else {
-      console.log('ℹ️ No pending redirect result');
+    if (import.meta.env.DEV) {
+      if (result?.user) console.log('✅ Redirect result found:', result.user.email);
+      else console.log('ℹ️ No pending redirect result');
     }
     return result;
   })
-  .catch((error) => {
-    console.error('❌ Error getting redirect result:', error.code, error.message);
-    // Re-throw so the error can be handled by the caller
+  .catch((error: Error & { code?: string }) => {
+    console.error('❌ Error getting redirect result:', (error as { code?: string }).code, error.message);
     throw error;
   });
 
 // Analytics loaded lazily only if needed
-let analytics: any = null;
-export const getAnalyticsInstance = async () => {
+import type { Analytics } from 'firebase/analytics';
+let analytics: Analytics | null = null;
+export const getAnalyticsInstance = async (): Promise<Analytics | null> => {
   if (!analytics && typeof window !== 'undefined') {
     const { getAnalytics } = await import('firebase/analytics');
     analytics = getAnalytics(app);
@@ -110,6 +108,7 @@ const functions = getFunctions(app, 'asia-southeast1');
 // connectFunctionsEmulator(functions, 'localhost', 5001);
 
 // Export all Firebase services
-export { app, db, auth, analytics, functions };
+export { app, db, auth, functions };
+// analytics is exported via getAnalyticsInstance to avoid eager loading
 
 export default app;

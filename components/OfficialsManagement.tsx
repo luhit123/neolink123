@@ -670,6 +670,7 @@ const OfficialsManagement: React.FC<OfficialsManagementProps> = ({ userEmail, in
       {/* Credentials Modal */}
       {showCredentialsModal && (
         <CredentialsModal
+          isOpen={showCredentialsModal}
           userName={createdCredentials.userName}
           userEmail={createdCredentials.userEmail}
           userID={createdCredentials.userID}

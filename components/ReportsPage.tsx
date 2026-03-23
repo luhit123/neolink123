@@ -488,7 +488,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({
                           <tr key={index} className="hover:bg-slate-50">
                             <td className="px-4 py-3">
                               <p className="font-medium text-slate-800">{patient.patient_name}</p>
-                              <p className="text-xs text-slate-500">{patient.ip_number || patient.ntid || '-'}</p>
+                              <p className="text-xs text-slate-500">{patient.ip_number || (patient as any).ntid || '-'}</p>
                             </td>
                             <td className="px-4 py-3 text-slate-600">{patient.unit || '-'}</td>
                             <td className="px-4 py-3">

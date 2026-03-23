@@ -14,7 +14,7 @@ interface AdvancedAnalyticsProps {
   };
 }
 
-type AnalyticsView = 'overview' | 'trends' | 'outcomes' | 'clinical' | 'demographics' | 'performance' | 'comparisons' | 'timeline';
+type AnalyticsView = 'overview' | 'trends' | 'outcomes' | 'clinical' | 'demographics' | 'performance' | 'comparisons' | 'timeline' | 'risk';
 
 interface DrillDownModal {
   title: string;
@@ -540,6 +540,38 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
     }));
   }, [diagnosisBreakdown, patients]);
 
+  // Risk stratification based on birth weight and age
+  const riskStratification = useMemo(() => {
+    const highRiskPatients = patients.filter(p =>
+      p.outcome === 'In Progress' && (
+        (p.weight != null && p.weight < 1.5) ||
+        (p.birthWeight != null && p.birthWeight < 1.5) ||
+        (p.ageUnit === 'days' && p.age < 1)
+      )
+    );
+
+    const mediumRiskPatients = patients.filter(p => {
+      if (p.outcome !== 'In Progress') return false;
+      if (highRiskPatients.includes(p)) return false;
+      const w = p.weight ?? p.birthWeight;
+      return (w != null && w >= 1.5 && w < 2.5) ||
+        (p.ageUnit === 'days' && p.age >= 1 && p.age < 7);
+    });
+
+    const lowRiskPatients = patients.filter(p =>
+      p.outcome === 'In Progress' &&
+      !highRiskPatients.includes(p) &&
+      !mediumRiskPatients.includes(p)
+    );
+
+    return {
+      high: highRiskPatients.length,
+      medium: mediumRiskPatients.length,
+      low: lowRiskPatients.length,
+      highRiskPatients,
+    };
+  }, [patients]);
+
   // Render KPI Card
   const KPICard = ({ title, value, subtitle, trend, icon, color, onClick, badge }: any) => (
     <div
@@ -914,7 +946,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent, value }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                    label={({ name, percent, value }) => `${name}: ${value} (${(((percent as number) ?? 0) * 100).toFixed(0)}%)`}
                     outerRadius={100}
                     dataKey="value"
                   >
@@ -1334,7 +1366,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent, value }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                    label={({ name, percent, value }) => `${name}: ${value} (${(((percent as number) ?? 0) * 100).toFixed(0)}%)`}
                     outerRadius={100}
                     dataKey="value"
                   />
@@ -1370,7 +1402,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent, value }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                      label={({ name, percent, value }) => `${name}: ${value} (${(((percent as number) ?? 0) * 100).toFixed(0)}%)`}
                       outerRadius={100}
                       dataKey="value"
                     >
@@ -1533,7 +1565,7 @@ const AdvancedAnalytics: React.FC<AdvancedAnalyticsProps> = ({ patients, selecte
                   cx="50%"
                   cy="50%"
                   labelLine={true}
-                  label={({ name, percent, value }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                  label={({ name, percent, value }) => `${name}: ${value} (${(((percent as number) ?? 0) * 100).toFixed(0)}%)`}
                   outerRadius={120}
                   dataKey="value"
                 />

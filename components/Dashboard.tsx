@@ -643,11 +643,17 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     // Apply Inborn/Outborn filter for NICU and SNCU.
     // In "All" mode, exclude unknown admission types so totals equal Inborn + Outborn.
+    // EXCEPTION: Step Down patients are ALWAYS kept — they are no longer in the
+    // unit but must remain visible in the Step Down panel regardless of admission type.
     if (selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) {
       if (nicuView !== 'All') {
-        baseFiltered = baseFiltered.filter(p => matchesAdmissionTypeFilter(p, nicuView));
+        baseFiltered = baseFiltered.filter(p =>
+          getCanonicalOutcome(p) === 'Step Down' || matchesAdmissionTypeFilter(p, nicuView)
+        );
       } else {
-        baseFiltered = baseFiltered.filter(p => getCanonicalAdmissionType(p) !== 'Unknown');
+        baseFiltered = baseFiltered.filter(p =>
+          getCanonicalOutcome(p) === 'Step Down' || getCanonicalAdmissionType(p) !== 'Unknown'
+        );
       }
     }
 
@@ -672,6 +678,20 @@ const Dashboard: React.FC<DashboardProps> = ({
     return baseUnitPatients.filter(p => isPatientAdmittedWithinRange(p, selectedDateRange));
   }, [baseUnitPatients, selectedDateRange]);
 
+  // Step Down patients — sourced from baseUnitPatients (NOT date-filtered unitPatients)
+  // so that a baby stepped down 3 days ago remains visible even if the date
+  // range picker is set to "Today".  Sorted most-recently-stepped-down first.
+  const stepDownPatients = useMemo(() =>
+    baseUnitPatients
+      .filter(p => getCanonicalOutcome(p) === 'Step Down')
+      .sort((a, b) => {
+        const dateA = new Date(a.stepDownDate || a.admissionDate).getTime();
+        const dateB = new Date(b.stepDownDate || b.admissionDate).getTime();
+        return dateB - dateA;
+      }),
+    [baseUnitPatients]
+  );
+
   // Apply outcome filter
   const filteredPatients = useMemo(() => {
     const outcomeOf = (patient: Patient) => getCanonicalOutcome(patient);
@@ -692,7 +712,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     );
 
     if ((selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) && nicuView !== 'All') {
-      filtered = filtered.filter(p => matchesAdmissionTypeFilter(p, nicuView));
+      filtered = filtered.filter(p => matchesAdmissionTypeFilter(p as unknown as Partial<Patient>, nicuView));
     } else if (selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) {
       filtered = filtered.filter(p => {
         const normalized = String(p.admissionType || '').trim().toLowerCase();
@@ -910,9 +930,9 @@ const Dashboard: React.FC<DashboardProps> = ({
         // Add required metadata fields for Firebase rules
         metadata: {
           ...(patientData as any).metadata,
-          createdBy: userEmail || userName || 'unknown',
+          createdBy: userEmail || displayName || 'unknown',
           createdAt: patientToEdit ? ((patientData as any).metadata?.createdAt || now) : now,
-          lastUpdatedBy: userEmail || userName || 'unknown',
+          lastUpdatedBy: userEmail || displayName || 'unknown',
           lastUpdatedAt: now
         }
       };
@@ -1190,7 +1210,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               motherName: observationPatient.motherName,
               dateOfBirth: observationPatient.dateOfBirth,
               unit: observationPatient.unit,
-              admissionType: observationPatient.admissionType || 'Inborn',
+              admissionType: (observationPatient.admissionType as AdmissionType) || AdmissionType.Inborn,
               institutionId: observationPatient.institutionId,
               admissionDate: now,
               admissionDateTime: now,
@@ -1492,10 +1512,18 @@ const Dashboard: React.FC<DashboardProps> = ({
             <p className="text-lg font-bold text-amber-600">{stats.referred}</p>
             <p className="text-[10px] text-slate-500">Referred</p>
           </div>
-          <div className="text-center py-2 px-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+          <button
+            className="text-center py-2 px-3 bg-white dark:bg-slate-800 rounded-xl border border-sky-200 dark:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition-colors w-full"
+            onClick={() => {
+              haptics.tap();
+              setOutcomeFilter('Step Down');
+              setShowPatientDetailsPage(true);
+              window.history.pushState({ page: 'patientList' }, '', window.location.pathname);
+            }}
+          >
             <p className="text-lg font-bold text-sky-600">{stats.stepDown}</p>
             <p className="text-[10px] text-slate-500">Step Down</p>
-          </div>
+          </button>
           <div className="text-center py-2 px-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
             <p className="text-lg font-bold text-purple-600">{activeObservationPatients.length}</p>
             <p className="text-[10px] text-slate-500">Observation</p>
@@ -1586,6 +1614,109 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="text-center py-2">
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     +{stats.inProgress - 5} more patients
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Step Down Panel ─────────────────────────────────────────────── */}
+        {/* Shows babies who are currently stepped down to postnatal/mother-side.
+            NOT counted in active patients. Stays visible so staff can track
+            the baby even days after the hand-over. */}
+        {userRole !== UserRole.Official && stepDownPatients.length > 0 && (
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-sky-200 dark:border-sky-800 p-4 md:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                {/* Static sky indicator — these babies are NOT active in the unit */}
+                <span className="w-2 h-2 bg-sky-400 rounded-full"></span>
+                Step Down
+                <span className="ml-1 text-sm font-semibold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/40 px-2 py-0.5 rounded-full border border-sky-200 dark:border-sky-700">
+                  {stepDownPatients.length}
+                </span>
+              </h3>
+              <button
+                onClick={() => {
+                  haptics.tap();
+                  setOutcomeFilter('Step Down');
+                  setShowPatientDetailsPage(true);
+                  window.history.pushState({ page: 'patientList' }, '', window.location.pathname);
+                }}
+                className="text-sky-600 dark:text-sky-400 text-sm font-medium hover:underline flex items-center gap-1"
+              >
+                View All
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 -mt-1">
+              Babies moved out of {selectedUnit} to postnatal ward / mother side. Not counted in active beds.
+            </p>
+
+            {/* Step Down patient rows */}
+            <div className="space-y-2">
+              {stepDownPatients.slice(0, 5).map((patient) => {
+                const stepDownDateStr = patient.stepDownDate
+                  ? new Date(patient.stepDownDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                  : '—';
+                const daysSince = patient.stepDownDate
+                  ? Math.floor((Date.now() - new Date(patient.stepDownDate).getTime()) / 86_400_000)
+                  : null;
+
+                return (
+                  <div
+                    key={patient.id}
+                    onClick={() => handleViewDetails(patient)}
+                    className="flex items-center justify-between p-3 bg-sky-50 dark:bg-sky-900/20 rounded-xl hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors cursor-pointer border border-sky-100 dark:border-sky-800"
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Sky-blue avatar — visually distinct from emerald active patients */}
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-400 to-cyan-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        {patient.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">{patient.name}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {getFormattedAge(patient.dateOfBirth, patient.age, patient.ageUnit)} | {patient.gender}
+                        </p>
+                        {patient.stepDownLocation && (
+                          <p className="text-xs text-sky-600 dark:text-sky-400 font-medium mt-0.5">
+                            → {patient.stepDownLocation}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-xs font-medium text-sky-700 dark:text-sky-300">
+                        {stepDownDateStr}
+                      </p>
+                      {daysSince !== null && (
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {daysSince === 0 ? 'Today' : daysSince === 1 ? '1 day ago' : `${daysSince} days ago`}
+                        </p>
+                      )}
+                      <span className="inline-block mt-1 text-[10px] font-semibold text-sky-600 dark:text-sky-400 bg-sky-100 dark:bg-sky-900/60 px-1.5 py-0.5 rounded-full">
+                        Step Down
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {stepDownPatients.length > 5 && (
+                <div className="text-center py-2">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    +{stepDownPatients.length - 5} more · <button
+                      className="text-sky-600 hover:underline"
+                      onClick={() => {
+                        haptics.tap();
+                        setOutcomeFilter('Step Down');
+                        setShowPatientDetailsPage(true);
+                      }}
+                    >View all</button>
                   </p>
                 </div>
               )}

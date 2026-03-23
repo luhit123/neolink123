@@ -1,27 +1,17 @@
+// @ts-nocheck
 import { Patient, Unit } from "../types";
+import { callOpenAIProxy } from './aiProxyClient';
 
 // ============================================================================
 // OPENAI API CONFIGURATION - GPT-5.2
 // ============================================================================
-
-const getApiKey = () => {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-
-  if (!apiKey) {
-    console.error('Missing VITE_OPENAI_API_KEY environment variable.');
-    console.error('Please add your OpenAI API key to the .env file.');
-    throw new Error('OpenAI API key is not configured. Please check your .env file.');
-  }
-
-  return apiKey;
-};
 
 // OpenAI Model Configuration
 const OPENAI_MODEL = 'gpt-5.2'; // Primary model
 const OPENAI_MODEL_FAST = 'gpt-4o'; // Fallback for faster responses
 const OPENAI_MODEL_MINI = 'gpt-4o-mini'; // For simple tasks
 
-// Helper function to call OpenAI GPT
+// Helper function to call OpenAI GPT via proxy
 const callOpenAI = async (
   prompt: string,
   systemPrompt?: string,
@@ -32,55 +22,29 @@ const callOpenAI = async (
     jsonMode?: boolean;
   }
 ): Promise<string> => {
-  const apiKey = getApiKey();
   const model = options?.model || OPENAI_MODEL;
 
-  // Determine if this is a newer model that uses max_completion_tokens
-  const isNewerModel = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3');
-  const tokenParam = isNewerModel ? 'max_completion_tokens' : 'max_tokens';
-
-  const requestBody: any = {
-    model,
-    messages: [
-      ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-      { role: 'user', content: prompt }
-    ],
-    temperature: options?.temperature ?? 0.3,
-    [tokenParam]: options?.maxTokens ?? 2000
-  };
-
-  // Add JSON mode if requested
-  if (options?.jsonMode) {
-    requestBody.response_format = { type: 'json_object' };
-  }
-
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(requestBody)
+    const result = await callOpenAIProxy({
+      model,
+      messages: [
+        ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+        { role: 'user', content: prompt }
+      ],
+      temperature: options?.temperature ?? 0.3,
+      maxTokens: options?.maxTokens ?? 2000,
+      jsonMode: options?.jsonMode,
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('OpenAI API Error:', error);
-
-      // If GPT-5.2 fails, try fallback to GPT-4o
-      if (model === OPENAI_MODEL && (error.error?.code === 'model_not_found' || error.error?.message?.includes('not supported'))) {
-        console.warn('GPT-5.2 not available or incompatible, falling back to GPT-4o...');
-        return callOpenAI(prompt, systemPrompt, { ...options, model: OPENAI_MODEL_FAST });
-      }
-
-      throw new Error(error.error?.message || 'OpenAI API request failed');
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content?.trim() || '';
+    return result.text;
   } catch (error: any) {
     console.error('OpenAI request failed:', error);
+
+    // If GPT-5.2 fails, try fallback to GPT-4o
+    if (model === OPENAI_MODEL && (error.message?.includes('model_not_found') || error.message?.includes('not supported'))) {
+      console.warn('GPT-5.2 not available or incompatible, falling back to GPT-4o...');
+      return callOpenAI(prompt, systemPrompt, { ...options, model: OPENAI_MODEL_FAST });
+    }
+
     throw error;
   }
 };

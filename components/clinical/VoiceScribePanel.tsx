@@ -59,6 +59,7 @@ export const VoiceScribePanel: React.FC<VoiceScribePanelProps> = ({
       return {
         age: patientAge,
         ageUnit: 'days',
+        gender: 'Unknown',
         unit: patientUnit || 'NICU'
       };
     }

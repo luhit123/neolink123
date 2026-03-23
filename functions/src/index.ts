@@ -34,8 +34,8 @@ export {
   onSuperAdminWrite,
 } from './userLookup';
 
-const RUNPOD_API_KEY = functions.config().runpod?.api_key || process.env.RUNPOD_API_KEY;
-const MEDASR_ENDPOINT_ID = functions.config().runpod?.medasr_endpoint || process.env.MEDASR_ENDPOINT_ID || 'tiv2evbbzqxdkg';
+const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
+const MEDASR_ENDPOINT_ID = process.env.MEDASR_ENDPOINT_ID || 'tiv2evbbzqxdkg';
 const RUNPOD_BASE_URL = 'https://api.runpod.io/v2';
 
 interface RunPodJobResponse {
@@ -229,6 +229,17 @@ export const authSystemStatus = functions.region(FUNCTION_REGION).https.onReques
     timestamp: new Date().toISOString(),
   });
 });
+
+// Export AI Proxy Functions
+export { geminiProxy, openaiProxy } from './aiProxy';
+
+// Export STT Proxy Functions
+export {
+  deepgramTranscribe,
+  elevenLabsTranscribe,
+  getDeepgramStreamKey,
+  getElevenLabsStreamKey,
+} from './sttProxy';
 
 /**
  * Verify Authentication Mode (Callable)

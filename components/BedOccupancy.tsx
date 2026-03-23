@@ -649,7 +649,7 @@ const BedOccupancy: React.FC<BedOccupancyProps> = ({ patients, bedCapacity, avai
             )}
 
             {/* Historical Trend View */}
-            {(timeRange !== 'current' || timeRange === 'custom') && historicalData.length > 0 && (
+            {timeRange !== 'current' && historicalData.length > 0 && (
                 <div className="space-y-4">
                     {/* State-of-the-Art Overflow Chart */}
                     <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-2xl border border-slate-700 p-4 md:p-6 overflow-hidden relative">

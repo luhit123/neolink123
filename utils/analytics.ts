@@ -92,6 +92,16 @@ export const getCanonicalOutcome = (patient: Partial<Patient>): PatientOutcome =
   const hasDischargeEvidence = !!(patient.finalDischargeDate || patient.dischargeDateTime || patient.savedDischargeSummary || patient.dischargeSavedAt);
   const hasStepDownEvidence = !!(patient.isStepDown || (patient.stepDownDate && !patient.readmissionFromStepDown));
 
+  // ── 1. Explicit "Step Down" outcome ────────────────────────────────
+  // When the clinician has explicitly marked outcome = "Step Down", honour it
+  // immediately.  A step-down baby may still carry a stale dischargeDateTime
+  // from their NICU stay — that must NOT flip them to 'Discharged'.
+  if (inferredRawOutcome === 'Step Down') {
+    if (hasDeathEvidence) return 'Deceased';   // death always wins
+    return 'Step Down';
+  }
+
+  // ── 2. Other explicit/evidence-based outcomes ────────────────────
   if (inferredRawOutcome === 'Deceased' || hasDeathEvidence) {
     return 'Deceased';
   }
@@ -104,17 +114,12 @@ export const getCanonicalOutcome = (patient: Partial<Patient>): PatientOutcome =
     return 'Discharged';
   }
 
-  if (inferredRawOutcome === 'Step Down') {
-    return 'Step Down';
-  }
-
   if (inferredRawOutcome === 'In Progress') {
     return 'In Progress';
   }
 
-  // When outcome text is absent/ambiguous, avoid inferring discharge from
-  // legacy `releaseDate` alone because many active records carry stale release
-  // timestamps. Prefer stronger clinical artifacts.
+  // ── 3. Fallback: no explicit outcome text — use field evidence ───
+  // Only reach here when outcome is blank/undefined/unrecognised.
   if (hasStepDownEvidence) return 'Step Down';
   return 'In Progress';
 };

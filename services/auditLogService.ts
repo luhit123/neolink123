@@ -96,12 +96,12 @@ export interface AuditLogEntry {
   severity: AuditSeverity;
 
   // User Information
-  userId: string;
-  userEmail: string;
-  userName: string;
-  userRole: string;
-  institutionId: string;
-  institutionName: string;
+  userId?: string;
+  userEmail?: string;
+  userName?: string;
+  userRole?: string;
+  institutionId?: string;
+  institutionName?: string;
 
   // Request Context
   ipAddress?: string;

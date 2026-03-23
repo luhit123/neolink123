@@ -251,13 +251,13 @@ const MedicationManagementPanel: React.FC<MedicationManagementPanelProps> = ({ u
         </div>
       );
     }
-    return <LoadingOverlay message="Loading medications..." />;
+    return <LoadingOverlay show={true} message="Loading medications..." />;
   }
 
   // Embedded panel content (for SuperAdmin Dashboard)
   const panelContent = (
     <>
-      {saving && !isEmbedded && <LoadingOverlay message={saveMessage} />}
+      {saving && !isEmbedded && <LoadingOverlay show={true} message={saveMessage} />}
       {saving && isEmbedded && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 shadow-xl">

@@ -125,8 +125,7 @@ describe('PatientForm Component', () => {
     });
 
     it('should identify doctor role correctly', () => {
-      const isDoctor = UserRole.Doctor === UserRole.Doctor ||
-                       UserRole.Admin === UserRole.Doctor;
+      const isDoctor = UserRole.Doctor === UserRole.Doctor;
       expect(isDoctor).toBe(true);
     });
 

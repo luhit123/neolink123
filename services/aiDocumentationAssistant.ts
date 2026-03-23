@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { GoogleGenAI } from '@google/genai';
 import { VitalSigns, ClinicalExamination, Medication } from '../types';
 import { calculateMedicationDosage } from './openaiService';

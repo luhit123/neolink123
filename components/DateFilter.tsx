@@ -8,13 +8,27 @@ export type DateFilterValue = {
 };
 
 interface DateFilterProps {
-  onFilterChange: (filter: DateFilterValue) => void;
+  /** Uncontrolled: called whenever the filter changes */
+  onFilterChange?: (filter: DateFilterValue) => void;
+  /** Controlled: current filter value */
+  value?: DateFilterValue;
+  /** Controlled: called when filter changes */
+  onChange?: (filter: DateFilterValue) => void;
 }
 
-const DateFilter: React.FC<DateFilterProps> = ({ onFilterChange }) => {
-  const [period, setPeriod] = useState<Period>('Today');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+const DateFilter: React.FC<DateFilterProps> = ({ onFilterChange, value, onChange }) => {
+  const [period, setPeriod] = useState<Period>(value?.period ?? 'Today');
+  const [startDate, setStartDate] = useState(value?.startDate ?? '');
+  const [endDate, setEndDate] = useState(value?.endDate ?? '');
+
+  // Sync controlled value into local state
+  useEffect(() => {
+    if (value) {
+      setPeriod(value.period);
+      setStartDate(value.startDate ?? '');
+      setEndDate(value.endDate ?? '');
+    }
+  }, [value]);
 
   const filterOptions = useMemo(() => {
     return [
@@ -26,19 +40,25 @@ const DateFilter: React.FC<DateFilterProps> = ({ onFilterChange }) => {
     ];
   }, []);
 
+  const notify = (filter: DateFilterValue) => {
+    onFilterChange?.(filter);
+    onChange?.(filter);
+  };
+
   useEffect(() => {
     if (period !== 'Custom') {
-      onFilterChange({ period });
+      notify({ period });
       setStartDate('');
       setEndDate('');
     } else {
       if (startDate && endDate) {
-        onFilterChange({ period: 'Custom', startDate, endDate });
+        notify({ period: 'Custom', startDate, endDate });
       } else {
-        onFilterChange({ period: 'Custom', startDate: undefined, endDate: undefined });
+        notify({ period: 'Custom', startDate: undefined, endDate: undefined });
       }
     }
-  }, [period, startDate, endDate, onFilterChange]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, startDate, endDate]);
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">

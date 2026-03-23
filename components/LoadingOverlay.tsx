@@ -76,47 +76,22 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ message = 'Please wait.
                 )}
             </div>
 
-            <style jsx>{`
+            <style>{`
                 @keyframes fadeIn {
-                    from {
-                        opacity: 0;
-                    }
-                    to {
-                        opacity: 1;
-                    }
+                    from { opacity: 0; }
+                    to { opacity: 1; }
                 }
-
                 @keyframes scaleIn {
-                    from {
-                        transform: scale(0.9);
-                        opacity: 0;
-                    }
-                    to {
-                        transform: scale(1);
-                        opacity: 1;
-                    }
+                    from { transform: scale(0.9); opacity: 0; }
+                    to { transform: scale(1); opacity: 1; }
                 }
-
                 @keyframes progress {
-                    0% {
-                        transform: translateX(-100%);
-                    }
-                    100% {
-                        transform: translateX(400%);
-                    }
+                    0% { transform: translateX(-100%); }
+                    100% { transform: translateX(400%); }
                 }
-
-                .animate-fadeIn {
-                    animation: fadeIn 0.2s ease-out;
-                }
-
-                .animate-scaleIn {
-                    animation: scaleIn 0.3s ease-out;
-                }
-
-                .animate-progress {
-                    animation: progress 1.5s ease-in-out infinite;
-                }
+                .animate-fadeIn { animation: fadeIn 0.2s ease-out; }
+                .animate-scaleIn { animation: scaleIn 0.3s ease-out; }
+                .animate-progress { animation: progress 1.5s ease-in-out infinite; }
             `}</style>
         </div>
     );

@@ -3,10 +3,24 @@ import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { haptics } from '../../utils/haptics';
 
+interface SwipeAction {
+  label: string;
+  color: string;
+  icon?: React.ReactNode;
+}
+
 interface SwipeableListItemProps {
   children: React.ReactNode;
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Alternative API: called on left-swipe gesture */
+  onSwipeLeft?: () => void;
+  /** Alternative API: called on right-swipe gesture */
+  onSwipeRight?: () => void;
+  /** Label/icon shown when swiping right (reveals from left) */
+  leftAction?: SwipeAction;
+  /** Label/icon shown when swiping left (reveals from right) */
+  rightAction?: SwipeAction;
   className?: string;
   threshold?: number;
 }
@@ -25,9 +39,16 @@ const SwipeableListItem: React.FC<SwipeableListItemProps> = ({
   children,
   onEdit,
   onDelete,
+  onSwipeLeft,
+  onSwipeRight,
+  leftAction,
+  rightAction,
   className = '',
   threshold = 80,
 }) => {
+  // Merge old and new APIs
+  const handleLeft = onSwipeLeft ?? onDelete;
+  const handleRight = onSwipeRight ?? onEdit;
   const [isRevealed, setIsRevealed] = useState(false);
   const x = useMotionValue(0);
   const backgroundColor = useTransform(
@@ -39,21 +60,21 @@ const SwipeableListItem: React.FC<SwipeableListItemProps> = ({
   const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const swipeDistance = info.offset.x;
 
-    // Right swipe - Edit
-    if (swipeDistance > threshold && onEdit) {
+    // Right swipe
+    if (swipeDistance > threshold && handleRight) {
       haptics.impact();
       setIsRevealed(true);
       setTimeout(() => {
-        onEdit();
+        handleRight();
         setIsRevealed(false);
       }, 200);
     }
-    // Left swipe - Delete
-    else if (swipeDistance < -threshold && onDelete) {
+    // Left swipe
+    else if (swipeDistance < -threshold && handleLeft) {
       haptics.warning();
       setIsRevealed(true);
       setTimeout(() => {
-        onDelete();
+        handleLeft();
         setIsRevealed(false);
       }, 200);
     } else {
@@ -68,29 +89,29 @@ const SwipeableListItem: React.FC<SwipeableListItemProps> = ({
         className="absolute inset-0 flex items-center justify-between px-6"
         style={{ backgroundColor }}
       >
-        {/* Edit Action (Right) */}
-        {onEdit && (
+        {/* Right-swipe Action (revealed from left) */}
+        {(handleRight) && (
           <motion.div
             className="flex items-center gap-2 text-white"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
           >
-            <IconEdit size={20} />
-            <span className="font-semibold">Edit</span>
+            {leftAction?.icon ?? <IconEdit size={20} />}
+            <span className="font-semibold">{leftAction?.label ?? 'Edit'}</span>
           </motion.div>
         )}
 
         <div className="flex-1" />
 
-        {/* Delete Action (Left) */}
-        {onDelete && (
+        {/* Left-swipe Action (revealed from right) */}
+        {(handleLeft) && (
           <motion.div
             className="flex items-center gap-2 text-white"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
           >
-            <span className="font-semibold">Delete</span>
-            <IconTrash size={20} />
+            <span className="font-semibold">{rightAction?.label ?? 'Delete'}</span>
+            {rightAction?.icon ?? <IconTrash size={20} />}
           </motion.div>
         )}
       </motion.div>
@@ -98,7 +119,7 @@ const SwipeableListItem: React.FC<SwipeableListItemProps> = ({
       {/* Swipeable Content */}
       <motion.div
         drag="x"
-        dragConstraints={{ left: onDelete ? -threshold * 1.2 : 0, right: onEdit ? threshold * 1.2 : 0 }}
+        dragConstraints={{ left: handleLeft ? -threshold * 1.2 : 0, right: handleRight ? threshold * 1.2 : 0 }}
         dragElastic={0.1}
         onDragEnd={handleDragEnd}
         style={{ x }}

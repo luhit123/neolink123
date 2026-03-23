@@ -12,12 +12,12 @@
  * - Pre-recorded transcription (batch)
  */
 
+import { callDeepgramTranscribe, getDeepgramStreamKey } from './aiProxyClient';
+
 /**
  * Check if Deepgram is configured
  */
-export const isDeepgramConfigured = (): boolean => {
-  return !!import.meta.env.VITE_DEEPGRAM_API_KEY;
-};
+export const isDeepgramConfigured = (): boolean => true;
 
 /**
  * Live streaming transcription connection
@@ -29,16 +29,6 @@ let isWebSocketReady = false; // Track WebSocket ready state
 let connectionRetryCount = 0;
 const MAX_RETRY_COUNT = 3;
 
-/**
- * Get Deepgram API key from environment
- */
-const getDeepgramApiKey = (): string => {
-  const apiKey = import.meta.env.VITE_DEEPGRAM_API_KEY;
-  if (!apiKey) {
-    throw new Error('Deepgram API key not configured. Please set VITE_DEEPGRAM_API_KEY in .env file');
-  }
-  return apiKey;
-};
 
 /**
  * Medical keywords and phrases to enhance transcription accuracy
@@ -603,53 +593,27 @@ export const transcribeWithDeepgram = async (
     onProgress?.('Initializing Deepgram transcription...');
     console.log('🎤 Sending audio to Deepgram for medical transcription...');
 
-    const apiKey = getDeepgramApiKey();
-
     onProgress?.('Processing audio...');
 
-    // Deepgram API endpoint for pre-recorded audio
-    const url = 'https://api.deepgram.com/v1/listen';
-
-    // Build query parameters
-    const params = new URLSearchParams({
-      model: 'nova-3', // Latest Nova-3 model with superior accuracy
-      punctuate: 'true', // Add punctuation
-      numerals: 'true', // Convert numbers to digits
-      profanity_filter: 'false', // Don't filter medical terms
-      diarize: 'false', // Single speaker
-      smart_format: 'true', // Smart formatting for better readability
-      utterances: 'false', // Don't split by utterances
-      language: 'en-US' // English (US)
+    // Convert blob to base64
+    const audioBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        const base64Data = result.includes(',') ? result.split(',')[1] : result;
+        resolve(base64Data);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(audioBlob);
     });
-
-    // Add medical keyterms (Nova-3 uses 'keyterm' instead of 'keywords')
-    // Limit to 100 terms to avoid URL length issues
-    MEDICAL_KEYWORDS.slice(0, 100).forEach(term => {
-      params.append('keyterm', term);
-    });
-
-    // Make request to Deepgram
-    const response = await fetch(`${url}?${params.toString()}`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${apiKey}`,
-        'Content-Type': audioBlob.type || 'audio/webm'
-      },
-      body: audioBlob
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Deepgram API error:', errorText);
-      throw new Error(`Deepgram API error: ${response.status} ${response.statusText}`);
-    }
 
     onProgress?.('Parsing transcription...');
 
-    const result = await response.json();
-
-    // Extract transcript from Deepgram response
-    const transcript = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+    const { transcript } = await callDeepgramTranscribe({
+      audioBase64,
+      mimeType: audioBlob.type || 'audio/webm',
+      keywords: MEDICAL_KEYWORDS.slice(0, 100),
+    });
 
     if (!transcript) {
       throw new Error('No transcription returned from Deepgram');
@@ -703,7 +667,7 @@ export const transcribeBase64 = async (
  */
 export const testDeepgramConnection = async (): Promise<boolean> => {
   try {
-    const apiKey = getDeepgramApiKey();
+    const { key: apiKey } = await getDeepgramStreamKey();
 
     // Test with Deepgram's balance endpoint
     const response = await fetch('https://api.deepgram.com/v1/projects', {
@@ -751,7 +715,7 @@ export const startLiveTranscription = async (
   onError?: (error: string) => void,
   onReady?: () => void
 ): Promise<MediaStream> => {
-  const apiKey = getDeepgramApiKey();
+  const { key: apiKey } = await getDeepgramStreamKey();
 
   // Reset state
   audioChunkBuffer = [];

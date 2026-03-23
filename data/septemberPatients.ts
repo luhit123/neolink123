@@ -1,5 +1,8 @@
 import { Patient, Unit, AgeUnit, AdmissionType } from '../types';
 
+// Placeholder institution for seed/demo data
+const SEED_INSTITUTION = { institutionId: 'demo', institutionName: 'Demo Institution' };
+
 // Helper to generate random date in September 2025
 const randomSeptDate = (day?: number) => {
   const d = day || Math.floor(Math.random() * 30) + 1;
@@ -30,6 +33,7 @@ export const generateSeptemberPatients = (): Patient[] => {
       outcome: ['In Progress', 'Discharged'][Math.floor(Math.random() * 2)] as any,
       unit: Unit.NICU,
       admissionType: AdmissionType.Inborn,
+      ...SEED_INSTITUTION,
     });
   }
 
@@ -50,6 +54,7 @@ export const generateSeptemberPatients = (): Patient[] => {
       outcome: ['In Progress', 'Discharged'][Math.floor(Math.random() * 2)] as any,
       unit: Unit.NICU,
       admissionType: AdmissionType.Inborn,
+      ...SEED_INSTITUTION,
     });
   }
 
@@ -72,7 +77,8 @@ export const generateSeptemberPatients = (): Patient[] => {
       unit: Unit.NICU,
       admissionType: AdmissionType.Outborn,
       referringHospital: hospitals[Math.floor(Math.random() * hospitals.length)],
-      referringDistrict: 'Nalbari'
+      referringDistrict: 'Nalbari',
+      ...SEED_INSTITUTION,
     });
   }
 
@@ -94,7 +100,8 @@ export const generateSeptemberPatients = (): Patient[] => {
       unit: Unit.NICU,
       admissionType: AdmissionType.Outborn,
       referringHospital: hospitals[Math.floor(Math.random() * hospitals.length)],
-      referringDistrict: 'Nalbari'
+      referringDistrict: 'Nalbari',
+      ...SEED_INSTITUTION,
     });
   }
 
@@ -116,6 +123,7 @@ export const generateSeptemberPatients = (): Patient[] => {
       }],
       outcome: ['In Progress', 'Discharged'][Math.floor(Math.random() * 2)] as any,
       unit: Unit.PICU,
+      ...SEED_INSTITUTION,
     });
   }
 

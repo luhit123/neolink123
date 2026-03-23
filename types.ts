@@ -25,7 +25,9 @@ export enum AgeUnit {
 export enum AdmissionType {
   Inborn = "Inborn",
   OutbornHealthFacility = "Outborn (Health Facility Referred)",
-  OutbornCommunity = "Outborn (Community Referred)"
+  OutbornCommunity = "Outborn (Community Referred)",
+  /** @deprecated Use OutbornHealthFacility or OutbornCommunity */
+  Outborn = "Outborn"
 }
 
 // Multiple Birth Types for twins, triplets, etc.
@@ -184,6 +186,12 @@ export interface ClinicalExamination {
   chest?: string; // Chest/Respiratory examination
   perAbdomen?: string; // Per Abdomen examination
   otherFindings?: string; // Other significant findings
+  // Additional examination fields
+  general?: string;
+  respiratory?: string;
+  cardiovascular?: string;
+  abdominal?: string;
+  skin?: string;
 }
 
 export interface Medication {
@@ -270,6 +278,10 @@ export interface ProgressNote {
   // Author tracking (for voice notes)
   authorEmail?: string; // Author's email
   authorName?: string; // Author's name
+
+  // Additional structured note fields
+  respiratorySupport?: Record<string, unknown>;
+  feeding?: Record<string, unknown>;
 }
 
 export interface EditHistory {
@@ -368,6 +380,7 @@ export interface Patient {
   stepDownDate?: string; // ISO string when stepped down
   stepDownFrom?: Unit; // Which unit they were stepped down from
   stepDownLocation?: string; // Where the patient was stepped down to (e.g., Mother Side, Ward)
+  stepDownBy?: string; // User who performed the step down
   isStepDown?: boolean; // Currently in step down status
   readmissionFromStepDown?: boolean; // Was readmitted from step down
   readmissionDate?: string; // ISO string when readmitted from step down
@@ -422,6 +435,39 @@ export interface Patient {
 
   // Medications - Master medication list for the patient
   medications?: Medication[]; // All medications for this patient (active + stopped)
+
+  // Administrative identifiers
+  ipNumber?: string; // IP (In-Patient) number / UHID
+
+  // Extended patient data fields (used by PDF/AI services)
+  ageInDays?: number; // Age in days for neonates
+  uhid?: string; // Universal Health ID (alias for ipNumber/ntid)
+  parentPhone?: string; // Parent contact number
+  parentMobile?: string; // Parent mobile number
+  mobileNumber?: string; // Contact number alias
+  timeOfDeath?: string; // Time of death (alias for dateOfDeath)
+  finalDiagnosis?: string; // Final clinical diagnosis at discharge/death
+  primaryDiagnosis?: string; // Primary diagnosis alias
+  apgarScore?: string | number; // APGAR score at birth
+  resuscitationRequired?: boolean; // Whether resuscitation was needed
+  resuscitationDetails?: string; // Details of resuscitation
+  vitalSigns?: Record<string, string | undefined>; // Admission vital signs snapshot
+  treatment?: string; // Treatment summary string
+  currentWeight?: number; // Current weight during admission
+  labInvestigations?: unknown[]; // Lab investigation records
+  gestationalAge?: number; // Gestational age in weeks (alias for gestationalAgeDays/7)
+
+  // Legacy / compatibility fields
+  /** @deprecated Use birthWeight. Birth weight in kg for analytics queries */
+  weight?: number;
+  /** @deprecated Use admissionDate */
+  dateOfAdmission?: string;
+  /** @deprecated Use referringHospital */
+  referredFrom?: string;
+  /** Birth type string for legacy imports (e.g. "Inborn" | "Outborn") */
+  birthType?: string;
+  /** Arbitrary metadata stored by some components (e.g. audit trail snapshots) */
+  metadata?: Record<string, unknown>;
 }
 
 export interface MonthlyAdmission {
@@ -491,6 +537,8 @@ export interface Institution {
   state?: string; // State name
 
   institutionType?: string; // Type of institution (Medical College, PHC, etc.)
+  isActive?: boolean; // Whether institution is active
+  enabled?: boolean; // Legacy alias for isActive
 
   // Discharge Settings
   dischargeLanguage?: string; // Regional language for discharge advice (default: 'english')
@@ -517,6 +565,7 @@ export interface PasswordResetRequest {
 }
 
 export interface InstitutionUser {
+  id?: string; // Firestore document ID (populated after fetch)
   uid: string; // Firebase user ID
   email: string;
   phoneNumber?: string; // Phone number for OTP login
@@ -607,6 +656,8 @@ export interface Referral {
   toInstitutionId: string;
   toInstitutionName: string;
   toUnit?: Unit; // Suggested unit for admission
+  /** @deprecated Use toInstitutionId */
+  toHospitalId?: string;
 
   // Referral Details
   referralDetails: ReferralDetails;
@@ -1330,3 +1381,27 @@ export interface ReportResponse {
   createdAt: string;
   isRead: boolean; // Has the official read this response
 }
+
+// ==================== COMPATIBILITY ALIASES ====================
+
+/**
+ * Hospital is an alias for Institution (used in HospitalManagement component).
+ * Firestore documents get an `id` field populated after fetch.
+ */
+export type Hospital = Institution & {
+  id: string;
+  email?: string;
+  contactNumber?: string;
+  pincode?: string;
+  isActive?: boolean;
+};
+
+/**
+ * ApprovedUser is an alias for InstitutionUser with a required Firestore document id.
+ * Used in InstitutionAdminPanel and admin service calls.
+ */
+export type ApprovedUser = InstitutionUser & {
+  id: string;
+  approvedBy?: string;
+  approvedAt?: string;
+};

@@ -376,7 +376,7 @@ const PatientDetailsPage: React.FC<PatientDetailsPageProps> = ({
 
     if (selectedUnit === Unit.NICU || selectedUnit === Unit.SNCU) {
       if (nicuView !== 'All') {
-        filtered = filtered.filter(p => matchesAdmissionTypeFilter(p, nicuView));
+        filtered = filtered.filter(p => matchesAdmissionTypeFilter(p as unknown as Partial<Patient>, nicuView));
       } else {
         filtered = filtered.filter(p => {
           const normalized = String(p.admissionType || '').trim().toLowerCase();

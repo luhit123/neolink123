@@ -1,6 +1,9 @@
 import { Patient, Unit, AgeUnit, AdmissionType } from '../types';
 import { generateSeptemberPatients } from './septemberPatients';
 
+// Placeholder institution for seed/demo data
+const SEED_INSTITUTION = { institutionId: 'demo', institutionName: 'Demo Institution' };
+
 export const initialPatients: Patient[] = [
   // Generate all anonymous September 2025 patients (194 patients)
   ...generateSeptemberPatients(),
@@ -53,6 +56,7 @@ export const initialPatients: Patient[] = [
     outcome: 'Deceased',
     unit: Unit.NICU,
     admissionType: AdmissionType.Inborn,
+    ...SEED_INSTITUTION,
   },
 
   // MORTALITY CASE 2 - Outborn NICU
@@ -107,7 +111,8 @@ export const initialPatients: Patient[] = [
     unit: Unit.NICU,
     admissionType: AdmissionType.Outborn,
     referringHospital: 'Sushrusha Hospital',
-    referringDistrict: 'Nalbari'
+    referringDistrict: 'Nalbari',
+    ...SEED_INSTITUTION,
   },
 
   // MORTALITY CASE 3 - PICU
@@ -156,5 +161,6 @@ export const initialPatients: Patient[] = [
     ],
     outcome: 'Deceased',
     unit: Unit.PICU,
+    ...SEED_INSTITUTION,
   }
 ];

@@ -156,7 +156,7 @@ const ChartsCard: React.FC<ChartsCardProps> = ({ deceasedPatients }) => {
                   outerRadius={80}
                   paddingAngle={2}
                   dataKey="value"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }) => `${name} ${(((percent as number) ?? 0) * 100).toFixed(0)}%`}
                   labelLine={false}
                 >
                   {chartData.units.map((_, index) => (

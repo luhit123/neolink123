@@ -96,7 +96,7 @@ export const ICD10Selector: React.FC<ICD10SelectorProps> = ({
   }, [patient.diagnosis, patient.id, clinicalText]);
 
   // Add a code
-  const handleAddCode = useCallback((code: ICD10Code, source: 'template' | 'ai' | 'manual' = 'manual', confidence?: number) => {
+  const handleAddCode = useCallback((code: ICD10Code, source: 'template' | 'ai' | 'manual' | 'history' = 'manual', confidence?: number) => {
     // Check if already selected
     if (selectedCodes.some(c => c.code === code.code)) return;
 

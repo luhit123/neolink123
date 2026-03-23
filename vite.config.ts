@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => {
+  // Only load non-VITE_ prefixed vars if you explicitly need them server-side
+  // For client-side, use import.meta.env.VITE_* directly
   const env = loadEnv(mode, '.', '');
   return {
     server: {
@@ -18,7 +20,7 @@ export default defineConfig(({ mode }) => {
         'Permissions-Policy': 'camera=(), microphone=(self), geolocation=()',
       },
       proxy: {
-        // Proxy RunPod API to bypass CORS (note: domain is api.runpod.AI)
+        // Proxy RunPod API to bypass CORS in development only
         '/api/runpod': {
           target: 'https://api.runpod.ai',
           changeOrigin: true,
@@ -29,15 +31,10 @@ export default defineConfig(({ mode }) => {
           },
           configure: (proxy) => {
             proxy.on('proxyReq', (proxyReq, req) => {
-              // Ensure Authorization header is forwarded
               const authHeader = req.headers['authorization'];
               if (authHeader) {
                 proxyReq.setHeader('Authorization', authHeader);
               }
-              console.log('🔀 Proxying to RunPod:', req.url);
-            });
-            proxy.on('proxyRes', (proxyRes) => {
-              console.log('📥 RunPod response:', proxyRes.statusCode);
             });
           },
         },
@@ -83,10 +80,7 @@ export default defineConfig(({ mode }) => {
       ],
     },
     plugins: [
-      react({
-        // Enable Fast Refresh for better DX
-        fastRefresh: true,
-      }),
+      react(),
       VitePWA({
         registerType: 'prompt', // Changed to 'prompt' for immediate update notification
         includeAssets: ['pwa-192.png', 'pwa-512.png', 'apple-touch-icon.png'],
@@ -182,9 +176,13 @@ export default defineConfig(({ mode }) => {
         }
       })
     ],
+    // NOTE: Do NOT expose raw API keys via define{}.
+    // Services that need GEMINI_API_KEY should read import.meta.env.VITE_GEMINI_API_KEY.
+    // If you must support process.env access in a legacy service, keep it behind a
+    // backend proxy instead of embedding the key in the client bundle.
     define: {
-      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+      'process.env.API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY ?? ''),
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY ?? '')
     },
     resolve: {
       alias: {

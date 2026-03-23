@@ -7,26 +7,12 @@
  * API Documentation: https://elevenlabs.io/docs/api-reference/speech-to-text
  */
 
-// ElevenLabs API configuration
-const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/speech-to-text';
-
-/**
- * Get ElevenLabs API key from environment
- */
-const getElevenLabsApiKey = (): string => {
-  const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
-  if (!apiKey) {
-    throw new Error('ElevenLabs API key not configured. Please set VITE_ELEVENLABS_API_KEY in .env file');
-  }
-  return apiKey;
-};
+import { callElevenLabsTranscribe, getElevenLabsStreamKey } from './aiProxyClient';
 
 /**
  * Check if ElevenLabs is configured
  */
-export const isElevenLabsConfigured = (): boolean => {
-  return !!import.meta.env.VITE_ELEVENLABS_API_KEY;
-};
+export const isElevenLabsConfigured = (): boolean => true;
 
 /**
  * Medical keyterms to improve transcription accuracy
@@ -152,66 +138,41 @@ export const transcribeWithElevenLabs = async (
     onProgress?.('Initializing ElevenLabs transcription...');
     console.log('🎤 Sending audio to ElevenLabs for transcription...');
 
-    const apiKey = getElevenLabsApiKey();
-
     // Convert webm to WAV for better compatibility
     onProgress?.('Converting audio format...');
     let audioToSend: Blob;
-    let filename: string;
+    let mimeType: string;
 
     try {
       audioToSend = await convertToWav(audioBlob);
-      filename = 'recording.wav';
+      mimeType = 'audio/wav';
       console.log('✅ Converted to WAV:', audioToSend.size, 'bytes');
     } catch (conversionError) {
       console.warn('WAV conversion failed, using original format:', conversionError);
       audioToSend = audioBlob;
-      filename = 'recording.webm';
+      mimeType = audioBlob.type || 'audio/webm';
     }
 
     onProgress?.('Uploading audio...');
 
-    // Create form data
-    const formData = new FormData();
-    formData.append('file', audioToSend, filename);
-    formData.append('model_id', 'scribe_v1');  // Use Scribe v1 model
-    formData.append('language_code', 'en');
-    formData.append('diarize', 'false');
-    formData.append('tag_audio_events', 'false');
-    formData.append('timestamps_granularity', 'none');
+    // Convert blob to base64
+    const audioBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        const base64Data = result.includes(',') ? result.split(',')[1] : result;
+        resolve(base64Data);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(audioToSend);
+    });
 
     onProgress?.('Transcribing with ElevenLabs Scribe...');
 
-    const response = await fetch(ELEVENLABS_API_URL, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': apiKey
-      },
-      body: formData
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('ElevenLabs API error:', errorText);
-      throw new Error(`ElevenLabs API error: ${response.status} ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    console.log('📤 ElevenLabs response:', result);
-
-    // Extract transcript from response
-    let transcript = '';
-
-    if (result.text) {
-      transcript = result.text;
-    } else if (result.transcription) {
-      transcript = result.transcription;
-    } else if (result.chunks && Array.isArray(result.chunks)) {
-      transcript = result.chunks.map((chunk: any) => chunk.text || '').join(' ');
-    }
+    const { transcript } = await callElevenLabsTranscribe({ audioBase64, mimeType });
 
     if (!transcript) {
-      console.warn('No transcript in response:', result);
+      console.warn('No transcript in response');
       throw new Error('No transcript returned from ElevenLabs');
     }
 
@@ -276,7 +237,7 @@ export const startLiveTranscription = async (
   // Reset state
   recordedChunks = [];
 
-  const apiKey = getElevenLabsApiKey();
+  const { key: apiKey } = await getElevenLabsStreamKey();
 
   // Get microphone
   console.log('🎤 Requesting microphone access...');
@@ -509,7 +470,7 @@ export const isLiveTranscriptionReady = (): boolean => {
  */
 export const testElevenLabsConnection = async (): Promise<boolean> => {
   try {
-    const apiKey = getElevenLabsApiKey();
+    const { key: apiKey } = await getElevenLabsStreamKey();
 
     // Test with a simple API call
     const response = await fetch('https://api.elevenlabs.io/v1/user', {

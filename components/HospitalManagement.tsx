@@ -703,7 +703,7 @@ const HospitalManagement: React.FC<HospitalManagementProps> = ({ userEmail, onBa
                         return (
                           <div key={unit} className="flex justify-between">
                             <span className="text-sky-600">{getLabel()}:</span>
-                            <span className="font-semibold text-sky-900">{capacity}</span>
+                            <span className="font-semibold text-sky-900">{capacity as number}</span>
                           </div>
                         );
                       })}

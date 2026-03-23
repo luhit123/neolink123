@@ -5,27 +5,12 @@
  * Optimized for clinical terminology and medical dictation
  */
 
-import { GoogleGenAI } from '@google/genai';
-
-let aiInstance: GoogleGenAI | null = null;
-
-const getAI = (): GoogleGenAI => {
-  if (!aiInstance) {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('Gemini API key not configured');
-    }
-    aiInstance = new GoogleGenAI({ apiKey });
-  }
-  return aiInstance;
-};
+import { callGeminiProxy } from './aiProxyClient';
 
 /**
  * Check if transcription service is configured
  */
-export const isMedAsrConfigured = (): boolean => {
-  return !!import.meta.env.VITE_GEMINI_API_KEY;
-};
+export const isMedAsrConfigured = (): boolean => true;
 
 /**
  * Transcribe audio using Gemini with medical terminology optimization
@@ -37,27 +22,7 @@ export const transcribeWithMedAsr = async (
   audioBase64: string,
   onProgress?: (status: string) => void
 ): Promise<string> => {
-  try {
-    onProgress?.('Initializing transcription...');
-    console.log('🎤 Sending audio to Gemini for medical transcription...');
-
-    const ai = getAI();
-
-    onProgress?.('Processing audio...');
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-pro',
-      contents: [{
-        role: 'user',
-        parts: [
-          {
-            inlineData: {
-              mimeType: 'audio/webm',
-              data: audioBase64
-            }
-          },
-          {
-            text: `You are an expert medical transcriptionist specialized in NICU/PICU clinical documentation. Transcribe this clinical dictation with 100% accuracy.
+  const PROMPT = `You are an expert medical transcriptionist specialized in NICU/PICU clinical documentation. Transcribe this clinical dictation with 100% accuracy.
 
 MEDICAL VOCABULARY TO RECOGNIZE:
 
@@ -110,13 +75,26 @@ RULES:
 2. Preserve all numbers and measurements precisely
 3. Use standard medical abbreviations where spoken
 4. Do NOT add any interpretation or formatting
-5. Return ONLY the transcribed text`
-          }
+5. Return ONLY the transcribed text`;
+
+  try {
+    onProgress?.('Initializing transcription...');
+    console.log('🎤 Sending audio to Gemini for medical transcription...');
+
+    onProgress?.('Processing audio...');
+
+    const response = await callGeminiProxy({
+      model: 'gemini-2.5-pro',
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: 'audio/webm', data: audioBase64 } },
+          { text: PROMPT }
         ]
       }]
     });
 
-    const transcription = response.text?.trim() || '';
+    const transcription = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 
     console.log('✅ Transcription complete:', transcription);
     onProgress?.('Transcription complete');

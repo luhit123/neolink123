@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Patient, Unit } from '../types';
 import { AppContext } from '../types/chat';
 

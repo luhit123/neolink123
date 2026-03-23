@@ -1,7 +1,6 @@
 import { Patient, ReferralDetails, ProgressNote, Medication } from '../types';
+import { callOpenAIProxy } from '../services/aiProxyClient';
 
-// Get OpenAI API key from environment variables
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const OPENAI_MODEL = 'gpt-5.2'; // Primary model
 
 interface ReferralLetterParams {
@@ -88,74 +87,38 @@ function extractAllMedications(notes: ProgressNote[]): Medication[] {
 }
 
 /**
- * Helper function to call OpenAI API
+ * Helper function to call OpenAI API via proxy
  */
 async function callOpenAI(prompt: string, systemPrompt?: string, maxTokens: number = 2048): Promise<string> {
-  if (!OPENAI_API_KEY) {
-    throw new Error('OpenAI API key is not configured. Please add VITE_OPENAI_API_KEY to your .env file.');
-  }
-
-  // Determine if this is a newer model that uses max_completion_tokens
-  const isNewerModel = OPENAI_MODEL.startsWith('gpt-5') || OPENAI_MODEL.startsWith('o1') || OPENAI_MODEL.startsWith('o3');
-  const tokenParam = isNewerModel ? 'max_completion_tokens' : 'max_tokens';
-
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
+    const result = await callOpenAIProxy({
+      model: OPENAI_MODEL,
+      messages: [
+        ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
+        { role: 'user' as const, content: prompt }
+      ],
+      temperature: 0.4,
+      maxTokens,
+    });
+    return result.text;
+  } catch (error: any) {
+    console.error('OpenAI request failed:', error);
+
+    // Fallback to GPT-4o if GPT-5.2 is not available or incompatible
+    if (error.message?.includes('model_not_found') || error.message?.includes('not supported')) {
+      console.warn('GPT-5.2 not available or incompatible, falling back to GPT-4o...');
+      const fallbackResult = await callOpenAIProxy({
+        model: 'gpt-4o',
         messages: [
-          ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-          { role: 'user', content: prompt }
+          ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
+          { role: 'user' as const, content: prompt }
         ],
         temperature: 0.4,
-        [tokenParam]: maxTokens
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('OpenAI API Error:', error);
-
-      // Fallback to GPT-4o if GPT-5.2 is not available or incompatible
-      if (error.error?.code === 'model_not_found' || error.error?.message?.includes('not supported')) {
-        console.warn('GPT-5.2 not available or incompatible, falling back to GPT-4o...');
-        const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${OPENAI_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            messages: [
-              ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-              { role: 'user', content: prompt }
-            ],
-            temperature: 0.4,
-            max_tokens: maxTokens
-          })
-        });
-
-        if (!fallbackResponse.ok) {
-          throw new Error('OpenAI API request failed');
-        }
-
-        const fallbackData = await fallbackResponse.json();
-        return fallbackData.choices?.[0]?.message?.content?.trim() || '';
-      }
-
-      throw new Error(error.error?.message || 'OpenAI API request failed');
+        maxTokens,
+      });
+      return fallbackResult.text;
     }
 
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content?.trim() || '';
-  } catch (error) {
-    console.error('OpenAI request failed:', error);
     throw error;
   }
 }
@@ -336,25 +299,13 @@ Make it professional and medically accurate, suitable for a referral letter.`;
  * Test if OpenAI API key is configured and working
  */
 export async function testOpenAIConnection(): Promise<boolean> {
-  if (!OPENAI_API_KEY) {
-    return false;
-  }
-
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: 'Hello' }],
-        max_tokens: 10
-      })
+    await callOpenAIProxy({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'Hello' }],
+      maxTokens: 10,
     });
-
-    return response.ok;
+    return true;
   } catch (error) {
     console.error('OpenAI connection test failed:', error);
     return false;

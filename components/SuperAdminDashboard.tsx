@@ -1491,7 +1491,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                           setNewAdminEmail('');
                           setNewAdminRoles([UserRole.Admin]);
                           setSelectedFacilities([Unit.NICU, Unit.PICU]);
-                          setSelectedDistrict(ASSAM_DISTRICTS[0]);
+                          setInstitutionAddress({});
                           setInstitutionType(INSTITUTION_TYPES[0]);
                           setCustomInstitutionType('');
                           setShowAddForm(false);
@@ -1511,7 +1511,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ userEmail, on
                         setNewAdminEmail('');
                         setNewAdminRoles([UserRole.Admin]);
                         setSelectedFacilities([Unit.NICU, Unit.PICU]);
-                        setSelectedDistrict(ASSAM_DISTRICTS[0]);
+                        setInstitutionAddress({});
                         setInstitutionType(INSTITUTION_TYPES[0]);
                         setCustomInstitutionType('');
                         setError('');

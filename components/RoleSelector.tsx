@@ -43,7 +43,7 @@ const RoleSelector: React.FC<RoleSelectorProps> = ({ userId, currentRole, userEm
             disabled={updating}
           >
             <option value={UserRole.SuperAdmin}>Super Administrator</option>
-            <option value={UserRole.InstitutionAdmin}>Institution Administrator</option>
+            <option value={UserRole.Admin}>Institution Administrator</option>
             <option value={UserRole.Admin}>Administrator</option>
             <option value={UserRole.Doctor}>Doctor</option>
             <option value={UserRole.Nurse}>Nurse</option>

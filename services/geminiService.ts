@@ -1,57 +1,18 @@
-import { GoogleGenAI } from "@google/genai";
 import { Patient } from "../types";
+import { callGeminiProxy, callOpenAIProxy } from './aiProxyClient';
 
-// ============================================================================
-// API KEY CONFIGURATION
-// ============================================================================
-
-const getApiKey = () => {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-  if (!apiKey) {
-    console.error('Missing VITE_GEMINI_API_KEY environment variable.');
-    console.error('Please add your Gemini API key to the .env file.');
-    throw new Error('Gemini API key is not configured. Please check your .env file.');
-  }
-
-  return apiKey;
-};
-
-const ai = new GoogleGenAI({ apiKey: getApiKey() });
-
-// OpenAI Configuration (fallback)
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
-
-// Helper function to call OpenAI GPT
+// Helper function to call OpenAI GPT via proxy
 const callOpenAI = async (prompt: string, systemPrompt?: string): Promise<string> => {
-  if (!OPENAI_API_KEY) {
-    throw new Error('OpenAI API key not configured');
-  }
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [
-        ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 1000
-    })
+  const result = await callOpenAIProxy({
+    model: 'gpt-4o',
+    messages: [
+      ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
+      { role: 'user' as const, content: prompt }
+    ],
+    temperature: 0.3,
+    maxTokens: 1000,
   });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || 'OpenAI API request failed');
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() || '';
+  return result.text;
 };
 
 // Smart AI call with automatic fallback
@@ -61,18 +22,18 @@ const generateWithFallback = async (
 ): Promise<string> => {
   // Try Gemini first
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text || '';
+    return response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
   } catch (geminiError: any) {
     // Check if it's a rate limit error (429)
     const isRateLimit = geminiError?.message?.includes('429') ||
                         geminiError?.message?.includes('RESOURCE_EXHAUSTED') ||
                         geminiError?.message?.includes('exhausted');
 
-    if (isRateLimit && OPENAI_API_KEY) {
+    if (isRateLimit) {
       console.warn('⚠️ Gemini rate limited, switching to OpenAI GPT...');
       try {
         const result = await callOpenAI(prompt, systemPrompt);
@@ -84,7 +45,7 @@ const generateWithFallback = async (
       }
     }
 
-    // Re-throw if not a rate limit error or no OpenAI key
+    // Re-throw if not a rate limit error
     throw geminiError;
   }
 };
@@ -172,11 +133,11 @@ Write 2-4 sentences with management recommendations and follow-up plan in paragr
 REMEMBER: Use ONLY the section headings shown above followed by paragraph text. NO symbols, NO bullets, NO dashes, NO dots except in sentences.`;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const result = response.text;
+    const result = (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
     setCachedResult(cacheKey, result);
     return result;
   } catch (error) {
@@ -210,11 +171,11 @@ export const getClinicalInsights = async (patient: Patient): Promise<string> => 
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const result = response.text + AI_DISCLAIMER;
+    const result = (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
     setCachedResult(cacheKey, result);
     return result;
   } catch (error) {
@@ -237,11 +198,11 @@ export const predictRisk = async (patient: Patient): Promise<{ riskLevel: 'Low' 
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const text = response.text.replace(/```json|```/g, '').trim();
+    const text = (response.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/```json|```/g, '') || '').trim();
     const result = JSON.parse(text);
     setCachedResult(cacheKey, result);
     return result;
@@ -282,11 +243,11 @@ export const generateDifferentialDiagnosis = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const result = response.text + AI_DISCLAIMER;
+    const result = (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
     setCachedResult(cacheKey, result);
     return result;
   } catch (error) {
@@ -324,11 +285,11 @@ export const recommendTreatmentProtocol = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const result = response.text + AI_DISCLAIMER;
+    const result = (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
     setCachedResult(cacheKey, result);
     return result;
   } catch (error) {
@@ -363,11 +324,11 @@ export const checkDrugInteractions = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const result = response.text + AI_DISCLAIMER;
+    const result = (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
     setCachedResult(cacheKey, result);
     return result;
   } catch (error) {
@@ -404,11 +365,11 @@ export const calculateMedicationDosage = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error calculating medication dosage:", error);
     return "Unable to calculate medication dosage at this time.";
@@ -444,11 +405,11 @@ export const detectClinicalDeterioration = async (patient: Patient): Promise<str
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error detecting deterioration:", error);
     return "Unable to assess clinical deterioration at this time.";
@@ -474,11 +435,11 @@ export const predictLengthOfStay = async (patient: Patient): Promise<string> => 
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error predicting length of stay:", error);
     return "Unable to predict length of stay at this time.";
@@ -512,11 +473,11 @@ export const assessStepDownReadiness = async (patient: Patient): Promise<string>
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error assessing step-down readiness:", error);
     return "Unable to assess step-down readiness at this time.";
@@ -543,11 +504,11 @@ export const predictReadmissionRisk = async (patient: Patient): Promise<string> 
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error predicting readmission risk:", error);
     return "Unable to predict readmission risk at this time.";
@@ -574,11 +535,11 @@ export const calculateSepsisRisk = async (patient: Patient, vitalSigns?: string)
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + "⚠️ CRITICAL: Sepsis is a medical emergency. This AI assessment does not replace clinical judgment. Escalate immediately if concerned.";
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || "") + "⚠️ CRITICAL: Sepsis is a medical emergency. This AI assessment does not replace clinical judgment. Escalate immediately if concerned.";
   } catch (error) {
     console.error("Error calculating sepsis risk:", error);
     return "Unable to calculate sepsis risk at this time.";
@@ -607,11 +568,11 @@ export const generateEarlyWarningScore = async (patient: Patient): Promise<strin
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error generating early warning score:", error);
     return "Unable to generate early warning score at this time.";
@@ -645,11 +606,11 @@ export const generateHandoffNote = async (patient: Patient, shiftType: 'day' | '
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error generating handoff note:", error);
     return "Unable to generate handoff note at this time.";
@@ -678,11 +639,11 @@ export const generateRoundingSheet = async (patients: Patient[], unit: string): 
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error generating rounding sheet:", error);
     return "Unable to generate rounding sheet at this time.";
@@ -706,11 +667,11 @@ export const structureProgressNote = async (rawText: string): Promise<string> =>
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error structuring progress note:", error);
     return "Unable to structure progress note at this time.";
@@ -738,11 +699,11 @@ export const extractPatientInfoFromText = async (text: string): Promise<any> => 
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const text = response.text.replace(/```json|```/g, '').trim();
+    const text = (response.candidates?.[0]?.content?.parts?.[0]?.text?.replace(/```json|```/g, '') || '').trim();
     return JSON.parse(text);
   } catch (error) {
     console.error("Error extracting patient info:", error);
@@ -793,11 +754,11 @@ export const generateMonthlyReport = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error generating monthly report:", error);
     return "Unable to generate monthly report at this time.";
@@ -824,11 +785,11 @@ export const generateDischargeInstructions = async (patient: Patient): Promise<s
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error generating discharge instructions:", error);
     return "Unable to generate discharge instructions at this time.";
@@ -858,11 +819,11 @@ export const generateMortalityReview = async (deceasedPatients: Patient[]): Prom
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error generating mortality review:", error);
     return "Unable to generate mortality review at this time.";
@@ -889,11 +850,11 @@ export const auditClinicalDocumentation = async (patient: Patient): Promise<stri
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error auditing documentation:", error);
     return "Unable to audit documentation at this time.";
@@ -930,11 +891,11 @@ export const findSimilarPatients = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error finding similar patients:", error);
     return "Unable to find similar patients at this time.";
@@ -965,11 +926,11 @@ export const explainDiagnosis = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error explaining diagnosis:", error);
     return "Unable to explain diagnosis at this time.";
@@ -991,11 +952,11 @@ export const suggestClinicalGuidelines = async (diagnosis: string): Promise<stri
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error suggesting guidelines:", error);
     return "Unable to suggest clinical guidelines at this time.";
@@ -1025,11 +986,11 @@ export const answerClinicalQuestion = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error answering clinical question:", error);
     return "Unable to answer clinical question at this time.";
@@ -1058,11 +1019,11 @@ export const validatePatientData = async (formData: Partial<Patient>): Promise<s
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || '');
   } catch (error) {
     console.error("Error validating patient data:", error);
     return "Unable to validate patient data at this time.";
@@ -1088,11 +1049,11 @@ export const suggestDiagnosis = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const suggestions = response.text
+    const suggestions = (response.candidates?.[0]?.content?.parts?.[0]?.text || '')
       .split(',')
       .map(s => s.trim())
       .filter(s => s.length > 0)
@@ -1144,7 +1105,7 @@ export const explainChartData = async (
 
   try {
     // Use OpenAI GPT as primary
-    if (OPENAI_API_KEY) {
+    try {
       const openAIResult = await callOpenAI(
         prompt,
         'You are NeolinkAI, an expert healthcare analytics assistant for NICU/PICU. Provide concise, clinically relevant insights. Do not use markdown formatting.'
@@ -1153,14 +1114,16 @@ export const explainChartData = async (
       setCachedResult(cacheKey, result);
       console.log("✅ Chart explanation generated using OpenAI GPT");
       return result;
+    } catch (openAIError) {
+      console.warn('OpenAI failed, falling back to Gemini:', openAIError);
     }
 
-    // Fallback to Gemini if OpenAI not configured
-    const response = await ai.models.generateContent({
+    // Fallback to Gemini if OpenAI not available
+    const response = await callGeminiProxy({
       model: 'gemini-2.0-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const result = response.text + AI_DISCLAIMER;
+    const result = (response.candidates?.[0]?.content?.parts?.[0]?.text || '') + AI_DISCLAIMER;
     setCachedResult(cacheKey, result);
     return result;
   } catch (error) {
@@ -1210,11 +1173,11 @@ export const interpretDeathDiagnosis = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    const result = response.text.trim();
+    const result = (response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '');
     setCachedResult(cacheKey, result);
     return result;
   } catch (error) {
@@ -1311,11 +1274,11 @@ export const analyzeDeathDiagnosisPatterns = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + "\n\n" + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || "") + "\n\n" + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error analyzing death diagnosis patterns:", error);
     return "Unable to analyze death diagnosis patterns at this time.";
@@ -1368,11 +1331,11 @@ export const analyzeIndividualMortality = async (patient: Patient): Promise<stri
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiProxy({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     });
-    return response.text + "\n\n" + AI_DISCLAIMER;
+    return (response.candidates?.[0]?.content?.parts?.[0]?.text || "") + "\n\n" + AI_DISCLAIMER;
   } catch (error) {
     console.error("Error analyzing individual mortality:", error);
     return "Unable to analyze individual mortality at this time.";

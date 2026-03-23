@@ -1,7 +1,6 @@
 "use strict";
-var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyAuthMode = exports.authSystemStatus = exports.healthCheck = exports.medAsrTranscribe = exports.onSuperAdminWrite = exports.onDistrictAdminWrite = exports.onInstitutionWrite = exports.onApprovedUserWrite = exports.onOfficialWrite = exports.migrateAllUsersToLookup = exports.syncUsersToFirebaseAuth = exports.autoFixPasswords = exports.initializeUserPassword = exports.getAuthAuditLogs = exports.changePassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.authenticateUser = exports.createSecureUser = void 0;
+exports.verifyAuthMode = exports.getElevenLabsStreamKey = exports.getDeepgramStreamKey = exports.elevenLabsTranscribe = exports.deepgramTranscribe = exports.openaiProxy = exports.geminiProxy = exports.authSystemStatus = exports.healthCheck = exports.medAsrTranscribe = exports.onSuperAdminWrite = exports.onDistrictAdminWrite = exports.onInstitutionWrite = exports.onApprovedUserWrite = exports.onOfficialWrite = exports.migrateAllUsersToLookup = exports.syncUsersToFirebaseAuth = exports.autoFixPasswords = exports.initializeUserPassword = exports.getAuthAuditLogs = exports.changePassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.authenticateUser = exports.createSecureUser = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -31,8 +30,8 @@ Object.defineProperty(exports, "onApprovedUserWrite", { enumerable: true, get: f
 Object.defineProperty(exports, "onInstitutionWrite", { enumerable: true, get: function () { return userLookup_1.onInstitutionWrite; } });
 Object.defineProperty(exports, "onDistrictAdminWrite", { enumerable: true, get: function () { return userLookup_1.onDistrictAdminWrite; } });
 Object.defineProperty(exports, "onSuperAdminWrite", { enumerable: true, get: function () { return userLookup_1.onSuperAdminWrite; } });
-const RUNPOD_API_KEY = ((_a = functions.config().runpod) === null || _a === void 0 ? void 0 : _a.api_key) || process.env.RUNPOD_API_KEY;
-const MEDASR_ENDPOINT_ID = ((_b = functions.config().runpod) === null || _b === void 0 ? void 0 : _b.medasr_endpoint) || process.env.MEDASR_ENDPOINT_ID || 'tiv2evbbzqxdkg';
+const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
+const MEDASR_ENDPOINT_ID = process.env.MEDASR_ENDPOINT_ID || 'tiv2evbbzqxdkg';
 const RUNPOD_BASE_URL = 'https://api.runpod.io/v2';
 /**
  * MedASR Transcription - Submit audio for transcription
@@ -177,6 +176,16 @@ exports.authSystemStatus = functions.region(FUNCTION_REGION).https.onRequest(asy
         timestamp: new Date().toISOString(),
     });
 });
+// Export AI Proxy Functions
+var aiProxy_1 = require("./aiProxy");
+Object.defineProperty(exports, "geminiProxy", { enumerable: true, get: function () { return aiProxy_1.geminiProxy; } });
+Object.defineProperty(exports, "openaiProxy", { enumerable: true, get: function () { return aiProxy_1.openaiProxy; } });
+// Export STT Proxy Functions
+var sttProxy_1 = require("./sttProxy");
+Object.defineProperty(exports, "deepgramTranscribe", { enumerable: true, get: function () { return sttProxy_1.deepgramTranscribe; } });
+Object.defineProperty(exports, "elevenLabsTranscribe", { enumerable: true, get: function () { return sttProxy_1.elevenLabsTranscribe; } });
+Object.defineProperty(exports, "getDeepgramStreamKey", { enumerable: true, get: function () { return sttProxy_1.getDeepgramStreamKey; } });
+Object.defineProperty(exports, "getElevenLabsStreamKey", { enumerable: true, get: function () { return sttProxy_1.getElevenLabsStreamKey; } });
 /**
  * Verify Authentication Mode (Callable)
  * Can be called from client to verify enterprise auth is working

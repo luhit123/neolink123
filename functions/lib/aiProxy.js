@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.openaiProxy = exports.geminiProxy = void 0;
 const functions = require("firebase-functions");
 const node_fetch_1 = require("node-fetch");
+const rateLimit_1 = require("./rateLimit");
 const FUNCTION_REGION = 'asia-southeast1';
 const getGeminiKey = () => process.env.GEMINI_API_KEY;
 const getOpenAIKey = () => process.env.OPENAI_API_KEY;
@@ -16,6 +17,7 @@ exports.geminiProxy = functions
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
     }
+    await (0, rateLimit_1.enforceUserRateLimit)(context.auth.uid, { action: 'geminiProxy', max: 60, windowMs: 60000 });
     const apiKey = getGeminiKey();
     if (!apiKey) {
         throw new functions.https.HttpsError('failed-precondition', 'Gemini API key not configured on server');
@@ -29,12 +31,17 @@ exports.geminiProxy = functions
         });
         if (!response.ok) {
             const errText = await response.text();
-            throw new Error(`Gemini API error ${response.status}: ${errText}`);
+            // Log full detail server-side; return a generic message to the client.
+            console.error(`Gemini API error ${response.status}: ${errText}`);
+            throw new functions.https.HttpsError('internal', 'AI request failed');
         }
         return await response.json();
     }
     catch (err) {
-        throw new functions.https.HttpsError('internal', err.message);
+        if (err instanceof functions.https.HttpsError)
+            throw err;
+        console.error('geminiProxy error:', (err === null || err === void 0 ? void 0 : err.message) || err);
+        throw new functions.https.HttpsError('internal', 'AI request failed');
     }
 });
 /**
@@ -48,6 +55,7 @@ exports.openaiProxy = functions
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
     }
+    await (0, rateLimit_1.enforceUserRateLimit)(context.auth.uid, { action: 'openaiProxy', max: 60, windowMs: 60000 });
     const apiKey = getOpenAIKey();
     if (!apiKey) {
         throw new functions.https.HttpsError('failed-precondition', 'OpenAI API key not configured on server');
@@ -73,15 +81,19 @@ exports.openaiProxy = functions
             body: JSON.stringify(body),
         });
         if (!response.ok) {
-            const err = await response.json();
-            throw new Error(((_c = err === null || err === void 0 ? void 0 : err.error) === null || _c === void 0 ? void 0 : _c.message) || `OpenAI error ${response.status}`);
+            const err = await response.json().catch(() => ({}));
+            console.error('OpenAI error', response.status, ((_c = err === null || err === void 0 ? void 0 : err.error) === null || _c === void 0 ? void 0 : _c.message) || '');
+            throw new functions.https.HttpsError('internal', 'AI request failed');
         }
         const result = await response.json();
         const text = ((_g = (_f = (_e = (_d = result.choices) === null || _d === void 0 ? void 0 : _d[0]) === null || _e === void 0 ? void 0 : _e.message) === null || _f === void 0 ? void 0 : _f.content) === null || _g === void 0 ? void 0 : _g.trim()) || '';
         return { text, usage: result.usage };
     }
     catch (err) {
-        throw new functions.https.HttpsError('internal', err.message);
+        if (err instanceof functions.https.HttpsError)
+            throw err;
+        console.error('openaiProxy error:', (err === null || err === void 0 ? void 0 : err.message) || err);
+        throw new functions.https.HttpsError('internal', 'AI request failed');
     }
 });
 //# sourceMappingURL=aiProxy.js.map

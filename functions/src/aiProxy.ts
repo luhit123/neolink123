@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions';
 import fetch from 'node-fetch';
+import { enforceUserRateLimit } from './rateLimit';
 
 const FUNCTION_REGION = 'asia-southeast1';
 
@@ -20,6 +21,7 @@ export const geminiProxy = functions
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
     }
+    await enforceUserRateLimit(context.auth.uid, { action: 'geminiProxy', max: 60, windowMs: 60_000 });
     const apiKey = getGeminiKey();
     if (!apiKey) {
       throw new functions.https.HttpsError('failed-precondition', 'Gemini API key not configured on server');
@@ -39,12 +41,16 @@ export const geminiProxy = functions
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`Gemini API error ${response.status}: ${errText}`);
+        // Log full detail server-side; return a generic message to the client.
+        console.error(`Gemini API error ${response.status}: ${errText}`);
+        throw new functions.https.HttpsError('internal', 'AI request failed');
       }
 
       return await response.json();
     } catch (err: any) {
-      throw new functions.https.HttpsError('internal', err.message);
+      if (err instanceof functions.https.HttpsError) throw err;
+      console.error('geminiProxy error:', err?.message || err);
+      throw new functions.https.HttpsError('internal', 'AI request failed');
     }
   });
 
@@ -64,6 +70,7 @@ export const openaiProxy = functions
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
     }
+    await enforceUserRateLimit(context.auth.uid, { action: 'openaiProxy', max: 60, windowMs: 60_000 });
     const apiKey = getOpenAIKey();
     if (!apiKey) {
       throw new functions.https.HttpsError('failed-precondition', 'OpenAI API key not configured on server');
@@ -92,14 +99,17 @@ export const openaiProxy = functions
       });
 
       if (!response.ok) {
-        const err: any = await response.json();
-        throw new Error(err?.error?.message || `OpenAI error ${response.status}`);
+        const err: any = await response.json().catch(() => ({}));
+        console.error('OpenAI error', response.status, err?.error?.message || '');
+        throw new functions.https.HttpsError('internal', 'AI request failed');
       }
 
       const result: any = await response.json();
       const text: string = result.choices?.[0]?.message?.content?.trim() || '';
       return { text, usage: result.usage };
     } catch (err: any) {
-      throw new functions.https.HttpsError('internal', err.message);
+      if (err instanceof functions.https.HttpsError) throw err;
+      console.error('openaiProxy error:', err?.message || err);
+      throw new functions.https.HttpsError('internal', 'AI request failed');
     }
   });

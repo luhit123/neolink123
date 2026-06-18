@@ -1,7 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
 import fetch from 'node-fetch';
+import { enforceUserRateLimit } from './rateLimit';
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -20,9 +20,11 @@ export {
   changePassword,
   getAuthAuditLogs,
   initializeUserPassword,
-  autoFixPasswords,
-  syncUsersToFirebaseAuth,
 } from './auth';
+// SECURITY: `autoFixPasswords` and `syncUsersToFirebaseAuth` were unauthenticated
+// onRequest endpoints that could set/reset credentials for any account (including
+// SuperAdmins) — a full account-takeover vector. They have been removed. One-off
+// migrations must be run locally via the Admin SDK, never exposed as a deployed HTTP endpoint.
 
 // Export Scalable User Lookup Functions & Triggers
 export {
@@ -58,7 +60,7 @@ interface RunPodStatusResponse {
  * MedASR Transcription - Submit audio for transcription
  */
 export const medAsrTranscribe = functions.region(FUNCTION_REGION).https.onCall(async (data, context) => {
-  // Verify authentication (optional but recommended)
+  // Verify authentication
   if (!context.auth) {
     throw new functions.https.HttpsError(
       'unauthenticated',
@@ -66,12 +68,23 @@ export const medAsrTranscribe = functions.region(FUNCTION_REGION).https.onCall(a
     );
   }
 
+  // Limit paid transcription calls per user (cost-DoS protection).
+  await enforceUserRateLimit(context.auth.uid, { action: 'medAsrTranscribe', max: 60, windowMs: 60_000 });
+
   const { audio } = data;
 
-  if (!audio) {
+  if (!audio || typeof audio !== 'string') {
     throw new functions.https.HttpsError(
       'invalid-argument',
       'Audio data is required'
+    );
+  }
+
+  // ~35 MB of base64 ≈ 25 MB of audio.
+  if (audio.length > 35 * 1024 * 1024) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Audio payload too large'
     );
   }
 
@@ -161,73 +174,20 @@ export const medAsrTranscribe = functions.region(FUNCTION_REGION).https.onCall(a
  * Health check endpoint
  */
 export const healthCheck = functions.region(FUNCTION_REGION).https.onRequest((req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'MedASR Proxy',
-    configured: !!RUNPOD_API_KEY
-  });
+  // SECURITY: do not disclose whether secrets are configured or any internal state
+  // to unauthenticated callers.
+  res.json({ status: 'ok' });
 });
 
 /**
  * Authentication System Status
- * Returns information about which authentication mode is active
+ * Lightweight liveness probe. Previously this UNAUTHENTICATED endpoint leaked
+ * internal config (bcrypt rounds, rate-limit thresholds, lookup-table size, and
+ * the timestamp of the last auth activity) to anyone on the internet — useful
+ * reconnaissance for an attacker. It now returns only liveness.
  */
 export const authSystemStatus = functions.region(FUNCTION_REGION).https.onRequest(async (req, res) => {
-  const db = getFirestore('neolink');
-
-  // Check if userLookup collection exists and has data
-  const lookupSnapshot = await db.collection('userLookup').limit(1).get();
-  const hasLookupTable = !lookupSnapshot.empty;
-
-  // Count entries in lookup table
-  const lookupCount = hasLookupTable
-    ? (await db.collection('userLookup').count().get()).data().count
-    : 0;
-
-  // Check audit logs for recent activity
-  const recentAuditLogs = await db.collection('authAuditLogs')
-    .orderBy('timestamp', 'desc')
-    .limit(5)
-    .get();
-
-  res.json({
-    status: 'ok',
-    authSystem: 'ENTERPRISE_GRADE',
-    version: '2.0.0',
-    features: {
-      bcryptHashing: true,
-      bcryptRounds: 12,
-      rateLimiting: {
-        enabled: true,
-        maxAttempts: 5,
-        windowMinutes: 15,
-      },
-      accountLockout: {
-        enabled: true,
-        lockoutMinutes: 30,
-      },
-      auditLogging: true,
-      customClaims: true,
-      serverSideAuth: true,
-    },
-    scalability: {
-      lookupTableEnabled: hasLookupTable,
-      lookupTableEntries: lookupCount,
-      lookupComplexity: 'O(1)',
-      autoSyncTriggers: [
-        'onOfficialWrite',
-        'onApprovedUserWrite',
-        'onInstitutionWrite',
-        'onDistrictAdminWrite',
-        'onSuperAdminWrite',
-      ],
-    },
-    recentActivity: {
-      auditLogsCount: recentAuditLogs.size,
-      lastActivity: recentAuditLogs.docs[0]?.data()?.timestamp || null,
-    },
-    timestamp: new Date().toISOString(),
-  });
+  res.json({ status: 'ok' });
 });
 
 // Export AI Proxy Functions
@@ -246,43 +206,24 @@ export {
  * Can be called from client to verify enterprise auth is working
  */
 export const verifyAuthMode = functions.region(FUNCTION_REGION).https.onCall(async (data, context) => {
-  const db = getFirestore('neolink');
+  // SECURITY: only reflect the CALLER's own claims; require authentication and do
+  // not disclose lookup-table size or other internal counts to arbitrary callers.
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+  }
 
-  // Check lookup table status
-  const lookupCount = (await db.collection('userLookup').count().get()).data().count;
-
-  // If authenticated, return user info
-  let userInfo = null;
-  if (context.auth) {
-    userInfo = {
+  return {
+    authMode: 'ENTERPRISE',
+    authenticated: true,
+    user: {
       uid: context.auth.uid,
       email: context.auth.token.email,
-      role: context.auth.token.role,
+      role: context.auth.token.role || null,
       customClaims: {
         role: context.auth.token.role || null,
         institutionId: context.auth.token.institutionId || null,
         userID: context.auth.token.userID || null,
       },
-    };
-  }
-
-  return {
-    authMode: 'ENTERPRISE',
-    serverSideValidation: true,
-    passwordStorage: 'bcrypt_hashed',
-    lookupTableStatus: lookupCount > 0 ? 'active' : 'pending_migration',
-    lookupTableEntries: lookupCount,
-    authenticated: !!context.auth,
-    user: userInfo,
-    securityFeatures: [
-      'bcrypt_password_hashing',
-      'server_side_authentication',
-      'rate_limiting',
-      'account_lockout',
-      'audit_logging',
-      'custom_claims_rbac',
-      'o1_user_lookup',
-    ],
-    timestamp: new Date().toISOString(),
+    },
   };
 });

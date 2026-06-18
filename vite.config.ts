@@ -176,14 +176,11 @@ export default defineConfig(({ mode }) => {
         }
       })
     ],
-    // NOTE: Do NOT expose raw API keys via define{}.
-    // Services that need GEMINI_API_KEY should read import.meta.env.VITE_GEMINI_API_KEY.
-    // If you must support process.env access in a legacy service, keep it behind a
-    // backend proxy instead of embedding the key in the client bundle.
-    define: {
-      'process.env.API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY ?? ''),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY ?? '')
-    },
+    // SECURITY: the previous define{} block hardcoded the real Gemini API key into the
+    // production JS bundle (process.env.API_KEY / process.env.GEMINI_API_KEY), exposing
+    // it to anyone who opened the app. No client code reads those globals — the secret
+    // belongs only on the server (functions/src/aiProxy.ts via process.env). Removed.
+    // AI calls from the client must go through the authenticated Cloud Function proxies.
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

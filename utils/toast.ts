@@ -50,15 +50,18 @@ export function showToast(
     error: '✕'
   };
 
-  // Build toast HTML
-  toast.innerHTML = `
-    <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xl font-bold flex-shrink-0">
-      ${icons[type]}
-    </div>
-    <div class="flex-1 font-medium text-sm leading-tight">
-      ${message}
-    </div>
-  `;
+  // Build toast via DOM nodes. SECURITY: the message is set with textContent (never
+  // innerHTML) so a toast string that happens to contain markup (e.g. an error echoing
+  // user/patient input) cannot inject HTML/script into the page.
+  const iconEl = document.createElement('div');
+  iconEl.className = 'w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xl font-bold flex-shrink-0';
+  iconEl.textContent = icons[type];
+
+  const msgEl = document.createElement('div');
+  msgEl.className = 'flex-1 font-medium text-sm leading-tight';
+  msgEl.textContent = message;
+
+  toast.replaceChildren(iconEl, msgEl);
 
   // Initial state (invisible)
   toast.style.opacity = '0';

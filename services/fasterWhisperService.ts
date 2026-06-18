@@ -10,6 +10,7 @@
  */
 
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getAuth } from 'firebase/auth';
 
 // RunPod configuration - Note: domain is api.runpod.AI (not .io)
 const RUNPOD_ENDPOINT_ID = 'zaksh05iky86bv';
@@ -45,7 +46,13 @@ export const isFasterWhisperConfigured = (): boolean => {
  */
 const uploadAudioToStorage = async (audioBlob: Blob): Promise<{ url: string; filePath: string }> => {
   const storage = getStorage();
-  const fileName = `temp-audio/${Date.now()}-${Math.random().toString(36).substring(7)}.webm`;
+  // SECURITY: scope temp audio under the caller's own uid so Storage rules can restrict
+  // each user to their own scratch space (no cross-user read/overwrite/delete).
+  const uid = getAuth().currentUser?.uid;
+  if (!uid) {
+    throw new Error('Must be signed in to upload audio for transcription');
+  }
+  const fileName = `temp-audio/${uid}/${Date.now()}-${Math.random().toString(36).substring(7)}.webm`;
   const storageRef = ref(storage, fileName);
 
   // Upload the blob

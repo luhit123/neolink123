@@ -1,10 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyAuthMode = exports.getElevenLabsStreamKey = exports.getDeepgramStreamKey = exports.elevenLabsTranscribe = exports.deepgramTranscribe = exports.openaiProxy = exports.geminiProxy = exports.authSystemStatus = exports.healthCheck = exports.medAsrTranscribe = exports.onSuperAdminWrite = exports.onDistrictAdminWrite = exports.onInstitutionWrite = exports.onApprovedUserWrite = exports.onOfficialWrite = exports.migrateAllUsersToLookup = exports.syncUsersToFirebaseAuth = exports.autoFixPasswords = exports.initializeUserPassword = exports.getAuthAuditLogs = exports.changePassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.authenticateUser = exports.createSecureUser = void 0;
+exports.verifyAuthMode = exports.getElevenLabsStreamKey = exports.getDeepgramStreamKey = exports.elevenLabsTranscribe = exports.deepgramTranscribe = exports.openaiProxy = exports.geminiProxy = exports.authSystemStatus = exports.healthCheck = exports.medAsrTranscribe = exports.onSuperAdminWrite = exports.onDistrictAdminWrite = exports.onInstitutionWrite = exports.onApprovedUserWrite = exports.onOfficialWrite = exports.migrateAllUsersToLookup = exports.initializeUserPassword = exports.getAuthAuditLogs = exports.changePassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.authenticateUser = exports.createSecureUser = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const firestore_1 = require("firebase-admin/firestore");
 const node_fetch_1 = require("node-fetch");
+const rateLimit_1 = require("./rateLimit");
 // Initialize Firebase Admin
 admin.initializeApp();
 // ============================================================================
@@ -20,8 +20,10 @@ Object.defineProperty(exports, "bulkMigratePasswords", { enumerable: true, get: 
 Object.defineProperty(exports, "changePassword", { enumerable: true, get: function () { return auth_1.changePassword; } });
 Object.defineProperty(exports, "getAuthAuditLogs", { enumerable: true, get: function () { return auth_1.getAuthAuditLogs; } });
 Object.defineProperty(exports, "initializeUserPassword", { enumerable: true, get: function () { return auth_1.initializeUserPassword; } });
-Object.defineProperty(exports, "autoFixPasswords", { enumerable: true, get: function () { return auth_1.autoFixPasswords; } });
-Object.defineProperty(exports, "syncUsersToFirebaseAuth", { enumerable: true, get: function () { return auth_1.syncUsersToFirebaseAuth; } });
+// SECURITY: `autoFixPasswords` and `syncUsersToFirebaseAuth` were unauthenticated
+// onRequest endpoints that could set/reset credentials for any account (including
+// SuperAdmins) — a full account-takeover vector. They have been removed. One-off
+// migrations must be run locally via the Admin SDK, never exposed as a deployed HTTP endpoint.
 // Export Scalable User Lookup Functions & Triggers
 var userLookup_1 = require("./userLookup");
 Object.defineProperty(exports, "migrateAllUsersToLookup", { enumerable: true, get: function () { return userLookup_1.migrateAllUsersToLookup; } });
@@ -37,13 +39,19 @@ const RUNPOD_BASE_URL = 'https://api.runpod.io/v2';
  * MedASR Transcription - Submit audio for transcription
  */
 exports.medAsrTranscribe = functions.region(FUNCTION_REGION).https.onCall(async (data, context) => {
-    // Verify authentication (optional but recommended)
+    // Verify authentication
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to use transcription');
     }
+    // Limit paid transcription calls per user (cost-DoS protection).
+    await (0, rateLimit_1.enforceUserRateLimit)(context.auth.uid, { action: 'medAsrTranscribe', max: 60, windowMs: 60000 });
     const { audio } = data;
-    if (!audio) {
+    if (!audio || typeof audio !== 'string') {
         throw new functions.https.HttpsError('invalid-argument', 'Audio data is required');
+    }
+    // ~35 MB of base64 ≈ 25 MB of audio.
+    if (audio.length > 35 * 1024 * 1024) {
+        throw new functions.https.HttpsError('invalid-argument', 'Audio payload too large');
     }
     if (!RUNPOD_API_KEY) {
         throw new functions.https.HttpsError('failed-precondition', 'RunPod API key not configured');
@@ -112,69 +120,19 @@ exports.medAsrTranscribe = functions.region(FUNCTION_REGION).https.onCall(async 
  * Health check endpoint
  */
 exports.healthCheck = functions.region(FUNCTION_REGION).https.onRequest((req, res) => {
-    res.json({
-        status: 'ok',
-        service: 'MedASR Proxy',
-        configured: !!RUNPOD_API_KEY
-    });
+    // SECURITY: do not disclose whether secrets are configured or any internal state
+    // to unauthenticated callers.
+    res.json({ status: 'ok' });
 });
 /**
  * Authentication System Status
- * Returns information about which authentication mode is active
+ * Lightweight liveness probe. Previously this UNAUTHENTICATED endpoint leaked
+ * internal config (bcrypt rounds, rate-limit thresholds, lookup-table size, and
+ * the timestamp of the last auth activity) to anyone on the internet — useful
+ * reconnaissance for an attacker. It now returns only liveness.
  */
 exports.authSystemStatus = functions.region(FUNCTION_REGION).https.onRequest(async (req, res) => {
-    var _a, _b;
-    const db = (0, firestore_1.getFirestore)('neolink');
-    // Check if userLookup collection exists and has data
-    const lookupSnapshot = await db.collection('userLookup').limit(1).get();
-    const hasLookupTable = !lookupSnapshot.empty;
-    // Count entries in lookup table
-    const lookupCount = hasLookupTable
-        ? (await db.collection('userLookup').count().get()).data().count
-        : 0;
-    // Check audit logs for recent activity
-    const recentAuditLogs = await db.collection('authAuditLogs')
-        .orderBy('timestamp', 'desc')
-        .limit(5)
-        .get();
-    res.json({
-        status: 'ok',
-        authSystem: 'ENTERPRISE_GRADE',
-        version: '2.0.0',
-        features: {
-            bcryptHashing: true,
-            bcryptRounds: 12,
-            rateLimiting: {
-                enabled: true,
-                maxAttempts: 5,
-                windowMinutes: 15,
-            },
-            accountLockout: {
-                enabled: true,
-                lockoutMinutes: 30,
-            },
-            auditLogging: true,
-            customClaims: true,
-            serverSideAuth: true,
-        },
-        scalability: {
-            lookupTableEnabled: hasLookupTable,
-            lookupTableEntries: lookupCount,
-            lookupComplexity: 'O(1)',
-            autoSyncTriggers: [
-                'onOfficialWrite',
-                'onApprovedUserWrite',
-                'onInstitutionWrite',
-                'onDistrictAdminWrite',
-                'onSuperAdminWrite',
-            ],
-        },
-        recentActivity: {
-            auditLogsCount: recentAuditLogs.size,
-            lastActivity: ((_b = (_a = recentAuditLogs.docs[0]) === null || _a === void 0 ? void 0 : _a.data()) === null || _b === void 0 ? void 0 : _b.timestamp) || null,
-        },
-        timestamp: new Date().toISOString(),
-    });
+    res.json({ status: 'ok' });
 });
 // Export AI Proxy Functions
 var aiProxy_1 = require("./aiProxy");
@@ -191,41 +149,24 @@ Object.defineProperty(exports, "getElevenLabsStreamKey", { enumerable: true, get
  * Can be called from client to verify enterprise auth is working
  */
 exports.verifyAuthMode = functions.region(FUNCTION_REGION).https.onCall(async (data, context) => {
-    const db = (0, firestore_1.getFirestore)('neolink');
-    // Check lookup table status
-    const lookupCount = (await db.collection('userLookup').count().get()).data().count;
-    // If authenticated, return user info
-    let userInfo = null;
-    if (context.auth) {
-        userInfo = {
+    // SECURITY: only reflect the CALLER's own claims; require authentication and do
+    // not disclose lookup-table size or other internal counts to arbitrary callers.
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+    }
+    return {
+        authMode: 'ENTERPRISE',
+        authenticated: true,
+        user: {
             uid: context.auth.uid,
             email: context.auth.token.email,
-            role: context.auth.token.role,
+            role: context.auth.token.role || null,
             customClaims: {
                 role: context.auth.token.role || null,
                 institutionId: context.auth.token.institutionId || null,
                 userID: context.auth.token.userID || null,
             },
-        };
-    }
-    return {
-        authMode: 'ENTERPRISE',
-        serverSideValidation: true,
-        passwordStorage: 'bcrypt_hashed',
-        lookupTableStatus: lookupCount > 0 ? 'active' : 'pending_migration',
-        lookupTableEntries: lookupCount,
-        authenticated: !!context.auth,
-        user: userInfo,
-        securityFeatures: [
-            'bcrypt_password_hashing',
-            'server_side_authentication',
-            'rate_limiting',
-            'account_lockout',
-            'audit_logging',
-            'custom_claims_rbac',
-            'o1_user_lookup',
-        ],
-        timestamp: new Date().toISOString(),
+        },
     };
 });
 //# sourceMappingURL=index.js.map

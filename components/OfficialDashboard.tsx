@@ -3,6 +3,7 @@ import { collection, getDocs, query, where, onSnapshot, addDoc } from 'firebase/
 import { db } from '../firebaseConfig';
 import { Institution, Official, ReportRequest, ReportRequestStatus, ReportType, Unit, Patient, UserRole } from '../types';
 import { ChatProvider } from '../contexts/ChatContext';
+import { safeHttpUrl } from '../utils/security';
 
 // Lazy load components for viewing institutions
 const Dashboard = lazy(() => import('./Dashboard'));
@@ -715,9 +716,9 @@ const OfficialDashboard: React.FC<OfficialDashboardProps> = ({ official, userEma
                               </p>
                             </div>
                           )}
-                          {request.reportPdfUrl && (
+                          {safeHttpUrl(request.reportPdfUrl) && (
                             <a
-                              href={request.reportPdfUrl}
+                              href={safeHttpUrl(request.reportPdfUrl)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium transition-colors"

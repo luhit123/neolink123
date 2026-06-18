@@ -3,6 +3,7 @@ import { Patient } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeIndividualMortality } from '../services/openaiService';
 import { generateIndividualMortalityPDF } from '../services/mortalityPdfService';
+import { sanitizeHTML } from '../utils/security';
 
 interface IndividualMortalityViewerProps {
   patient: Patient;
@@ -51,11 +52,13 @@ const IndividualMortalityViewer: React.FC<IndividualMortalityViewerProps> = ({
   };
 
   const formatMarkdown = (text: string) => {
-    return text
+    // SECURITY: sanitize AI-generated HTML before dangerouslySetInnerHTML.
+    const html = text
       .replace(/## (.*?)$/gm, '<h3 class="text-lg font-bold text-slate-900 mt-6 mb-3 flex items-center gap-2"><span class="text-2xl">$1</span></h3>')
       .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-slate-900">$1</strong>')
       .replace(/- (.*?)$/gm, '<li class="ml-4 text-slate-700 mb-2">$1</li>')
       .replace(/\n\n/g, '<br/><br/>');
+    return sanitizeHTML(html);
   };
 
   return (

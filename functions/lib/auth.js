@@ -16,7 +16,7 @@
  * ============================================================================
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.autoFixPasswords = exports.syncUsersToFirebaseAuth = exports.initializeUserPassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.getAuthAuditLogs = exports.createSecureUser = exports.changePassword = exports.authenticateUser = void 0;
+exports.initializeUserPassword = exports.bulkMigratePasswords = exports.migrateUserPassword = exports.getAuthAuditLogs = exports.createSecureUser = exports.changePassword = exports.authenticateUser = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -329,20 +329,24 @@ exports.changePassword = functions.region(FUNCTION_REGION).https.onCall(async (d
     if (!user) {
         throw new functions.https.HttpsError('not-found', 'User not found');
     }
-    // Verify current password if provided
-    if (currentPassword) {
-        let valid = false;
-        if (user.passwordHash && isBcryptHash(user.passwordHash)) {
-            valid = await verifyPassword(currentPassword, user.passwordHash);
-        }
-        else if (user.storedPassword) {
-            valid = isBcryptHash(user.storedPassword)
-                ? await verifyPassword(currentPassword, user.storedPassword)
-                : currentPassword === user.storedPassword;
-        }
-        if (!valid) {
-            throw new functions.https.HttpsError('permission-denied', 'Current password is incorrect');
-        }
+    // SECURITY: the current password is MANDATORY. Previously it was only checked
+    // "if provided", so anyone who hijacked a live session (e.g. a shared/unlocked
+    // terminal) could set a new password without knowing the old one and lock the
+    // legitimate owner out — converting a transient session into permanent takeover.
+    if (!currentPassword) {
+        throw new functions.https.HttpsError('invalid-argument', 'Current password is required');
+    }
+    let valid = false;
+    if (user.passwordHash && isBcryptHash(user.passwordHash)) {
+        valid = await verifyPassword(currentPassword, user.passwordHash);
+    }
+    else if (user.storedPassword) {
+        valid = isBcryptHash(user.storedPassword)
+            ? await verifyPassword(currentPassword, user.storedPassword)
+            : currentPassword === user.storedPassword;
+    }
+    if (!valid) {
+        throw new functions.https.HttpsError('permission-denied', 'Current password is incorrect');
     }
     // Hash new password
     const newHash = await hashPassword(newPassword);
@@ -354,6 +358,9 @@ exports.changePassword = functions.region(FUNCTION_REGION).https.onCall(async (d
     });
     // Update Firebase Auth
     await auth.updateUser(context.auth.uid, { password: newPassword });
+    // SECURITY: invalidate all existing refresh tokens so other sessions cannot
+    // continue using the old credential after a password change.
+    await auth.revokeRefreshTokens(context.auth.uid);
     await logAudit({
         action: 'PASSWORD_CHANGED',
         email: userEmail,
@@ -377,6 +384,32 @@ exports.createSecureUser = functions.region(FUNCTION_REGION).https.onCall(async 
     if (!email || !password || !role || !collection) {
         throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
     }
+    // ---------------------------------------------------------------------------
+    // SECURITY: privilege-escalation guard.
+    // Previously a caller could pass ANY role/collection/institutionId, so an
+    // institution Admin could create a SuperAdmin (write into the `superAdmins`
+    // collection with role 'SuperAdmin'). Constrain what each caller role may mint.
+    // ---------------------------------------------------------------------------
+    const PRIVILEGED_COLLECTIONS = ['superAdmins', 'districtAdmins'];
+    const PRIVILEGED_ROLES = ['SuperAdmin', 'DistrictAdmin'];
+    if (callerRole === 'Admin') {
+        // Institution admins may only create non-privileged users inside THEIR institution.
+        const callerInstitutionId = context.auth.token.institutionId;
+        if (PRIVILEGED_ROLES.includes(role) || PRIVILEGED_COLLECTIONS.includes(collection)
+            || ['officials', 'institutions'].includes(collection)) {
+            throw new functions.https.HttpsError('permission-denied', 'Admins cannot create privileged accounts');
+        }
+        if (!callerInstitutionId || institutionId !== callerInstitutionId) {
+            throw new functions.https.HttpsError('permission-denied', 'Admins can only create users in their own institution');
+        }
+    }
+    else if (callerRole === 'DistrictAdmin') {
+        // District admins may not create SuperAdmins.
+        if (role === 'SuperAdmin' || collection === 'superAdmins') {
+            throw new functions.https.HttpsError('permission-denied', 'District admins cannot create SuperAdmins');
+        }
+    }
+    // SuperAdmin: unrestricted (intended).
     // Hash password
     const passwordHash = await hashPassword(password);
     // Create Firebase Auth user
@@ -439,172 +472,14 @@ exports.bulkMigratePasswords = functions.region(FUNCTION_REGION).https.onCall(as
     return { success: true, message: 'Auto-migration happens on login' };
 });
 exports.initializeUserPassword = functions.region(FUNCTION_REGION).https.onCall(async () => {
-    return { success: true, message: 'Use autoFixPasswords endpoint' };
+    return { success: true, message: 'Auto-migration happens on login' };
 });
 // ============================================================================
-// SYNC ALL USERS TO FIREBASE AUTH (Enables Password Reset)
+// REMOVED FOR SECURITY (2026-05): `syncUsersToFirebaseAuth` and `autoFixPasswords`
+// were UNAUTHENTICATED onRequest HTTP endpoints. Anyone who knew the function URL
+// could set/overwrite the password (to an attacker-chosen or hardcoded default) for
+// any account that lacked one — including SuperAdmins/Officials — and then log in.
+// This was a full, internet-facing account-takeover vector. Run any one-off password
+// migration locally with the Admin SDK (a script that is never deployed as a function).
 // ============================================================================
-exports.syncUsersToFirebaseAuth = functions.region(FUNCTION_REGION).https.onRequest(async (req, res) => {
-    const results = [];
-    const collections = [
-        { name: 'superAdmins', emailField: 'email', passwordField: 'password', role: 'SuperAdmin' },
-        { name: 'districtAdmins', emailField: 'email', passwordField: 'password', role: 'DistrictAdmin' },
-        { name: 'institutions', emailField: 'adminEmail', passwordField: 'password', role: 'Admin' },
-        { name: 'officials', emailField: 'email', passwordField: 'password', role: 'Official' },
-        { name: 'approved_users', emailField: 'email', passwordField: 'password', role: null },
-    ];
-    for (const col of collections) {
-        const snapshot = await db.collection(col.name).get();
-        for (const doc of snapshot.docs) {
-            const data = doc.data();
-            const email = data[col.emailField];
-            if (!email)
-                continue;
-            // Get password from various possible fields
-            const password = data.password || data.adminPassword || data.initialPassword || '';
-            const passwordHash = data.passwordHash || '';
-            // Skip if no password at all
-            if (!password && !passwordHash) {
-                results.push({ email, status: 'SKIPPED', reason: 'no password in Firestore' });
-                continue;
-            }
-            try {
-                let firebaseUser;
-                let action;
-                try {
-                    // Check if user exists in Firebase Auth
-                    firebaseUser = await auth.getUserByEmail(email.toLowerCase());
-                    // User exists - check if they have password provider
-                    const hasPasswordProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
-                    if (!hasPasswordProvider && password && !isBcryptHash(password)) {
-                        // Add password to existing user
-                        await auth.updateUser(firebaseUser.uid, { password });
-                        action = 'UPDATED (added password provider)';
-                    }
-                    else if (!hasPasswordProvider) {
-                        // Has bcrypt hash - use default password
-                        await auth.updateUser(firebaseUser.uid, { password: 'NeoLink@2024' });
-                        action = 'UPDATED (set default password)';
-                    }
-                    else {
-                        action = 'EXISTS (has password provider)';
-                    }
-                }
-                catch (e) {
-                    if (e.code === 'auth/user-not-found') {
-                        // Create new Firebase Auth user
-                        const userPassword = (password && !isBcryptHash(password)) ? password : 'NeoLink@2024';
-                        firebaseUser = await auth.createUser({
-                            email: email.toLowerCase(),
-                            password: userPassword,
-                            displayName: data.displayName || data.adminName || data.name || email,
-                            emailVerified: true,
-                        });
-                        action = 'CREATED';
-                    }
-                    else {
-                        throw e;
-                    }
-                }
-                // Update Firestore with Firebase UID
-                await doc.ref.update({
-                    firebaseUid: firebaseUser.uid,
-                    syncedToFirebaseAuth: new Date().toISOString(),
-                }).catch(() => { });
-                results.push({
-                    email,
-                    role: col.role || data.role,
-                    status: action,
-                    uid: firebaseUser.uid,
-                });
-            }
-            catch (error) {
-                results.push({ email, status: 'ERROR', error: error.message });
-            }
-        }
-    }
-    const created = results.filter(r => r.status === 'CREATED').length;
-    const updated = results.filter(r => { var _a; return (_a = r.status) === null || _a === void 0 ? void 0 : _a.includes('UPDATED'); }).length;
-    const existing = results.filter(r => { var _a; return (_a = r.status) === null || _a === void 0 ? void 0 : _a.includes('EXISTS'); }).length;
-    res.json({
-        success: true,
-        message: `Synced ${created + updated} users to Firebase Auth. Password reset emails will now work.`,
-        summary: {
-            created,
-            updated,
-            alreadyExists: existing,
-            errors: results.filter(r => r.status === 'ERROR').length,
-            skipped: results.filter(r => r.status === 'SKIPPED').length,
-        },
-        results,
-    });
-});
-// ============================================================================
-// SET PASSWORD FOR USERS WITHOUT ONE
-// ============================================================================
-exports.autoFixPasswords = functions.region(FUNCTION_REGION).https.onRequest(async (req, res) => {
-    const newPassword = req.query.password || 'NeoLink@2024';
-    const results = [];
-    // Hash the password
-    const passwordHash = await hashPassword(newPassword);
-    const collections = [
-        { name: 'superAdmins', emailField: 'email', role: 'SuperAdmin' },
-        { name: 'districtAdmins', emailField: 'email', role: 'DistrictAdmin' },
-        { name: 'officials', emailField: 'email', role: 'Official' },
-        { name: 'approved_users', emailField: 'email', role: null },
-    ];
-    for (const col of collections) {
-        const snapshot = await db.collection(col.name).get();
-        for (const doc of snapshot.docs) {
-            const data = doc.data();
-            const email = data[col.emailField];
-            const hasPassword = data.password || data.passwordHash || data.adminPassword;
-            if (!email)
-                continue;
-            if (hasPassword) {
-                results.push({ email, status: 'SKIPPED', reason: 'has password' });
-                continue;
-            }
-            try {
-                // Set hashed password in Firestore
-                await doc.ref.update({
-                    passwordHash,
-                    passwordSetAt: new Date().toISOString(),
-                });
-                // Sync to Firebase Auth
-                try {
-                    const existing = await auth.getUserByEmail(email.toLowerCase());
-                    await auth.updateUser(existing.uid, { password: newPassword });
-                }
-                catch (e) {
-                    if (e.code === 'auth/user-not-found') {
-                        await auth.createUser({
-                            email: email.toLowerCase(),
-                            password: newPassword,
-                            displayName: data.displayName || data.name || email,
-                            emailVerified: true,
-                        });
-                    }
-                }
-                results.push({ email, role: col.role || data.role, status: 'SET' });
-            }
-            catch (error) {
-                results.push({ email, status: 'ERROR', error: error.message });
-            }
-        }
-    }
-    res.json({
-        success: true,
-        message: `Enterprise auth ready. Password set for ${results.filter(r => r.status === 'SET').length} users.`,
-        defaultPassword: newPassword,
-        results,
-        securityFeatures: [
-            'bcrypt password hashing (cost 12)',
-            'Rate limiting (5 attempts / 15 min)',
-            'Account lockout (30 min)',
-            'Audit logging',
-            'Auto-migration to hash',
-        ],
-    });
-});
 //# sourceMappingURL=auth.js.map

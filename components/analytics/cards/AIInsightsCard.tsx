@@ -4,6 +4,7 @@ import { Patient } from '../../../types';
 import AnalyticsCard from '../AnalyticsCard';
 import { analyzeDeathDiagnosisPatterns } from '../../../services/openaiService';
 import { haptics } from '../../../utils/haptics';
+import { sanitizeHTML } from '../../../utils/security';
 
 interface AIInsightsCardProps {
   deceasedPatients: Patient[];
@@ -42,13 +43,16 @@ const AIInsightsCard: React.FC<AIInsightsCardProps> = ({
   };
 
   const formatMarkdown = (text: string) => {
-    return text
+    // SECURITY: AI output can echo attacker-influenced patient free-text. Sanitize
+    // the generated HTML with DOMPurify before it reaches dangerouslySetInnerHTML.
+    const html = text
       .replace(/## (.*?)$/gm, '<h3 class="text-base font-bold text-slate-800 mt-4 mb-2">$1</h3>')
       .replace(/### (.*?)$/gm, '<h4 class="text-sm font-semibold text-slate-700 mt-3 mb-1">$1</h4>')
       .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-slate-800">$1</strong>')
       .replace(/- (.*?)$/gm, '<li class="ml-3 text-slate-600 text-sm leading-relaxed">• $1</li>')
       .replace(/\n\n/g, '</p><p class="mt-2">')
       .replace(/\n/g, '<br/>');
+    return sanitizeHTML(html);
   };
 
   const clearAnalysis = () => {

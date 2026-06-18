@@ -8,6 +8,7 @@ import AdvancedMortalityCharts from './analytics/cards/AdvancedMortalityCharts';
 import RiskFactorAnalysis from './analytics/cards/RiskFactorAnalysis';
 import KeyMetricsDashboard from './analytics/cards/KeyMetricsDashboard';
 import { calculatePercentage, getCanonicalOutcome, toAnalyticsPatients } from '../utils/analytics';
+import { sanitizeHTML } from '../utils/security';
 
 interface DeathDiagnosisAnalyticsProps {
   patients: Patient[];
@@ -305,11 +306,13 @@ const DeathDiagnosisAnalytics: React.FC<DeathDiagnosisAnalyticsProps> = ({
   }, [deceasedPatients]);
 
   const formatMarkdown = (text: string) => {
-    return text
+    // SECURITY: sanitize AI-generated HTML before dangerouslySetInnerHTML.
+    const html = text
       .replace(/## (.*?)$/gm, '<h3 class="text-lg font-bold text-slate-900 mt-6 mb-3">$1</h3>')
       .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-slate-900">$1</strong>')
       .replace(/- (.*?)$/gm, '<li class="ml-4 text-slate-700">$1</li>')
       .replace(/\n/g, '<br/>');
+    return sanitizeHTML(html);
   };
 
   return (

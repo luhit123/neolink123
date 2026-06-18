@@ -1,14 +1,38 @@
 rules_version = '2';
+
+// SECURITY: the previous rules granted every authenticated user read/write/delete on
+// EVERY object in the bucket (`match /{allPaths=**} { allow read, write: if request.auth != null }`),
+// so any user could read, overwrite or delete another institution's clinical audio and
+// report PDFs. Access is now scoped per-owner / per-institution with size and
+// content-type limits, and everything else is denied by default.
+//
+// NOTE: files are typically served to clients via Firebase download-token URLs, which
+// bypass these read rules by design; these rules govern direct SDK access and uploads.
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow authenticated users to upload/read/delete temp audio files for STT
-    match /temp-audio/{allPaths=**} {
-      allow read, write: if request.auth != null;
+
+    // Per-user scratch space for speech-to-text audio uploads.
+    // Client uploads to `temp-audio/<uid>/<file>` (see fasterWhisperService.ts).
+    match /temp-audio/{uid}/{fileName} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null
+                   && request.auth.uid == uid
+                   && request.resource.size < 50 * 1024 * 1024 // 50 MB cap
+                   && request.resource.contentType.matches('audio/.*');
     }
 
-    // Default rule for other paths - authenticated users only
+    // Institution report-response PDFs (uploaded by institution admins; see AdminDashboard.tsx).
+    // Path: `report_responses/<institutionId>/<file>`.
+    match /report_responses/{institutionId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 25 * 1024 * 1024 // 25 MB cap
+                   && request.resource.contentType == 'application/pdf';
+    }
+
+    // Default deny: no access to any other path.
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

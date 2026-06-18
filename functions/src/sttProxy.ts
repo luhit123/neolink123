@@ -1,8 +1,12 @@
 import * as functions from 'firebase-functions';
 import fetch from 'node-fetch';
 import * as FormData from 'form-data';
+import { enforceUserRateLimit } from './rateLimit';
 
 const FUNCTION_REGION = 'asia-southeast1';
+
+// ~35 MB of base64 ≈ 25 MB of audio; reject anything larger up front.
+const MAX_AUDIO_BASE64_LEN = 35 * 1024 * 1024;
 
 const getDeepgramKey = (): string => process.env.DEEPGRAM_API_KEY as string;
 const getElevenLabsKey = (): string => process.env.ELEVENLABS_API_KEY as string;
@@ -21,19 +25,37 @@ export const deepgramTranscribe = functions
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
     }
+    await enforceUserRateLimit(context.auth.uid, { action: 'deepgramTranscribe', max: 120, windowMs: 60_000 });
     const apiKey = getDeepgramKey();
     if (!apiKey) {
       throw new functions.https.HttpsError('failed-precondition', 'Deepgram API key not configured on server');
     }
-    if (!data.audioBase64) {
+    if (!data.audioBase64 || typeof data.audioBase64 !== 'string') {
       throw new functions.https.HttpsError('invalid-argument', 'audioBase64 is required');
+    }
+    if (data.audioBase64.length > MAX_AUDIO_BASE64_LEN) {
+      throw new functions.https.HttpsError('invalid-argument', 'Audio payload too large');
     }
 
     const audioBuffer = Buffer.from(data.audioBase64, 'base64');
     const mimeType = data.mimeType || 'audio/webm';
-    const kw = (data.keywords || []).slice(0, 100);
-    const kwParam = kw.length > 0 ? `&keywords=${kw.join('&keywords=')}` : '';
-    const url = `https://api.deepgram.com/v1/listen?model=nova-2-medical&smart_format=true&punctuate=true&numerals=true&language=en${kwParam}`;
+    // SECURITY: client-supplied keywords are interpolated into the upstream request
+    // URL. Filter to a safe charset and URL-encode each value to prevent query/param
+    // injection into the Deepgram API call.
+    const kw = (data.keywords || [])
+      .filter((k): k is string => typeof k === 'string')
+      .map((k) => k.replace(/[^\w \-]/g, '').trim())
+      .filter((k) => k.length > 0 && k.length <= 50)
+      .slice(0, 100);
+    const params = new URLSearchParams({
+      model: 'nova-2-medical',
+      smart_format: 'true',
+      punctuate: 'true',
+      numerals: 'true',
+      language: 'en',
+    });
+    for (const k of kw) params.append('keywords', k);
+    const url = `https://api.deepgram.com/v1/listen?${params.toString()}`;
 
     try {
       const response = await fetch(url, {
@@ -71,12 +93,16 @@ export const elevenLabsTranscribe = functions
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
     }
+    await enforceUserRateLimit(context.auth.uid, { action: 'elevenLabsTranscribe', max: 120, windowMs: 60_000 });
     const apiKey = getElevenLabsKey();
     if (!apiKey) {
       throw new functions.https.HttpsError('failed-precondition', 'ElevenLabs API key not configured on server');
     }
-    if (!data.audioBase64) {
+    if (!data.audioBase64 || typeof data.audioBase64 !== 'string') {
       throw new functions.https.HttpsError('invalid-argument', 'audioBase64 is required');
+    }
+    if (data.audioBase64.length > MAX_AUDIO_BASE64_LEN) {
+      throw new functions.https.HttpsError('invalid-argument', 'Audio payload too large');
     }
 
     const audioBuffer = Buffer.from(data.audioBase64, 'base64');

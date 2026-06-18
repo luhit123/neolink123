@@ -361,12 +361,12 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     const admissionTypeOf = (patient: Patient) => getCanonicalAdmissionType(patient);
 
     const total = filteredPatients.length;
-    const discharged = filteredPatients.filter(p => outcomeOf(p) === 'Discharged').length;
-    const deceased = filteredPatients.filter(p => outcomeOf(p) === 'Deceased').length;
-    const referred = filteredPatients.filter(p => outcomeOf(p) === 'Referred').length;
-    const active = filteredPatients.filter(p => outcomeOf(p) === 'In Progress').length;
+    const discharged = filteredPatients.filter(p => getCanonicalOutcome(p) === 'Discharged').length;
+    const deceased = filteredPatients.filter(p => getCanonicalOutcome(p) === 'Deceased').length;
+    const referred = filteredPatients.filter(p => getCanonicalOutcome(p) === 'Referred').length;
+    const active = filteredPatients.filter(p => getCanonicalOutcome(p) === 'In Progress').length;
     // Count ALL patients who were ever stepped down (including those now discharged/other outcome)
-    const stepDown = filteredPatients.filter(p => p.stepDownDate || outcomeOf(p) === 'Step Down' || p.isStepDown).length;
+    const stepDown = filteredPatients.filter(p => p.stepDownDate || getCanonicalOutcome(p) === 'Step Down' || p.isStepDown).length;
     const lama = filteredPatients.filter(p => (p.outcome as string) === 'LAMA').length;
 
     // Gender statistics
@@ -428,7 +428,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     const minLOS = losData.length > 0 ? Math.min(...losData) : 0;
 
     // Mortality by categories
-    const deceasedPatients = filteredPatients.filter(p => outcomeOf(p) === 'Deceased');
+    const deceasedPatients = filteredPatients.filter(p => getCanonicalOutcome(p) === 'Deceased');
     const mortalityByGA: Record<string, { total: number; deceased: number }> = {};
     const mortalityByBW: Record<string, { total: number; deceased: number }> = {};
 
@@ -442,7 +442,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       mortalityByGA[gaCategory].total++;
       mortalityByBW[bwCategory].total++;
 
-      if (outcomeOf(p) === 'Deceased') {
+      if (getCanonicalOutcome(p) === 'Deceased') {
         mortalityByGA[gaCategory].deceased++;
         mortalityByBW[bwCategory].deceased++;
       }
@@ -463,10 +463,10 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     const stepDownRate = total > 0 ? ((stepDown / total) * 100).toFixed(2) : '0';
 
     // Gender-wise outcomes
-    const maleDeceased = filteredPatients.filter(p => p.gender === 'Male' && outcomeOf(p) === 'Deceased').length;
-    const femaleDeceased = filteredPatients.filter(p => p.gender === 'Female' && outcomeOf(p) === 'Deceased').length;
-    const maleDischarged = filteredPatients.filter(p => p.gender === 'Male' && outcomeOf(p) === 'Discharged').length;
-    const femaleDischarged = filteredPatients.filter(p => p.gender === 'Female' && outcomeOf(p) === 'Discharged').length;
+    const maleDeceased = filteredPatients.filter(p => p.gender === 'Male' && getCanonicalOutcome(p) === 'Deceased').length;
+    const femaleDeceased = filteredPatients.filter(p => p.gender === 'Female' && getCanonicalOutcome(p) === 'Deceased').length;
+    const maleDischarged = filteredPatients.filter(p => p.gender === 'Male' && getCanonicalOutcome(p) === 'Discharged').length;
+    const femaleDischarged = filteredPatients.filter(p => p.gender === 'Female' && getCanonicalOutcome(p) === 'Discharged').length;
 
     // Inborn/Outborn mortality
     const inbornDeceased = deceasedPatients.filter(p => admissionTypeOf(p) === 'Inborn').length;
@@ -477,24 +477,24 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     // Inborn/Outborn discharge statistics
     const inbornPatients = filteredPatients.filter(p => admissionTypeOf(p) === 'Inborn');
     const outbornPatients = filteredPatients.filter(p => admissionTypeOf(p) === 'Outborn');
-    const inbornDischarged = inbornPatients.filter(p => outcomeOf(p) === 'Discharged').length;
-    const outbornDischarged = outbornPatients.filter(p => outcomeOf(p) === 'Discharged').length;
+    const inbornDischarged = inbornPatients.filter(p => getCanonicalOutcome(p) === 'Discharged').length;
+    const outbornDischarged = outbornPatients.filter(p => getCanonicalOutcome(p) === 'Discharged').length;
     const inbornDischargeRate = inborn > 0 ? ((inbornDischarged / inborn) * 100).toFixed(2) : '0';
     const outbornDischargeRate = outborn > 0 ? ((outbornDischarged / outborn) * 100).toFixed(2) : '0';
 
     // Inborn/Outborn referred
-    const inbornReferred = inbornPatients.filter(p => outcomeOf(p) === 'Referred').length;
-    const outbornReferred = outbornPatients.filter(p => outcomeOf(p) === 'Referred').length;
+    const inbornReferred = inbornPatients.filter(p => getCanonicalOutcome(p) === 'Referred').length;
+    const outbornReferred = outbornPatients.filter(p => getCanonicalOutcome(p) === 'Referred').length;
     const inbornReferralRate = inborn > 0 ? ((inbornReferred / inborn) * 100).toFixed(2) : '0';
     const outbornReferralRate = outborn > 0 ? ((outbornReferred / outborn) * 100).toFixed(2) : '0';
 
     // Inborn/Outborn step down
-    const inbornStepDown = inbornPatients.filter(p => p.stepDownDate || outcomeOf(p) === 'Step Down' || p.isStepDown).length;
-    const outbornStepDown = outbornPatients.filter(p => p.stepDownDate || outcomeOf(p) === 'Step Down' || p.isStepDown).length;
+    const inbornStepDown = inbornPatients.filter(p => p.stepDownDate || getCanonicalOutcome(p) === 'Step Down' || p.isStepDown).length;
+    const outbornStepDown = outbornPatients.filter(p => p.stepDownDate || getCanonicalOutcome(p) === 'Step Down' || p.isStepDown).length;
 
     // Inborn/Outborn active
-    const inbornActive = inbornPatients.filter(p => outcomeOf(p) === 'In Progress').length;
-    const outbornActive = outbornPatients.filter(p => outcomeOf(p) === 'In Progress').length;
+    const inbornActive = inbornPatients.filter(p => getCanonicalOutcome(p) === 'In Progress').length;
+    const outbornActive = outbornPatients.filter(p => getCanonicalOutcome(p) === 'In Progress').length;
 
     // LOS by Inborn/Outborn - check both dischargeDateTime and releaseDate
     const inbornLosData = inbornPatients
@@ -547,7 +547,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     };
 
     // Step down statistics - include ALL patients who were ever stepped down (historical + current)
-    const stepDownPatients = filteredPatients.filter(p => p.stepDownDate || p.isStepDown || outcomeOf(p) === 'Step Down');
+    const stepDownPatients = filteredPatients.filter(p => p.stepDownDate || p.isStepDown || getCanonicalOutcome(p) === 'Step Down');
     const stepDownLocations: Record<string, number> = {};
     stepDownPatients.forEach(p => {
       const location = p.stepDownLocation || 'Not Specified';
@@ -555,7 +555,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
     });
 
     // Referred patients analysis
-    const referredPatients = filteredPatients.filter(p => outcomeOf(p) === 'Referred');
+    const referredPatients = filteredPatients.filter(p => getCanonicalOutcome(p) === 'Referred');
     const referralDestinations: Record<string, number> = {};
     referredPatients.forEach(p => {
       const dest = p.referredTo || 'Not Specified';
@@ -1632,11 +1632,11 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
 
     // Calculate comprehensive stats
     // Admitted patients (In Progress) - NOT including step down
-    const admittedPatients = allFilteredPatients.filter(p => outcomeOf(p) === 'In Progress').length;
+    const admittedPatients = allFilteredPatients.filter(p => getCanonicalOutcome(p) === 'In Progress').length;
     // Observation patients (active)
     const observationPatients_count = filteredObsPatients.filter(p => p.outcome === ObservationOutcome.InObservation).length;
     // Currently in Step Down (with mother)
-    const currentlyInStepDown = allFilteredPatients.filter(p => outcomeOf(p) === 'Step Down').length;
+    const currentlyInStepDown = allFilteredPatients.filter(p => getCanonicalOutcome(p) === 'Step Down').length;
 
     const stats = {
       admitted: admittedPatients,
@@ -1645,7 +1645,7 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
 
       // Period activity
       steppedDownThisShift: allFilteredPatients.filter(p => {
-        if (outcomeOf(p) !== 'Step Down') return false;
+        if (getCanonicalOutcome(p) !== 'Step Down') return false;
         return isEventInShift(p.stepDownDate);
       }).length,
 
@@ -1655,19 +1655,19 @@ const AIReportsPage: React.FC<AIReportsPageProps> = ({
       }).length,
 
       discharged: allFilteredPatients.filter(p => {
-        if (outcomeOf(p) !== 'Discharged') return false;
+        if (getCanonicalOutcome(p) !== 'Discharged') return false;
         return isEventInShift(p.dischargeDateTime) ||
                isEventInShift(p.finalDischargeDate) ||
                isEventInShift(p.releaseDate);
       }).length,
 
       referred: allFilteredPatients.filter(p => {
-        if (outcomeOf(p) !== 'Referred') return false;
+        if (getCanonicalOutcome(p) !== 'Referred') return false;
         return isEventInShift(p.dischargeDateTime) || isEventInShift(p.releaseDate);
       }).length,
 
       deceased: allFilteredPatients.filter(p => {
-        if (outcomeOf(p) !== 'Deceased') return false;
+        if (getCanonicalOutcome(p) !== 'Deceased') return false;
         return isEventInShift(p.dateOfDeath) || isEventInShift(p.releaseDate);
       }).length,
 
@@ -2699,13 +2699,13 @@ ${summaryRows.map(row => `${row.label}: ${row.value}${row.suffix || ''}`).join('
                 { outcome: 'Deceased', male: stats.maleDeceased, female: stats.femaleDeceased },
                 {
                   outcome: 'Referred',
-                  male: filteredPatients.filter(p => p.gender === 'Male' && outcomeOf(p) === 'Referred').length,
-                  female: filteredPatients.filter(p => p.gender === 'Female' && outcomeOf(p) === 'Referred').length
+                  male: filteredPatients.filter(p => p.gender === 'Male' && getCanonicalOutcome(p) === 'Referred').length,
+                  female: filteredPatients.filter(p => p.gender === 'Female' && getCanonicalOutcome(p) === 'Referred').length
                 },
                 {
                   outcome: 'Active/In Progress',
-                  male: filteredPatients.filter(p => p.gender === 'Male' && outcomeOf(p) === 'In Progress').length,
-                  female: filteredPatients.filter(p => p.gender === 'Female' && outcomeOf(p) === 'In Progress').length
+                  male: filteredPatients.filter(p => p.gender === 'Male' && getCanonicalOutcome(p) === 'In Progress').length,
+                  female: filteredPatients.filter(p => p.gender === 'Female' && getCanonicalOutcome(p) === 'In Progress').length
                 }
               ].map(row => (
                 <tr key={row.outcome} className="border-b border-slate-200">
@@ -2757,7 +2757,7 @@ ${summaryRows.map(row => `${row.label}: ${row.value}${row.suffix || ''}`).join('
 
   // Discharge Report
   const renderDischargeReport = () => {
-    const dischargedPatients = filteredPatients.filter(p => outcomeOf(p) === 'Discharged');
+    const dischargedPatients = filteredPatients.filter(p => getCanonicalOutcome(p) === 'Discharged');
 
     return (
       <div className="space-y-8">

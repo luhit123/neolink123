@@ -6,6 +6,22 @@
 
 import DOMPurify from 'dompurify';
 
+// SECURITY: force rel="noopener noreferrer" on any link that opens a new tab so a
+// sanitized <a target="_blank"> cannot reverse-tabnab the opener window. Registered
+// once at module load (guarded so HMR/multiple imports don't stack hooks).
+declare global {
+  // eslint-disable-next-line no-var
+  var __neolinkDomPurifyHook: boolean | undefined;
+}
+if (typeof window !== 'undefined' && !globalThis.__neolinkDomPurifyHook) {
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node instanceof Element && node.tagName === 'A' && node.hasAttribute('target')) {
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+  globalThis.__neolinkDomPurifyHook = true;
+}
+
 // ==================== XSS PROTECTION ====================
 
 /**
@@ -65,6 +81,21 @@ export const sanitizeMarkdown = (markdown: string): string => {
 export const stripHTML = (html: string): string => {
   if (!html) return '';
   return DOMPurify.sanitize(html, { ALLOWED_TAGS: [] });
+};
+
+/**
+ * Validate that a URL is safe to use as an href/src. Only http(s) URLs are allowed,
+ * which blocks javascript:, data:, vbscript: and similar XSS/open-redirect vectors.
+ * Returns the URL when safe, otherwise undefined.
+ */
+export const safeHttpUrl = (url: string | undefined | null): string | undefined => {
+  if (!url || typeof url !== 'string') return undefined;
+  try {
+    const parsed = new URL(url, typeof window !== 'undefined' ? window.location.origin : undefined);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 // ==================== INPUT VALIDATION ====================

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { explainChartData } from '../services/openaiService';
+import { sanitizeHTML } from '../utils/security';
 
 interface DataPoint {
     label: string;
@@ -105,9 +106,11 @@ const NeolinkAIButton: React.FC<NeolinkAIButtonProps> = ({
                                     <div
                                         className="text-slate-700 dark:text-slate-200 whitespace-pre-wrap text-xs sm:text-sm leading-relaxed"
                                         dangerouslySetInnerHTML={{
-                                            __html: explanation
-                                                .replace(/\*\*(.*?)\*\*/g, '<strong class="text-purple-600 dark:text-purple-400">$1</strong>')
-                                                .replace(/\n/g, '<br/>')
+                                            __html: sanitizeHTML(
+                                                explanation
+                                                    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-purple-600 dark:text-purple-400">$1</strong>')
+                                                    .replace(/\n/g, '<br/>')
+                                            )
                                         }}
                                     />
                                 </div>

@@ -55,6 +55,20 @@ service cloud.firestore {
              getUserData().institutionId == institutionId;
     }
 
+    // Resolve the caller's institution from EITHER the (server-set) custom claim OR
+    // their users doc. The custom claim (set only by the auth Cloud Function) is the
+    // trustworthy source; the users-doc fallback keeps Google-login users working
+    // until claims are minted on every login path. Used to tenant-scope PHI access.
+    function inCallerInstitution(institutionId) {
+      return isAuthenticated() &&
+             (
+               (request.auth.token.institutionId != null &&
+                request.auth.token.institutionId == institutionId)
+               ||
+               belongsToInstitution(institutionId)
+             );
+    }
+
     // Check if user has specific role (handles case variations)
     // Returns false if user document doesn't exist
     function hasRole(role) {
@@ -151,42 +165,59 @@ service cloud.firestore {
     }
 
     // ==================== PATIENTS (PHI - Protected Health Information) ====================
+    // SECURITY: previously read/create/update were `if isAuthenticated()`, which let ANY
+    // authenticated user (a nurse/doctor from ANY institution, or any self-registered
+    // account) read and modify EVERY child's record across ALL institutions via the
+    // Firebase SDK. Access is now tenant-scoped to the caller's institution. The app
+    // already filters patient queries by institutionId, so this matches real usage.
     match /patients/{patientId} {
-      // Read: Must be authenticated
-      allow read: if isAuthenticated();
+      // Read: SuperAdmin, members of the patient's institution, or Officials authorised
+      // to view that institution (read-only oversight).
+      allow read: if isAuthenticated() &&
+                    (isSuperAdmin() ||
+                     inCallerInstitution(resource.data.institutionId) ||
+                     officialCanViewInstitution(resource.data.institutionId));
 
-      // Create: Must be authenticated
-      allow create: if isAuthenticated();
+      // Create: caller must belong to the institution the record is written for, and the
+      // record must carry that institutionId. Officials are read-only.
+      allow create: if isAuthenticated() && !isOfficial() &&
+                      (isSuperAdmin() || inCallerInstitution(request.resource.data.institutionId)) &&
+                      request.resource.data.institutionId is string;
 
-      // Update: Must be authenticated
-      allow update: if isAuthenticated();
+      // Update: same institution; the tenant (institutionId) is immutable so a record
+      // cannot be moved to / planted in another institution. Officials are read-only.
+      allow update: if isAuthenticated() && !isOfficial() &&
+                      (isSuperAdmin() || inCallerInstitution(resource.data.institutionId)) &&
+                      request.resource.data.institutionId == resource.data.institutionId;
 
-      // Delete: Only admins can delete (soft delete preferred)
+      // Delete: SuperAdmin or the institution's admin only (soft delete preferred).
       allow delete: if isSuperAdmin() ||
-                      (hasRole('admin') && resource.data.institutionId == getUserData().institutionId);
+                      isInstitutionAdmin(resource.data.institutionId);
 
-      // Progress Notes subcollection
+      // Progress Notes subcollection (inherit the parent patient's institution scope)
       match /progressNotes/{noteId} {
         allow read: if isAuthenticated() &&
                       (isSuperAdmin() ||
-                       get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId ||
+                       inCallerInstitution(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId) ||
                        officialCanViewInstitution(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId));
-        allow create, update: if isAuthenticated() &&
+        allow create, update: if isAuthenticated() && !isOfficial() &&
                                 (isSuperAdmin() ||
-                                 get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
-        allow delete: if isSuperAdmin() || hasRole('admin');
+                                 inCallerInstitution(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId));
+        allow delete: if isSuperAdmin() ||
+                        isInstitutionAdmin(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId);
       }
 
-      // Clinical Notes subcollection
+      // Clinical Notes subcollection (inherit the parent patient's institution scope)
       match /clinicalNotes/{noteId} {
         allow read: if isAuthenticated() &&
                       (isSuperAdmin() ||
-                       get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId ||
+                       inCallerInstitution(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId) ||
                        officialCanViewInstitution(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId));
-        allow create, update: if isAuthenticated() &&
+        allow create, update: if isAuthenticated() && !isOfficial() &&
                                 (isSuperAdmin() ||
-                                 get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId == getUserData().institutionId);
-        allow delete: if isSuperAdmin() || hasRole('admin');
+                                 inCallerInstitution(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId));
+        allow delete: if isSuperAdmin() ||
+                        isInstitutionAdmin(get(/databases/$(database)/documents/patients/$(patientId)).data.institutionId);
       }
     }
 
@@ -466,10 +497,13 @@ service cloud.firestore {
 
     // ==================== DISTRICT ADMINS ====================
     match /districtAdmins/{adminId} {
-      // Allow reading for login lookup
-      // SECURITY NOTE: passwordHash is stored but never exposed to client
-      // (Cloud Functions handle authentication server-side)
-      allow read: if true; // Allow unauthenticated reads for login lookup
+      // SECURITY: previously `allow read: if true`, which made each district-admin
+      // document — INCLUDING its bcrypt `passwordHash` (Firestore cannot hide fields
+      // once a read is allowed) — world-readable to any unauthenticated client via the
+      // REST API, enabling offline cracking. District-admin authentication runs
+      // server-side via the `authenticateUser` Cloud Function (Admin SDK, which bypasses
+      // these rules), so no client-side read is required. Restricted to SuperAdmins.
+      allow read: if isSuperAdmin();
 
       // Only SuperAdmins can manage district admins
       allow create, update, delete: if isSuperAdmin();

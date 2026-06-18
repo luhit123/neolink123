@@ -48,3 +48,6 @@ databaseInit.ts
 *.njsproj
 *.sln
 *.sw?
+
+# Stale/duplicate git worktrees created by agent sessions
+.claude/worktrees/
